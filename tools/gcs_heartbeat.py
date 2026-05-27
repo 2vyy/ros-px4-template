@@ -25,13 +25,13 @@ def main() -> None:
             conn.target_component,
             name.encode("utf-8"),
             value,
-            mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
+            mavutil.mavlink.MAV_PARAM_TYPE_REAL32,  # type: ignore[unresolved-attribute]
         )
         time.sleep(0.2)
     while True:
         conn.mav.heartbeat_send(
-            mavutil.mavlink.MAV_TYPE_GCS,
-            mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+            mavutil.mavlink.MAV_TYPE_GCS,  # type: ignore[unresolved-attribute]
+            mavutil.mavlink.MAV_AUTOPILOT_INVALID,  # type: ignore[unresolved-attribute]
             0,
             0,
             0,

@@ -1,6 +1,6 @@
 # Topic manifest
 
-Validated against a running stack with `just check-topics`. The checker greps backticked `/topic` names out of this file and confirms each one appears in `ros2 topic list`, so keep names backticked.
+Validated against a running stack with `just check-topics`. The checker greps backtick-quoted topic names (e.g. the rows below) out of this file and confirms each one appears in `ros2 topic list`, so keep topic names backticked.
 
 ## PX4 v1 relay
 
@@ -31,7 +31,7 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 
 | Topic | Subscribers |
 |-------|-------------|
-| `/fmu/out/vehicle_local_position` | `offboard_controller`, `mission_manager`, `state_estimator` |
+| `/fmu/out/vehicle_local_position` | `offboard_controller`, `mission_manager`, `state_estimator` (subscriber; no publish) |
 | `/fmu/out/vehicle_status` | `offboard_controller` |
 | `/drone/target_pose` | `offboard_controller` |
 | `/drone/controller_status` | `mission_manager` |

@@ -8,11 +8,10 @@ import sys
 import time
 
 import rclpy
-from _common import PX4_QOS, spin_until
+from _common import PX4_QOS, spin_until, write_report
 from px4_msgs.msg import VehicleLocalPosition
 from rclpy.node import Node
 from rich.console import Console
-
 from ros_px4_template_core.lib.frame_transforms import ned_to_enu
 
 console = Console()
@@ -40,6 +39,7 @@ class _Node(Node):
 async def run() -> bool:
     rclpy.init()
     node = _Node()
+    started = time.monotonic()
     console.print("[cyan]Climbing to target altitude...[/cyan]")
 
     def at_alt() -> bool:
@@ -51,6 +51,9 @@ async def run() -> bool:
         console.print("[red]✗ FAIL — never reached target altitude[/red]")
         node.destroy_node()
         rclpy.shutdown()
+        write_report(
+            "02_hover_hold", False, time.monotonic() - started, {"reason": "climb_timeout"}
+        )
         return False
 
     anchor = (node.x, node.y, node.z)
@@ -77,14 +80,20 @@ async def run() -> bool:
     await spin_until(node, hold_ok)
     node.destroy_node()
     rclpy.shutdown()
-    elapsed = time.monotonic() - hold_start
+    elapsed = time.monotonic() - started
+    hold_elapsed = time.monotonic() - hold_start
     if violations > 50:
         console.print("[red]✗ FAIL — position drift during hold[/red]")
+        write_report("02_hover_hold", False, elapsed, {"reason": "drift", "violations": violations})
         return False
-    if elapsed < _HOLD_S - 1:
+    if hold_elapsed < _HOLD_S - 1:
         console.print("[red]✗ FAIL — hold ended early[/red]")
+        write_report(
+            "02_hover_hold", False, elapsed, {"reason": "hold_too_short", "hold_s": hold_elapsed}
+        )
         return False
     console.print("[green]✓ PASS — held position[/green]")
+    write_report("02_hover_hold", True, elapsed, {"anchor": list(anchor), "violations": violations})
     return True
 
 

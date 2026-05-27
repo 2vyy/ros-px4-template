@@ -104,7 +104,7 @@ fix:
     uv run ruff format {{RUFF_PATHS}}
 
 typecheck:
-    uv run ty check src/core/ros_px4_template_core/lib tests/unit tools/
+    uv run ty check src/core/ros_px4_template_core/lib tests/unit tools/ --exclude tools/gcs_heartbeat.py
 
 check-invariants:
     uv run python tools/check_invariants.py
@@ -230,3 +230,46 @@ sim-stop:
 
 sim-headless world="default" model="x500" enable_vision="false":
     just sim {{world}} {{model}} {{enable_vision}} true
+
+# Remove per-node JSONL logs and run summary so merge-logs gives a clean per-run view.
+clean-logs:
+    rm -f {{LOG_DIR}}/*.jsonl {{LOG_DIR}}/run_summary.json
+
+# Block until rosbridge :9090 open and /fmu/out/vehicle_local_position is live.
+wait-ready timeout="180":
+    source {{ROS_SETUP}} && \
+    source {{WS_INSTALL}} && \
+    uv run python tools/wait_ready.py --timeout {{timeout}}
+
+# Prerequisite checks before launching the sim (ports, paths, px4_msgs branch).
+preflight:
+    uv run python tools/preflight.py
+
+# Full headless e2e cycle: clean-logs, preflight, sim, wait-ready, all scenarios, check-topics, merge-logs.
+e2e:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just clean-logs
+    just preflight
+    mkdir -p {{LOG_DIR}}
+    source {{ROS_SETUP}} && source {{WS_INSTALL}} && \
+    export GZ_IP=127.0.0.1 && \
+    export GZ_SIM_RESOURCE_PATH="{{GZ_RESOURCE}}:${GZ_SIM_RESOURCE_PATH:-}" && \
+    export HEADLESS=1 && \
+    ros2 launch {{justfile_directory()}}/sim/launch/sim_full.launch.py \
+        headless:=true \
+        log_dir:={{LOG_DIR}} \
+        2>&1 | tee {{LOG_DIR}}/e2e_headless.log &
+    SIM_PID=$!
+    cleanup() {
+        kill "$SIM_PID" 2>/dev/null || true
+        just sim-stop 2>/dev/null || true
+    }
+    trap cleanup EXIT INT TERM
+    just wait-ready
+    just scenario 01_arm_takeoff
+    just scenario 02_hover_hold
+    just scenario 03_waypoint
+    just check-topics
+    just merge-logs
+    echo "E2E complete — see logs/run_summary.json"

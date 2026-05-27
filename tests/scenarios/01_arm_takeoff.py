@@ -14,11 +14,10 @@ import sys
 import time
 
 import rclpy
-from _common import PX4_QOS, spin_until
+from _common import PX4_QOS, spin_until, write_report
 from px4_msgs.msg import VehicleLocalPosition, VehicleStatus
 from rclpy.node import Node
 from rich.console import Console
-
 from ros_px4_template_core.lib.frame_transforms import ned_to_enu
 
 console = Console()
@@ -79,23 +78,31 @@ async def run(timeout_s: float = _TIMEOUT_S) -> bool:
     try:
         await asyncio.wait_for(spin_until(node, done), timeout=timeout_s)
     except TimeoutError:
+        elapsed = time.monotonic() - started
         console.print(f"[red]✗ FAIL — timeout after {timeout_s}s[/red]")
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+        write_report("01_arm_takeoff", False, elapsed, {"reason": "timeout", "z_enu": node.z_enu})
         return False
 
+    elapsed = time.monotonic() - started
     node.destroy_node()
     if rclpy.ok():
         rclpy.shutdown()
 
     if node.arming_rejected:
         console.print("[red]✗ FAIL — arming rejected or never left ground[/red]")
+        write_report(
+            "01_arm_takeoff", False, elapsed, {"reason": "arm_rejected", "z_enu": node.z_enu}
+        )
         return False
     if node.reached:
         console.print(f"[green]✓ PASS — reached {node.z_enu:.2f} m ENU z[/green]")
+        write_report("01_arm_takeoff", True, elapsed, {"z_enu": node.z_enu})
         return True
     console.print("[red]✗ FAIL — ended without reaching altitude[/red]")
+    write_report("01_arm_takeoff", False, elapsed, {"reason": "no_altitude", "z_enu": node.z_enu})
     return False
 
 

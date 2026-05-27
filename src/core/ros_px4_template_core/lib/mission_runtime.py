@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ros_px4_template_core.lib.marker_target import MarkerTracker, marker_hover_target, pose_to_enu
-from ros_px4_template_core.lib.waypoint_mission import EnuPoint, WaypointMission, current_waypoint, reached
+from ros_px4_template_core.lib.waypoint_mission import (
+    EnuPoint,
+    WaypointMission,
+    current_waypoint,
+    reached,
+)
 
 PHASE_WAIT_ARM_ALTITUDE = "wait_arm_altitude"
 PHASE_FOLLOW_PATH = "follow_path"

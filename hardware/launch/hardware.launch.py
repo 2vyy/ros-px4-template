@@ -34,7 +34,7 @@ def _launch_setup(context, *args, **kwargs):
     ]
 
     nodes = [_rosbridge()]
-    executables = ("px4_topic_relay", "offboard_controller", "mission_manager")
+    executables = ("px4_topic_relay", "offboard_controller", "mission_manager", "state_estimator")
     nodes.extend(
         [
             Node(

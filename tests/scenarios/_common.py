@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable
+from pathlib import Path
 
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
@@ -15,6 +17,8 @@ PX4_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
     depth=10,
 )
+
+_LOG_DIR = Path(__file__).resolve().parents[2] / "logs"
 
 
 async def spin_until(
@@ -33,3 +37,16 @@ async def spin_until(
             await asyncio.sleep(poll_s)
     finally:
         executor.remove_node(node)
+
+
+def write_report(name: str, passed: bool, elapsed_s: float, detail: dict | None = None) -> None:
+    """Write a machine-readable JSON report to logs/scenario_<name>.json."""
+    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    report = {
+        "scenario": name,
+        "passed": passed,
+        "elapsed_s": round(elapsed_s, 2),
+        "detail": detail or {},
+    }
+    out = _LOG_DIR / f"scenario_{name}.json"
+    out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

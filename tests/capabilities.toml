@@ -9,15 +9,21 @@ last_verified = "2026-05-27"
 
 [capabilities.hover_hold]
 description = "Vehicle holds position within tolerance for 30s"
-status = "not_started"
-platforms = []
+status = "verified"
+platforms = [
+    "sim",
+]
 scenario_file = "02_hover_hold.py"
+last_verified = "2026-05-27"
 
 [capabilities.waypoint_nav]
 description = "Vehicle follows a multi-waypoint path"
-status = "not_started"
-platforms = []
+status = "verified"
+platforms = [
+    "sim",
+]
 scenario_file = "03_waypoint.py"
+last_verified = "2026-05-27"
 
 [capabilities.inspect_path_aruco]
 description = "Takeoff, follow path, hover over ArUco when seen"

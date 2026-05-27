@@ -64,6 +64,10 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | Run a scenario | `just scenario <name>` (filename in `tests/scenarios/`, no `.py`) |
 | Record a capability | `just mark-capability <id> sim` |
 | Show capability registry | `just capabilities` |
+| Pre-launch checks | `just preflight` (ports, paths, px4_msgs branch, workspace built) |
+| Wait for sim ready | `just wait-ready` (blocks until rosbridge :9090 + /fmu/out/* live) |
+| Clean per-run JSONL | `just clean-logs` (wipe *.jsonl + run_summary.json before a run) |
+| Full headless e2e | `just e2e` (clean-logs + preflight + headless sim + wait-ready + all scenarios + check-topics + merge-logs) |
 | Clone `px4_msgs` (once) | `just clone-px4-msgs` |
 | Update PX4 to env `PX4_VERSION` | `just update-px4` |
 
@@ -74,9 +78,11 @@ Sim positional args: `just sim [world] [model] [enable_vision] [headless]`. Defa
 | Tier | Command | Needs |
 |------|---------|-------|
 | Fast | `just check` | Nothing running |
+| Prereqs | `just preflight` | Nothing running (checks paths/ports) |
 | Build | `just build` | Jazzy sourced (`source /opt/ros/jazzy/setup.bash`) |
 | Graph | `just check-topics` | `just sim` running |
 | Live | `just scenario 01_arm_takeoff` | Full sim |
+| All-in-one | `just e2e` | `just build` done, ports free |
 | Record | `just mark-capability <id> sim` | Scenario PASS |
 
 `/clock` missing in a hardware-style launch is expected. Use `just sim` so the Gazebo clock bridge in `sim_full.launch.py` publishes `/clock`.
