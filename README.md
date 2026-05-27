@@ -25,35 +25,38 @@ This repository provides a pre-configured template for rapid drone software deve
 
 ```mermaid
 flowchart TD
-    subgraph agent_layer ["Agent and inspection tooling"]
-        Bridge["rosbridge (port 9090)"]
+    subgraph agent_layer ["Agent & Inspection Tooling"]
+        Bridge["rosbridge (Port 9090)"]
         MCP["ros-mcp-server"]
     end
 
-    subgraph ros_layer ["ROS 2 Jazzy (ros_px4_template_core)"]
-        mission["mission_manager\n(YAML to ENU pose)"]
-        offboard["offboard_controller\n(ENU to NED at PX4 I/O)"]
-        relay["px4_topic_relay\n(PX4 to ROS topic map)"]
+    subgraph ros_layer ["ROS 2 Jazzy (px4_ros_core)"]
+        mission["mission_manager\n(YAML to ENU Pose)"]
+        offboard["offboard_controller\n(ENU to NED Transform)"]
+        relay["px4_topic_relay\n(PX4 to ROS Topic Map)"]
     end
 
-    subgraph px4_layer ["PX4 v1.17 autopilot"]
-        XRCE["MicroXRCE Agent (port 8888)"]
-        SITL["PX4 SITL\n(offboard mode)"]
+    subgraph px4_layer ["PX4 v1.17 Autopilot"]
+        XRCE["MicroXRCE Agent (Port 8888)"]
+        SITL["PX4 SITL\n(Offboard Mode)"]
     end
 
     subgraph sim_layer ["Simulation"]
         Gazebo["Gazebo Harmonic"]
     end
 
+    %% Simulation & Autopilot Loop
     Gazebo <--> SITL
     SITL <-->|DDS| XRCE
 
-    mission -->|ENU target pose| offboard
-    XRCE -->|raw telemetry| relay
-    relay -->|mapped ROS topics| mission
-    offboard -->|NED position setpoints| XRCE
+    %% Control Flow
+    mission -->|ENU Target Pose| offboard
+    XRCE -->|Raw Telemetry| relay
+    relay -->|Mapped ROS Topics| mission
+    offboard -->|NED Position Setpoints| XRCE
 
-    ros_layer -->|ROS topics and services| Bridge
+    %% Tooling Integration
+    ros_layer -->|ROS Topics & Services| Bridge
     Bridge --> MCP
 ```
 
