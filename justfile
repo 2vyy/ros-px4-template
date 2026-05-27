@@ -163,22 +163,24 @@ clone-px4-msgs:
     fi
     git clone --branch "{{PX4_MSGS_BRANCH}}" --depth 1 https://github.com/PX4/px4_msgs.git src/px4_msgs
 
-# Sim-only inspect stack (no RViz)
+# [human] Sim-only inspect stack (no RViz)
 sim-inspect:
     mkdir -p {{LOG_DIR}}
     just sim world=inspect_aruco enable_vision=true
 
+# [human] Open world SDF in RViz for the inspect_aruco mission
 rviz-inspect:
     source {{ROS_SETUP}} && \
     source {{WS_INSTALL}} && \
     ros2 run rviz2 rviz2 -d config/rviz/inspect_mission.rviz
 
+# [human] Stream /drone/mission_status to terminal
 mission-status:
     source {{ROS_SETUP}} && \
     source {{WS_INSTALL}} && \
     ros2 topic echo /drone/mission_status
 
-# Background sim + foreground RViz (waits for rosbridge :9090)
+# [human] Background sim + foreground RViz (inspect_aruco with vision)
 demo-inspect:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -188,52 +190,46 @@ demo-inspect:
     sim_pid=$!
     cleanup() {
       kill "$sim_pid" 2>/dev/null || true
-      wait "$sim_pid" 2>/dev/null || true
+      just sim-stop 2>/dev/null || true
     }
     trap cleanup EXIT INT TERM
-    echo "Waiting for rosbridge on :9090..."
-    for _ in $(seq 1 90); do
-      if timeout 1 bash -c 'echo >/dev/tcp/127.0.0.1/9090' 2>/dev/null; then
-        break
-      fi
-      sleep 2
-    done
-    if ! timeout 1 bash -c 'echo >/dev/tcp/127.0.0.1/9090' 2>/dev/null; then
-      echo "ERROR: rosbridge did not open port 9090 in time" >&2
-      exit 1
-    fi
+    just wait-ready
     echo "Launching RViz (Ctrl+C stops sim)..."
     source "{{ROS_SETUP}}"
     source "{{WS_INSTALL}}"
     ros2 run rviz2 rviz2 -d config/rviz/inspect_mission.rviz
 
-# Headless sim (named recipe — avoids `just sim headless=true` parsing as world)
+# SIGTERM all sim processes, SIGKILL survivors, verify clean. Exits 1 if any remain.
 sim-stop:
+    source {{ROS_SETUP}} 2>/dev/null || true && \
+    uv run python tools/sim_cleanup.py
+
+# List any live sim/ROS/gz processes — use to verify sim-stop worked.
+ps-check:
     #!/usr/bin/env bash
-    set -e
-    pkill -f "ros2 launch.*sim_full" 2>/dev/null || true
-    pkill -f "sim/launch/sim_full.launch.py" 2>/dev/null || true
-    pkill -f "hardware/launch/hardware.launch.py" 2>/dev/null || true
-    pkill -f "gz_px4_stack" 2>/dev/null || true
-    pkill -f "/bin/px4" 2>/dev/null || true
-    pkill -f "MicroXRCEAgent" 2>/dev/null || true
-    pkill -f "gz sim" 2>/dev/null || true
-    pkill -f "parameter_bridge" 2>/dev/null || true
-    pkill -f "rosbridge_websocket" 2>/dev/null || true
-    pkill -f "gcs_heartbeat" 2>/dev/null || true
-    pkill -f "e2e_sim_test" 2>/dev/null || true
-    pkill -f "install/ros_px4_template_core/lib/ros_px4_template_core/" 2>/dev/null || true
-    pkill -f "install/px4_ros_sim/lib/px4_ros_sim/" 2>/dev/null || true
-    sleep 2
-    source {{ROS_SETUP}} 2>/dev/null || true
-    ros2 daemon stop 2>/dev/null || true
+    patterns=(
+      "ros2 launch.*sim_full" "sim_full.launch.py" "hardware.launch.py"
+      "/bin/px4" "MicroXRCEAgent" "gz sim" "parameter_bridge"
+      "rosbridge_websocket" "install/ros_px4_template_core/lib"
+    )
+    found=0
+    for pat in "${patterns[@]}"; do
+      pids=$(pgrep -f "$pat" 2>/dev/null || true)
+      if [[ -n "$pids" ]]; then
+        echo "LIVE  [$pat]: $pids"
+        found=1
+      fi
+    done
+    if [[ $found -eq 0 ]]; then
+      echo '{"clean": true}'
+    fi
 
 sim-headless world="default" model="x500" enable_vision="false":
     just sim {{world}} {{model}} {{enable_vision}} true
 
-# Remove per-node JSONL logs and run summary so merge-logs gives a clean per-run view.
+# Remove per-node JSONL logs, run summary, and scenario reports for a clean-slate run.
 clean-logs:
-    rm -f {{LOG_DIR}}/*.jsonl {{LOG_DIR}}/run_summary.json
+    rm -f {{LOG_DIR}}/*.jsonl {{LOG_DIR}}/run_summary.json {{LOG_DIR}}/scenario_*.json
 
 # Block until rosbridge :9090 open and /fmu/out/vehicle_local_position is live.
 wait-ready timeout="180":
@@ -272,4 +268,46 @@ e2e:
     just scenario 03_waypoint
     just check-topics
     just merge-logs
-    echo "E2E complete — see logs/run_summary.json"
+    just e2e-report
+
+# Compact JSON snapshot: sim alive, live nodes, last scenarios, last log event.
+status:
+    source {{ROS_SETUP}} 2>/dev/null || true && \
+    source {{WS_INSTALL}} 2>/dev/null || true && \
+    uv run python tools/status.py
+
+# Events-only from merged log (~50 tokens). Run just merge-logs first.
+log-events:
+    #!/usr/bin/env bash
+    merged="{{LOG_DIR}}/merged.jsonl"
+    if [[ ! -f "$merged" ]]; then
+        echo '{"empty": true, "help": ["just merge-logs"]}'
+        exit 0
+    fi
+    python3 -c "
+import json, sys
+for line in open('$merged', encoding='utf-8'):
+    r = json.loads(line)
+    if r.get('level') in ('EVENT', 'ERROR'):
+        row = {k: v for k, v in r.items() if k not in ('ros_ts', 't_first', 't_last')}
+        print(json.dumps(row, separators=(',', ':')))
+"
+
+# Combined pass/fail report across all scenarios + key timeline events.
+e2e-report:
+    uv run python tools/e2e_report.py
+
+# Tail the last N lines of a specific node's JSONL log (default 50).
+node-log node lines="50":
+    #!/usr/bin/env bash
+    f="{{LOG_DIR}}/{{node}}.jsonl"
+    if [[ ! -f "$f" ]]; then
+        echo "{\"error\": \"no log for node '{{node}}'\", \"available\": [$(ls {{LOG_DIR}}/*.jsonl 2>/dev/null | xargs -n1 basename | sed 's/.jsonl//' | paste -sd',' | sed 's/,/\",\"/g; s/^/\"/; s/$/\"/' || echo)]}"
+        exit 1
+    fi
+    tail -n {{lines}} "$f" | python3 -c "
+import json, sys
+for line in sys.stdin:
+    r = json.loads(line)
+    print(json.dumps({k: v for k, v in r.items() if k != 'ros_ts'}, separators=(',', ':')))
+"
