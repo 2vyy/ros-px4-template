@@ -1,140 +1,145 @@
 # ros-px4-template
 
-This repository provides a pre-configured template for rapid drone software development while still maintaining an organized, performant, and tested codebase. 
+A ROS 2 + PX4 + Gazebo project template with modern Python toolchains.
 
-## Core Design Principles
+This repository provides a pre-configured template for rapid drone software development while still maintaining an organized, performant, and tested codebase.
 
-- Stack
-  - Ubuntu 24.04 (Native, [distrobox](https://distrobox.it), WSL)
-  - ROS 2 Jazzy & Gazebo Harmonic
+## Core design principles
+
+- **Stack**
+  - Ubuntu 24.04 (native, [distrobox](https://distrobox.it), WSL)
+  - ROS 2 Jazzy and Gazebo Harmonic
   - PX4 with Micro XRCE-DDS
-    - Repo pinned to `release/v1.17` and *never* edited locally. Gazebo worlds and models go in `sim/`.
-  - Python 3.12 with [uv](https://github.com/astral-sh/uv) package manager, [ruff](https://github.com/astral-sh/ruff) linter, and [ty](https://github.com/astral-sh/ty) type checker
+    - Upstream PX4 Autopilot lives outside this repo (`PX4_DIR` in `.env`). Gazebo worlds and models go in `sim/`.
+    - `src/px4_msgs` is pinned to branch `release/1.17` and never edited locally.
+  - Python 3.12 with [uv](https://github.com/astral-sh/uv), [ruff](https://github.com/astral-sh/ruff), and [ty](https://github.com/astral-sh/ty)
   - [just](https://github.com/casey/just) for development workflows
-  - [ros-mcp-server](https://github.com/robotmcp/ros-mcp-server) for live topic/service inspection via `rosbridge`.
-- All `src/` code is sim/hardware agnostic and do. Nodes and libraries in ros_px4_core do not import from sim/ or hardware/.
-- All internal coordinates are in [ROS REP-103](https://www.ros.org/reps/rep-0103.html) ENU (East-North-Up). Frame transformation to and from PX4-native NED (North-East-Down) occurs exclusively at the `offboard_controller` I/O.
-- Scenario-based integration tests in `tests/scenarios/` evaluate the live code and find capability regressions. Successfully validated system milestones are recorded in `tests/capabilities.toml`.
-- Live topics are validated against a schema manifest in `docs/TOPICS.md` using `just check-topics` to prevent interface drift.
-- TODO: something about merge logs
+  - [ros-mcp-server](https://github.com/robotmcp/ros-mcp-server) for live topic and service inspection via rosbridge
+- All `src/` code is sim/hardware agnostic. Nothing under `src/` imports from `sim/` or `hardware/`.
+- All internal coordinates follow [ROS REP-103](https://www.ros.org/reps/rep-0103.html) ENU frame. Conversion to and from PX4 NED happens only at the PX4 boundary in `offboard_controller` and `mission_manager`.
+- Scenario integration tests in `tests/scenarios/` validate the capabilities of the current codebase. Verified milestones are recorded in `tests/capabilities.toml`.
+- Live topics are checked against the defined topic manifest in [docs/TOPICS.md](docs/TOPICS.md) with `just check-topics` to prevent interface drift.
+-Each node writes logs to `logs/<node>.jsonl`. After a run, `just merge-logs` produces `logs/merged.jsonl` and `logs/run_summary.json`.
 
 ## Runtime architecture
 
 ```mermaid
 flowchart TD
-    subgraph agent_layer ["Agent & Inspection Tooling"]
-        Bridge["rosbridge (Port 9090)"]
+    subgraph agent_layer ["Agent and inspection tooling"]
+        Bridge["rosbridge (port 9090)"]
         MCP["ros-mcp-server"]
     end
 
-    subgraph ros_layer ["ROS 2 Jazzy (px4_ros_core)"]
-        mission["mission_manager\n(YAML to ENU Pose)"]
-        offboard["offboard_controller\n(ENU to NED Transform)"]
-        relay["px4_topic_relay\n(PX4 to ROS Topic Map)"]
+    subgraph ros_layer ["ROS 2 Jazzy (ros_px4_template_core)"]
+        mission["mission_manager\n(YAML to ENU pose)"]
+        offboard["offboard_controller\n(ENU to NED at PX4 I/O)"]
+        relay["px4_topic_relay\n(PX4 to ROS topic map)"]
     end
 
-    subgraph px4_layer ["PX4 v1.17 Autopilot"]
-        XRCE["MicroXRCE Agent (Port 8888)"]
-        SITL["PX4 SITL\n(Offboard Mode)"]
+    subgraph px4_layer ["PX4 v1.17 autopilot"]
+        XRCE["MicroXRCE Agent (port 8888)"]
+        SITL["PX4 SITL\n(offboard mode)"]
     end
 
     subgraph sim_layer ["Simulation"]
         Gazebo["Gazebo Harmonic"]
     end
 
-    %% Simulation & Autopilot Loop
     Gazebo <--> SITL
     SITL <-->|DDS| XRCE
 
-    %% Control Flow
-    mission -->|ENU Target Pose| offboard
-    XRCE -->|Raw Telemetry| relay
-    relay -->|Mapped ROS Topics| mission
-    offboard -->|NED Position Setpoints| XRCE
+    mission -->|ENU target pose| offboard
+    XRCE -->|raw telemetry| relay
+    relay -->|mapped ROS topics| mission
+    offboard -->|NED position setpoints| XRCE
 
-    %% Tooling Integration
-    ros_layer -->|ROS Topics & Services| Bridge
+    ros_layer -->|ROS topics and services| Bridge
     Bridge --> MCP
 ```
 
 ## Quick start
 
-Add your PX4, ROS, PX4 version, and PX4 message environment variables. If they are different, change them in this command.
-```bash
-echo -e 'PX4_DIR=/path/to/PX4-Autopilot\nROS_SETUP=/opt/ros/jazzy/setup.bash\nPX4_VERSION=v1.17.0\nPX4_MSGS_BRANCH=release/1.17' >> .env
-```
-
-Copy the example environment file and configure PX4_DIR to point to your PX4-Autopilot repository. [TODO: append and remove .env.example. have it be a single line command]
-
-Run `just` from your Ubuntu 24.04 environment.
-
-Copy [.env.example](.env.example) to `.env` and set `PX4_DIR` to your PX4-Autopilot clone before `just sim`.
+1. Add PX4, ROS, and version paths to `.env` (adjust paths if yours differ):
 
 ```bash
-cp .env.example .env
-just clone-px4-msgs    # once
-just setup             # uv sync + colcon build
-just sim               # full stack (GUI); or: just sim-headless
+echo -e 'PX4_DIR=/path/to/PX4-Autopilot\nROS_SETUP=/opt/ros/jazzy/setup.bash\nPX4_VERSION=v1.17.0\n' >> .env
 ```
 
-Give SITL a few minutes after launch (PX4 boot, EKF2, preflight). Then:
+2. Initialize and build:
+
+```bash
+just clone-px4-msgs   # one-time: fetch px4_msgs on release/1.17
+just setup            # uv sync + colcon build
+```
+
+3. Launch the full simulation stack:
+
+```bash
+just sim              # Gazebo (GUI), PX4 SITL, XRCE, ROS nodes, rosbridge
+```
+
+4. With the sim loaded, run a scenario and record the capability:
 
 ```bash
 just scenario 01_arm_takeoff
 just mark-capability arm_takeoff sim
 ```
 
-**Headless / CI:** `just sim-headless` · **Stop:** `just sim-stop`
+5. Stop everything:
 
-**Inspect / ArUco:** `just demo-inspect` (sim + vision) or `just sim-inspect` (sim only) — [docs/MISSIONS.md](docs/MISSIONS.md)
+```bash
+just sim-stop
+```
 
 ## Project structure
 
 ```
 ros-px4-template/
 ├── src/
-│   ├── px4_ros_core/          # Application: nodes, lib/, bridges/
-│   │   ├── nodes/             # offboard_controller, mission_manager, px4_topic_relay, …
-│   │   ├── lib/               # frame_transforms, mission_runtime, StructuredLogger, …
-│   │   └── bridges/           # PX4-specific glue (kept thin)
-│   ├── px4_ros_msgs/          # Custom messages (ControllerStatus, MissionStatus, …)
-│   └── px4_msgs/              # Upstream PX4 interfaces (cloned, branch release/1.17)
-├── sim/                       # Worlds, models, sim_full.launch.py (Gazebo + PX4 + agents)
-├── hardware/                  # hardware.launch.py — rosbridge + core nodes only
+│   ├── core/
+│   │   └── ros_px4_template_core/   # Core nodes, lib, bridges (sim/hardware agnostic)
+│   │       ├── nodes/               # offboard_controller, mission_manager, px4_topic_relay, ...
+│   │       ├── lib/                 # frame_transforms, mission_runtime, StructuredLogger
+│   │       └── bridges/             # PX4 communication helpers
+│   ├── px4_ros_msgs/                # Custom msgs (ControllerStatus, MissionStatus)
+│   ├── px4_ros_sim/                 # Sim-only ROS helpers (not imported from core)
+│   └── px4_msgs/                    # Upstream PX4 micro XRCE defs (release/1.17)
+├── sim/                             # Gazebo worlds, models, sim_full.launch.py
+├── hardware/                        # Serial FC + rosbridge; no Gazebo
 ├── config/
-│   ├── params/                # common.yaml, sim.yaml, hardware.yaml (layered)
-│   └── missions/              # YAML missions (ENU waypoints)
+│   ├── params/                      # common, sim, hardware overlays
+│   └── missions/                    # YAML missions (ENU meters)
 ├── tests/
-│   ├── scenarios/             # Live acceptance (asyncio)
-│   ├── unit/                  # Pure lib tests (no ROS graph)
-│   └── capabilities.toml      # Verified capabilities registry
-├── tools/                     # capabilities CLI, log merger, GCS heartbeat, topic checker
-├── docs/                      # FRAMES, TOPICS, MCP, MISSIONS, BACKLOG
-├── justfile                   # sim, build, check, scenarios, logs
-└── pyproject.toml             # uv + ruff + ty (not a ROS package)
+│   ├── scenarios/                   # Live acceptance tests on a running graph
+│   ├── unit/                        # Pure logic (no ROS graph)
+│   └── capabilities.toml            # Verified capability registry
+├── tools/                           # capabilities CLI, log merger, topic checker, ...
+├── docs/                            # FRAMES, TOPICS, MCP, MISSIONS, ...
+├── AGENTS.md                        # Agent operating guide (this repo)
+├── justfile
+└── pyproject.toml                   # uv, ruff, ty
 ```
-
-**Launch split:** `sim/launch/` — Gazebo, PX4 SITL, MicroXRCE, clock bridge, optional vision, core nodes. `hardware/launch/` — rosbridge + same core nodes for a real FCU. No `/clock` → use full `just sim`, not hardware-only launch.
-
-**Config layering:** `config/params/common.yaml` plus `sim.yaml` / `hardware.yaml` overrides; missions in `config/missions/*.yaml` (ENU meters).
 
 ## Everyday commands
 
 | Command | Purpose |
 |---------|---------|
-| `just` / `just --list` | All recipes (aliases: `s`→sim, `b`→build, `hw`→hardware) |
-| `just build` | `colcon` with symlink install |
-| `just check` | ruff + ty + unit tests + invariant checks (no ROS running) |
+| `just` | List all workflows |
+| `just build` | `colcon build` with symlink install |
+| `just check` | ruff, invariants, ty, unit tests |
 | `just sim` / `just sim-headless` | Full simulation stack |
-| `just hardware` | Rosbridge + core nodes (real vehicle) |
-| `just scenario <name>` | Run `tests/scenarios/<name>.py` against live graph |
-| `just capabilities` | Show / edit capability status |
-| `just mark-capability <id> sim` | Record a passed scenario |
-| `just check-topics` | Compare live topics to `docs/TOPICS.md` (sim up) |
-| `just merge-logs` | Merge JSONL → `logs/merged.jsonl` + `run_summary.json` |
+| `just hardware` | Core nodes + rosbridge on a serial FC |
+| `just scenario <name>` | Run `tests/scenarios/<name>.py` (no `.py` suffix) |
+| `just capabilities` | Show capability registry |
+| `just check-topics` | Audit live topics vs `docs/TOPICS.md` (sim must be up) |
+| `just merge-logs` | Merge JSONL into `logs/merged.jsonl` + `logs/run_summary.json` |
 
 ## Docs
-- [AGENTS.md](AGENTS.md)
-- [ENU / NED / body frames](docs/FRAMES.md)
-- [Topic owners and types](docs/TOPICS.md)
-- [ROS MCP server](docs/MCP.md)
+
+| Doc | Contents |
+|-----|----------|
+| [AGENTS.md](AGENTS.md) | Agent workflows, invariants, troubleshooting, logs |
+| [docs/FRAMES.md](docs/FRAMES.md) | ENU / NED / body frames |
+| [docs/TOPICS.md](docs/TOPICS.md) | Topic owners and types |
+| [docs/MCP.md](docs/MCP.md) | rosbridge and ros-mcp-server |
+| [docs/MISSIONS.md](docs/MISSIONS.md) | Mission phases and YAML schema |

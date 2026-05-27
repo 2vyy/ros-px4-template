@@ -2,9 +2,11 @@
 
 Operating notes for an AI agent driving this repo. Optimized for debugging, running `just` workflows across native / WSL / distrobox, and core feature work.
 
+**README vs this file:** [README.md](README.md) is the project overview (stack, [runtime architecture](README.md#runtime-architecture), [project structure](README.md#project-structure), quick start, everyday commands). This file is the operational guide: invariants, verification tiers, logs, MCP, and failure modes. Read the README once for context; use the sections below day to day.
+
 ## Initial setup
 
-Complete [README §Quick start](README.md#quick-start) (through `just sim` or `just hardware`). For MCP and rosbridge checks, see [docs/MCP.md](docs/MCP.md).
+Complete [README quick start](README.md#quick-start) (through `just sim` or `just hardware`). For MCP and rosbridge checks, see [docs/MCP.md](docs/MCP.md).
 
 ## Where to run
 
@@ -85,6 +87,7 @@ Capability registry: `tests/capabilities.toml`. `just capabilities` shows status
 
 | Need | Where |
 |------|-------|
+| Stack, architecture diagram, repo layout | [README.md](README.md) |
 | Frames and ENU/NED rules | [docs/FRAMES.md](docs/FRAMES.md) |
 | Topic owners and types | [docs/TOPICS.md](docs/TOPICS.md) |
 | MCP / rosbridge | [docs/MCP.md](docs/MCP.md). Config: `.cursor/mcp.json` |
