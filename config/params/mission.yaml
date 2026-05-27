@@ -1,0 +1,5 @@
+mission_manager:
+  ros__parameters:
+    mission_file: ""
+    tick_rate_hz: 10.0
+    takeoff_altitude_m: 2.5

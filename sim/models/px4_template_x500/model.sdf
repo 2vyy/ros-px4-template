@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <model name="px4_template_x500">
+    <include><uri>model://x500</uri></include>
+  </model>
+</sdf>

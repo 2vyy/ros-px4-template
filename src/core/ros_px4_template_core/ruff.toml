@@ -1,0 +1,8 @@
+extend = "../../../pyproject.toml"
+
+# TID251: src/ must not depend on sim/ or hardware/ trees (launch-only layers)
+[lint.flake8-tidy-imports.banned-api]
+"sim" = { msg = "src/ must not import sim/ — sim logic stays in sim/launch/" }
+"sim.*" = { msg = "src/ must not import sim/" }
+"hardware" = { msg = "src/ must not import hardware/ — use launch files only" }
+"hardware.*" = { msg = "src/ must not import hardware/" }

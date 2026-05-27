@@ -1,0 +1,13 @@
+Panels:
+  - Class: rviz_common/Displays
+Visualization Manager:
+  Displays:
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+  Global Options:
+    Fixed Frame: map
+Window Geometry:
+  Height: 720
+  Width: 1280

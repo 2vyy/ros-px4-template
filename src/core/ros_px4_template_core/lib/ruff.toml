@@ -1,0 +1,10 @@
+extend = "../../../../pyproject.toml"
+
+# TID251: any import of rclpy in lib/ (including TYPE_CHECKING) breaks sim-blind unit tests
+[lint.flake8-tidy-imports.banned-api]
+"rclpy" = { msg = "lib/ must not import rclpy — keep pure Python in core/lib/" }
+"rclpy.*" = { msg = "lib/ must not import rclpy — keep pure Python in core/lib/" }
+
+# TID253: top-level `import rclpy` even inside functions still violates lib/ layering
+[lint.flake8-tidy-imports]
+banned-module-level-imports = ["rclpy"]

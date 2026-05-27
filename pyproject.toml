@@ -1,0 +1,128 @@
+# Dev tooling root — NOT a ROS package. ROS packages live under src/.
+# PX4 firmware target: v1.17.0 — px4_msgs branch release/1.17 must match.
+[project]
+name = "px4-ros-template-dev-tools"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "pyyaml>=6.0",
+    "numpy>=2.0",
+    "rich>=13.7",
+    "typer>=0.12",
+    "tomli-w>=1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.4",
+    "ty>=0.0.1a8",
+    "tomli>=2.0",
+]
+
+[tool.ruff]
+exclude = [".venv", "build", "install", "log", "src/px4_msgs"]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests", "tools"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "RUF", "TID251"]
+ignore = ["D100", "D104"]
+
+# Hardening rules (phased rollout — each group has a concrete failure mode in this repo)
+extend-select = [
+    # Phase A — ROS node + import graph
+    "B006",   # mutable default in def (timer/callback footgun)
+    "B904",   # raise without `from err` (hides PX4/sim tracebacks)
+    "TID252", # `from ..pkg` imports (use absolute core.*)
+    "LOG015", # logging.* on root logger (use get_logger / StructuredLogger)
+    # Phase B — subprocess/shell in tools/ and launch
+    "S307",   # eval/exec (guard for future CLI code)
+    "S603",   # subprocess with variable program name
+    "S602",   # subprocess shell=True (launch bash -c)
+    # Phase C — tests + paths + Typer (B008 handled via extend-immutable-calls)
+    "PT011",  # pytest.raises without match=
+    "PT018",  # composite assert
+    "PT023",  # pytest mark trailing ()
+    "PTH118", # os.path.join
+    "PTH120", # os.path.dirname
+    "PTH123", # open() not via Path
+    # Phase D — preview: zip strictness for paired arrays
+    "B905",   # zip() without strict=
+]
+
+preview = true
+explicit-preview-rules = true
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
+[tool.ruff.lint.flake8-bandit]
+check-typed-exception = true
+
+[tool.ruff.lint.flake8-pytest-style]
+raises-require-match-for = ["Exception", "ValueError", "RuntimeError"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core"]
+known-third-party = [
+    "launch",
+    "launch_ros",
+    "rclpy",
+    "px4_msgs",
+    "px4_ros_msgs",
+    "geometry_msgs",
+    "std_msgs",
+    "std_srvs",
+    "ament_index_python",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/core/ros_px4_template_core/nodes/**" = [
+    "D107",  # __init__ docstring not required on ament nodes
+]
+"tools/**" = [
+    "E501",  # long CLI help strings
+    "T201",  # intentional stdout for check_invariants / CLI UX
+    "S603",  # subprocess(["git", ...]) in check_invariants — fixed argv, not user shell
+    "S607",  # bare `git` on PATH is normal for dev tools
+]
+"sim/**" = [
+    "INP001",  # launch trees are not import packages
+]
+"hardware/**" = [
+    "INP001",
+]
+"**/launch/**/*.py" = [
+    "INP001",
+    "S602",   # ExecuteProcess bash -c for PX4_GZ_WORLD env (sim_full.launch.py)
+    "S607",   # bare ros2 / MicroXRCEAgent executables on PATH
+    "T201",   # launch files do not use logging
+]
+"tests/scenarios/**" = [
+    "N999",   # 01_*.py — run as scripts via `just scenario`, not importable modules
+    "INP001",
+]
+"tests/**" = [
+    "S101",   # assert in tests is required
+    "T201",   # pytest output / debug prints during dev
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ty.environment]
+python-version = "3.12"
+extra-paths = ["src/core", "tools"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+asyncio_mode = "auto"

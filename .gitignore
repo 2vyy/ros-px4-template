@@ -1,0 +1,15 @@
+/logs/
+/build/
+/install/
+/log/
+__pycache__/
+*.pyc
+.venv/
+.env
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+docs/superpowers/specs/
+.cursor/
+.claude/
