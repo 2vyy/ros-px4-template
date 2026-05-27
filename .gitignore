@@ -10,6 +10,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .DS_Store
-docs/superpowers/specs/
+docs/superpowers/
 .cursor/
 .claude/
+.codebase-memory/
