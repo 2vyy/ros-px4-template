@@ -117,6 +117,27 @@ def _stop_ros2_daemon() -> None:
         pass
 
 
+def _graceful_px4_stop(timeout_s: float = 1.5) -> None:
+    """SIGTERM px4 process and wait briefly so it can flush parameters.bson."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-x", "px4"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        for pid_str in result.stdout.splitlines():
+            pid_str = pid_str.strip()
+            if pid_str.isdigit():
+                try:
+                    os.kill(int(pid_str), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+        time.sleep(timeout_s)
+    except Exception:
+        pass
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Stop sim processes.")
     ap.add_argument(
@@ -136,6 +157,8 @@ def main() -> None:
             clear_world_record()
         except Exception:
             pass
+
+    _graceful_px4_stop()
 
     # --- Pass 1: kill pidfile group + all known patterns in parallel ---
     with ThreadPoolExecutor(max_workers=3) as ex:

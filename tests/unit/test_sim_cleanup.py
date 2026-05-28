@@ -29,3 +29,44 @@ def test_full_patterns_is_superset():
         assert pat in sim_cleanup._FULL_PATTERNS, (
             "_FULL_PATTERNS must contain everything in _PATTERNS"
         )
+
+
+import os
+import signal
+from unittest.mock import MagicMock, call, patch
+
+
+def test_graceful_px4_stop_sends_sigterm():
+    """_graceful_px4_stop must SIGTERM the PX4 pid found by pgrep."""
+    mock_run = MagicMock()
+    mock_run.return_value = MagicMock(stdout="1234\n5678\n")
+    with (
+        patch("sim_cleanup.subprocess.run", mock_run),
+        patch("sim_cleanup.os.kill") as mock_kill,
+        patch("sim_cleanup.time.sleep"),
+    ):
+        from sim_cleanup import _graceful_px4_stop
+        _graceful_px4_stop()
+    assert call(1234, signal.SIGTERM) in mock_kill.call_args_list
+    assert call(5678, signal.SIGTERM) in mock_kill.call_args_list
+
+
+def test_graceful_px4_stop_silent_on_no_px4():
+    """_graceful_px4_stop must not raise if pgrep finds nothing."""
+    mock_run = MagicMock()
+    mock_run.return_value = MagicMock(stdout="")
+    with (
+        patch("sim_cleanup.subprocess.run", mock_run),
+        patch("sim_cleanup.os.kill") as mock_kill,
+        patch("sim_cleanup.time.sleep"),
+    ):
+        from sim_cleanup import _graceful_px4_stop
+        _graceful_px4_stop()
+    mock_kill.assert_not_called()
+
+
+def test_graceful_px4_stop_silent_on_exception():
+    """_graceful_px4_stop must not propagate exceptions."""
+    with patch("sim_cleanup.subprocess.run", side_effect=Exception("fail")):
+        from sim_cleanup import _graceful_px4_stop
+        _graceful_px4_stop()  # must not raise
