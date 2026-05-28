@@ -270,6 +270,7 @@ def sim(
     vision: str = typer.Option("false", "--vision", help="Enable vision/aruco detection"),
     port: str = typer.Option("/dev/ttyUSB0", "--port", help="Serial port for hardware"),
     baud: int = typer.Option(921600, "--baud", help="Baudrate for hardware serial"),
+    build: bool = typer.Option(True, "--build/--no-build", help="Build workspace before running"),
 ):
     """Simulation & hardware runner. Modes: gui, headless, bg, px4, edit, hardware, stop, kill.
 
@@ -287,7 +288,8 @@ def sim(
         return
 
     if mode == "hardware":
-        _build_workspace()
+        if build:
+            _build_workspace()
         console.print(f"[cyan]Connecting to hardware on port {port} at {baud} baud...[/cyan]")
         try:
             subprocess.run(
@@ -311,7 +313,7 @@ def sim(
         return
 
     # Check preflight first for all active sim modes
-    res = subprocess.run(["uv", "run", "python", "tools/preflight.py"], cwd=str(ROOT))
+    res = subprocess.run(["uv", "run", "python", "tools/preflight.py", f"--mode={mode}"], cwd=str(ROOT))
     if res.returncode != 0:
         console.print("[bold red]Preflight check failed. Aborting simulation launch.[/bold red]")
         raise typer.Exit(1) from None
@@ -372,10 +374,31 @@ def sim(
         env["LD_LIBRARY_PATH"] = f"{env['PX4_GZ_PLUGINS']}:{env.get('LD_LIBRARY_PATH', '')}"
 
         cwd = Path(px4_dir) / "build" / "px4_sitl_default"
+        
+        sys.path.insert(0, str(ROOT / "tools"))
+        from gz_lifecycle import gazebo_matches, is_model_present
+        
+        px4_env = {
+            **env,
+            "PX4_GZ_WORLD": world,
+            "PX4_SIM_MODEL": f"gz_{model}",
+            "PX4_GZ_STANDALONE": "1",
+            "PX4_PARAM_COM_ARM_WO_GPS": "1",
+            "PX4_PARAM_CBRK_SUPPLY_CHK": "894281",
+            "PX4_PARAM_COM_SPOOLUP_TIME": "0.0",
+            "PX4_PARAM_EKF2_GPS_CHECK": "0",
+            "PX4_PARAM_EKF2_GPS_CTRL": "7",
+        }
+        if gazebo_matches(world) and is_model_present(world, f"{model}_0"):
+            console.print(f"[cyan]Gazebo warm for world '{world}' — attaching to existing '{model}_0' model...[/cyan]")
+            px4_env["PX4_GZ_MODEL_NAME"] = f"{model}_0"
+        else:
+            console.print(f"[cyan]Gazebo cold or model missing for world '{world}' — PX4 will spawn a new model...[/cyan]")
+
         try:
             subprocess.run(
                 ["./bin/px4"],
-                env={**env, "PX4_GZ_WORLD": world, "PX4_SIM_MODEL": f"gz_{model}"},
+                env=px4_env,
                 cwd=str(cwd),
                 check=True,
             )
@@ -396,7 +419,8 @@ def sim(
             except (ProcessLookupError, ValueError):
                 pass
 
-        _build_workspace()
+        if build:
+            _build_workspace()
 
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         log_file = LOG_DIR / f"sim_{datetime.now().strftime('%Y%m%dT%H%M%S')}.log"
@@ -444,7 +468,8 @@ def sim(
         return
 
     # Foreground Simulation (gui, headless, inspect)
-    _build_workspace()
+    if build:
+        _build_workspace()
 
     world_val = world
     vision_val = vision
@@ -638,6 +663,20 @@ def test(
         finally:
             cleanup()
             atexit.unregister(cleanup)
+
+
+@app.command()
+def bench(
+    fast_ekf2: bool = typer.Option(False, "--fast-ekf2", help="5× pre-arm physics (disclosed in output)"),
+):
+    """Honest warm-relaunch benchmark: stop → relaunch → stack ready (1× physics, no cheating)."""
+    cmd = ["uv", "run", "python", "tools/bench_relaunch.py"]
+    if fast_ekf2:
+        cmd.append("--fast-ekf2")
+    try:
+        subprocess.run(cmd, check=True, cwd=str(ROOT))
+    except subprocess.CalledProcessError:
+        raise typer.Exit(1) from None
 
 
 @app.command()

@@ -29,3 +29,7 @@ test *args:
 # Observability hub (summary, window, grep, errors, tail, merge, events, status, topics, and capabilities)
 log *args:
     @just _run log {{args}}
+
+# Warm-relaunch benchmark: stop → relaunch → stack ready (honest 1× physics)
+bench *args:
+    @just _run bench {{args}}
