@@ -19,6 +19,21 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+def _require_px4_dir() -> str:
+    """Return PX4_DIR or raise with a clear, actionable error."""
+    value = os.environ.get("PX4_DIR", "").strip()
+    if not value:
+        raise RuntimeError(
+            "PX4_DIR is not set. Create .env with PX4_DIR=/path/to/PX4-Autopilot "
+            "(see CLAUDE.md). The launch cannot continue without it."
+        )
+    if not Path(value).is_dir():
+        raise RuntimeError(
+            f"PX4_DIR={value!r} does not point to a directory. Check .env / your PX4 checkout."
+        )
+    return value
+
+
 def _world_sdf(project_root: Path, px4_dir: str, world: str) -> tuple[str, str]:
     sim_worlds = project_root / "sim" / "worlds"
     px4_worlds = Path(px4_dir) / "Tools" / "simulation" / "gz" / "worlds"
@@ -110,7 +125,7 @@ def _gz_px4_stack(context, *args, **kwargs):
     headless = LaunchConfiguration("headless").perform(context).lower() == "true"
 
     project_root = Path(__file__).resolve().parents[2]
-    px4_dir = os.environ.get("PX4_DIR", "/home/ivy/robotics/PX4-Autopilot")
+    px4_dir = _require_px4_dir()
     build = _px4_build(px4_dir)
     world_sdf, px4_gz_worlds = _world_sdf(project_root, px4_dir, world)
     gz_paths = _gz_paths(project_root, px4_dir)
@@ -150,7 +165,7 @@ def _gz_px4_stack(context, *args, **kwargs):
 
 def generate_launch_description() -> LaunchDescription:
     project_root = Path(__file__).resolve().parents[2]
-    px4_dir = os.environ.get("PX4_DIR", "/home/ivy/robotics/PX4-Autopilot")
+    px4_dir = _require_px4_dir()
     gz_paths = _gz_paths(project_root, px4_dir)
 
     hardware_launch = PythonLaunchDescriptionSource(

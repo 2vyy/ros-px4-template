@@ -8,11 +8,15 @@ Exit 0 if clean, 1 if processes remain after SIGKILL.
 
 from __future__ import annotations
 
+import json
 import os
 import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
+
+_PIDFILE = Path(os.environ.get("SIM_PIDFILE", "logs/sim.pid"))
 
 _PATTERNS = [
     r"ros2 launch.*sim_full",
@@ -58,10 +62,50 @@ def _all_live_pids() -> set[int]:
     return found
 
 
+def _kill_pidfile_group() -> int | None:
+    """If logs/sim.pid exists, SIGTERM that process group. Returns the pgid hit, or None."""
+    if not _PIDFILE.exists():
+        return None
+    try:
+        pid = int(_PIDFILE.read_text().strip())
+    except (ValueError, OSError):
+        return None
+    try:
+        pgid = os.getpgid(pid)
+    except ProcessLookupError:
+        # stale pidfile
+        _PIDFILE.unlink(missing_ok=True)
+        return None
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+    return pgid
+
+
 def main() -> None:
+    pgid_hit = _kill_pidfile_group()
+    if pgid_hit is not None:
+        time.sleep(2.0)
+        # SIGKILL any survivors in the group
+        try:
+            os.killpg(pgid_hit, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        _PIDFILE.unlink(missing_ok=True)
+
     initial = _all_live_pids()
     if not initial:
-        print('{"stopped": [], "remaining": [], "clean": true}')
+        print(
+            json.dumps(
+                {
+                    "stopped_via_pidfile": pgid_hit is not None,
+                    "stopped": [],
+                    "remaining": [],
+                    "clean": True,
+                }
+            )
+        )
         return
 
     _kill_pids(list(initial), signal.SIGTERM)
@@ -84,9 +128,8 @@ def main() -> None:
     except Exception:
         pass
 
-    import json
-
     report = {
+        "stopped_via_pidfile": pgid_hit is not None,
         "stopped": sorted(initial - remaining),
         "remaining": sorted(remaining),
         "clean": len(remaining) == 0,

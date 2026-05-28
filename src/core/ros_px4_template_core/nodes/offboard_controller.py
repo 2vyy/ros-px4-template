@@ -15,6 +15,7 @@ from px4_msgs.msg import (
     OffboardControlMode,
     TrajectorySetpoint,
     VehicleCommand,
+    VehicleCommandAck,
     VehicleLocalPosition,
     VehicleStatus,
 )
@@ -22,12 +23,13 @@ from px4_ros_msgs.msg import ControllerStatus
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
+from ros_px4_template_core.lib import events
 from ros_px4_template_core.lib.frame_transforms import enu_to_ned, ned_to_enu
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 
 _PX4_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    durability=DurabilityPolicy.VOLATILE,
     history=HistoryPolicy.KEEP_LAST,
     depth=10,
 )
@@ -39,6 +41,16 @@ _RELIABLE_QOS = QoSProfile(
 
 # PX4 custom main mode OFFBOARD
 _PX4_CUSTOM_MAIN_MODE_OFFBOARD = 6
+
+_ACK_RESULT_NAMES = {
+    0: "ACCEPTED",
+    1: "TEMPORARILY_REJECTED",
+    2: "DENIED",
+    3: "UNSUPPORTED",
+    4: "FAILED",
+    5: "IN_PROGRESS",
+    6: "CANCELLED",
+}
 
 
 class OffboardController(Node):
@@ -71,6 +83,8 @@ class OffboardController(Node):
         self._setpoint_enu = (0.0, 0.0, self._target_alt)
         self._armed = False
         self._nav_state = 0
+        self._arm_failed = False
+        self._arm_fail_reason = ""
 
         self.create_subscription(
             PoseStamped, "/drone/target_pose", self._target_pose_cb, _RELIABLE_QOS
@@ -83,6 +97,12 @@ class OffboardController(Node):
         )
         self.create_subscription(
             VehicleStatus, "/fmu/out/vehicle_status", self._status_cb, _PX4_QOS
+        )
+        self.create_subscription(
+            VehicleCommandAck,
+            "/fmu/out/vehicle_command_ack",
+            self._command_ack_cb,
+            _PX4_QOS,
         )
 
         self._pub_setpoint = self.create_publisher(
@@ -116,6 +136,24 @@ class OffboardController(Node):
         self._armed = msg.arming_state == VehicleStatus.ARMING_STATE_ARMED
         self._nav_state = int(msg.nav_state)
 
+    def _command_ack_cb(self, msg: VehicleCommandAck) -> None:
+        if msg.command != VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM:
+            return
+        result = int(msg.result)
+        if result == VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED:
+            self.slog.event(events.ARM_ACK_OK)
+            return
+        reason = _ACK_RESULT_NAMES.get(result, f"unknown({result})")
+        self.slog.event(
+            events.ARM_ACK_DENIED, result=result, reason=reason, param1=float(msg.result_param1)
+        )
+        # Terminal failures: stop retrying. TEMPORARILY_REJECTED → keep trying.
+        if result != VehicleCommandAck.VEHICLE_CMD_RESULT_TEMPORARILY_REJECTED:
+            if not self._arm_failed:
+                self._arm_failed = True
+                self._arm_fail_reason = reason
+                self.slog.error("Arm command failed terminally", reason=reason, result=result)
+
     def _elapsed(self) -> float:
         return time.monotonic() - self._start_time
 
@@ -134,14 +172,16 @@ class OffboardController(Node):
                 self._send_offboard_mode()
                 self._last_offboard_try = elapsed
 
-        if not self._armed and elapsed >= self._arm_delay_s:
+        if not self._armed and elapsed >= self._arm_delay_s and not self._arm_failed:
             if elapsed - self._last_arm_try >= 2.0:
                 self._send_arm(True)
                 self._last_arm_try = elapsed
-                self.slog.event("ARM_COMMAND_SENT")
+                self.slog.event(events.ARM_COMMAND_SENT)
 
         if self._armed:
             self._state = "ARMED"
+        elif self._arm_failed:
+            self._state = "ARM_FAILED"
         elif elapsed >= self._arm_delay_s:
             self._state = "ARMING"
         else:
@@ -206,7 +246,7 @@ class OffboardController(Node):
             param1=1.0,
             param2=float(_PX4_CUSTOM_MAIN_MODE_OFFBOARD),
         )
-        self.slog.event("OFFBOARD_MODE_COMMAND")
+        self.slog.event(events.OFFBOARD_MODE_COMMAND)
 
     def destroy_node(self) -> None:
         self.slog.close()

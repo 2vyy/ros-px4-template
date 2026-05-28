@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ros_px4_template_core.lib import events
 from ros_px4_template_core.lib.marker_target import MarkerTracker, marker_hover_target, pose_to_enu
 from ros_px4_template_core.lib.waypoint_mission import (
     EnuPoint,
@@ -54,7 +55,7 @@ def _emit(ctx: MissionContext, event: str, **fields: object) -> None:
 
 def _set_phase(ctx: MissionContext, new_phase: str) -> None:
     if ctx.phase != new_phase:
-        _emit(ctx, "PHASE_CHANGE", **{"from": ctx.phase, "to": new_phase})
+        _emit(ctx, events.PHASE_CHANGE, **{"from": ctx.phase, "to": new_phase})
         ctx.phase = new_phase
 
 
@@ -65,7 +66,7 @@ def _advance_waypoint(ctx: MissionContext, mission: WaypointMission, now: float)
         return
     _emit(
         ctx,
-        "WAYPOINT_REACHED",
+        events.WAYPOINT_REACHED,
         index=idx,
         x=wp.x,
         y=wp.y,
@@ -102,7 +103,7 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
         if wp is None:
             if mission.marker is None:
                 _set_phase(ctx, PHASE_DONE)
-                _emit(ctx, "MISSION_DONE")
+                _emit(ctx, events.MISSION_DONE)
             else:
                 ctx.target = ctx.target
         else:
@@ -115,7 +116,7 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
                     if current_waypoint(mission, ctx.waypoint_index) is None:
                         if mission.marker and inputs.marker_valid:
                             _set_phase(ctx, PHASE_HOVER_MARKER)
-                            _emit(ctx, "MARKER_ACQUIRED", marker_id=0)
+                            _emit(ctx, events.MARKER_ACQUIRED, marker_id=0)
             else:
                 ctx.waypoint_hold_start = None
 
@@ -128,7 +129,7 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
             _set_phase(ctx, PHASE_HOVER_MARKER)
             m = pose_to_enu(inputs.marker_position)
             ctx.target = marker_hover_target(m, mission.marker)
-            _emit(ctx, "MARKER_ACQUIRED", marker_id=0)
+            _emit(ctx, events.MARKER_ACQUIRED, marker_id=0)
 
     elif ctx.phase == PHASE_HOVER_MARKER:
         cfg = mission.marker
@@ -143,7 +144,7 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
             else:
                 ctx.marker_tracker.note_invalid(inputs.now)
                 if ctx.marker_tracker.lost_debounced(cfg, inputs.now):
-                    _emit(ctx, "MARKER_LOST")
+                    _emit(ctx, events.MARKER_LOST)
                     ctx.marker_seen = False
 
             if ctx.hover_start is None and reached(pos, ctx.target, tol):
@@ -151,7 +152,7 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
             if ctx.hover_start is not None:
                 if inputs.now - ctx.hover_start >= cfg.hold_duration_s:
                     _set_phase(ctx, PHASE_DONE)
-                    _emit(ctx, "MISSION_DONE")
+                    _emit(ctx, events.MISSION_DONE)
 
     elif ctx.phase == PHASE_DONE:
         pass

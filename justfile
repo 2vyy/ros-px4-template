@@ -3,7 +3,7 @@
 set shell := ["bash", "-ec"]
 set dotenv-load := true
 
-PX4_DIR := env_var_or_default("PX4_DIR", "/home/ivy/robotics/PX4-Autopilot")
+PX4_DIR := env_var_or_default("PX4_DIR", "")
 PX4_VERSION := env_var_or_default("PX4_VERSION", "v1.17.0")
 PX4_MSGS_BRANCH := env_var_or_default("PX4_MSGS_BRANCH", "release/1.17")
 ROS_SETUP := env_var_or_default("ROS_SETUP", "/opt/ros/jazzy/setup.bash")
@@ -52,6 +52,7 @@ sim world="default" model="x500" enable_vision="false" headless="false":
         2>&1 | tee {{LOG_DIR}}/sim_$(date +%Y%m%dT%H%M%S).log
 
 sim-px4 world="default" model="x500" headless="false":
+    : "${PX4_DIR:?PX4_DIR not set — create .env with PX4_DIR=/path/to/PX4-Autopilot}" && \
     export GZ_IP=127.0.0.1 && \
     export GZ_SIM_RESOURCE_PATH="{{GZ_RESOURCE}}:${GZ_SIM_RESOURCE_PATH:-}" && \
     export PX4_GZ_WORLDS="{{PX4_DIR}}/Tools/simulation/gz/worlds" && \
@@ -73,6 +74,7 @@ xrce:
 gazebo-edit world="default":
     #!/usr/bin/env bash
     set -euo pipefail
+    : "${PX4_DIR:?PX4_DIR not set — create .env with PX4_DIR=/path/to/PX4-Autopilot}"
     export GZ_SIM_RESOURCE_PATH="{{GZ_RESOURCE}}:${GZ_SIM_RESOURCE_PATH:-}"
     local_world="sim/worlds/{{world}}.sdf"
     px4_world="{{PX4_DIR}}/Tools/simulation/gz/worlds/{{world}}.sdf"
@@ -152,6 +154,7 @@ setup:
     @echo "Done. Run: just sim"
 
 update-px4 version=PX4_VERSION:
+    : "${PX4_DIR:?PX4_DIR not set — create .env with PX4_DIR=/path/to/PX4-Autopilot}" && \
     cd {{PX4_DIR}} && git fetch --tags && git checkout {{version}} && git submodule update --recursive
 
 clone-px4-msgs:
@@ -227,6 +230,31 @@ ps-check:
 sim-headless world="default" model="x500" enable_vision="false":
     just sim {{world}} {{model}} {{enable_vision}} true
 
+# Start headless sim in background (own session), write PID to logs/sim.pid. Use `just sim-stop` to terminate.
+sim-bg world="default" model="x500" enable_vision="false":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "{{LOG_DIR}}"
+    pidfile="{{LOG_DIR}}/sim.pid"
+    if [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+        echo "{\"error\": \"sim already running\", \"pid\": $(cat "$pidfile"), \"hint\": \"just sim-stop\"}"
+        exit 1
+    fi
+    log_file="{{LOG_DIR}}/sim_$(date +%Y%m%dT%H%M%S).log"
+    setsid bash -c "
+        source '{{ROS_SETUP}}'
+        source '{{WS_INSTALL}}'
+        export GZ_IP=127.0.0.1
+        export GZ_SIM_RESOURCE_PATH='{{GZ_RESOURCE}}:\${GZ_SIM_RESOURCE_PATH:-}'
+        export HEADLESS=1
+        exec ros2 launch '{{justfile_directory()}}/sim/launch/sim_full.launch.py' \
+            world:={{world}} model:={{model}} enable_vision:={{enable_vision}} \
+            headless:=true log_dir:='{{LOG_DIR}}'
+    " >"$log_file" 2>&1 < /dev/null &
+    sim_pid=$!
+    echo "$sim_pid" > "$pidfile"
+    echo "{\"started\": true, \"pid\": $sim_pid, \"log\": \"$log_file\", \"pidfile\": \"$pidfile\"}"
+
 # Remove per-node JSONL logs, run summary, and scenario reports for a clean-slate run.
 clean-logs:
     rm -f {{LOG_DIR}}/*.jsonl {{LOG_DIR}}/run_summary.json {{LOG_DIR}}/scenario_*.json
@@ -244,31 +272,21 @@ preflight:
 # Full headless e2e cycle: clean-logs, preflight, sim, wait-ready, all scenarios, check-topics, merge-logs.
 e2e:
     #!/usr/bin/env bash
-    set -euo pipefail
+    set -uo pipefail
     just clean-logs
     just preflight
-    mkdir -p {{LOG_DIR}}
-    source {{ROS_SETUP}} && source {{WS_INSTALL}} && \
-    export GZ_IP=127.0.0.1 && \
-    export GZ_SIM_RESOURCE_PATH="{{GZ_RESOURCE}}:${GZ_SIM_RESOURCE_PATH:-}" && \
-    export HEADLESS=1 && \
-    ros2 launch {{justfile_directory()}}/sim/launch/sim_full.launch.py \
-        headless:=true \
-        log_dir:={{LOG_DIR}} \
-        2>&1 | tee {{LOG_DIR}}/e2e_headless.log &
-    SIM_PID=$!
-    cleanup() {
-        kill "$SIM_PID" 2>/dev/null || true
-        just sim-stop 2>/dev/null || true
-    }
+    just sim-bg
+    cleanup() { just sim-stop 2>/dev/null || true; }
     trap cleanup EXIT INT TERM
     just wait-ready
-    just scenario 01_arm_takeoff
-    just scenario 02_hover_hold
-    just scenario 03_waypoint
-    just check-topics
+    fails=0
+    for s in 01_arm_takeoff 02_hover_hold 03_waypoint; do
+        just scenario "$s" || fails=$((fails+1))
+    done
+    just check-topics || true
     just merge-logs
     just e2e-report
+    exit $fails
 
 # Compact JSON snapshot: sim alive, live nodes, last scenarios, last log event.
 status:
@@ -285,13 +303,13 @@ log-events:
         exit 0
     fi
     python3 -c "
-import json, sys
-for line in open('$merged', encoding='utf-8'):
-    r = json.loads(line)
-    if r.get('level') in ('EVENT', 'ERROR'):
-        row = {k: v for k, v in r.items() if k not in ('ros_ts', 't_first', 't_last')}
-        print(json.dumps(row, separators=(',', ':')))
-"
+    import json, sys
+    for line in open('$merged', encoding='utf-8'):
+        r = json.loads(line)
+        if r.get('level') in ('EVENT', 'ERROR'):
+            row = {k: v for k, v in r.items() if k not in ('ros_ts', 't_first', 't_last')}
+            print(json.dumps(row, separators=(',', ':')))
+    "
 
 # Combined pass/fail report across all scenarios + key timeline events.
 e2e-report:
@@ -306,8 +324,8 @@ node-log node lines="50":
         exit 1
     fi
     tail -n {{lines}} "$f" | python3 -c "
-import json, sys
-for line in sys.stdin:
-    r = json.loads(line)
-    print(json.dumps({k: v for k, v in r.items() if k != 'ros_ts'}, separators=(',', ':')))
-"
+    import json, sys
+    for line in sys.stdin:
+        r = json.loads(line)
+        print(json.dumps({k: v for k, v in r.items() if k != 'ros_ts'}, separators=(',', ':')))
+    "
