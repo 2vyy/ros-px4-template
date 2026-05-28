@@ -19,7 +19,7 @@ This repository provides a pre-configured template for rapid drone software deve
 - All internal coordinates follow [ROS REP-103](https://www.ros.org/reps/rep-0103.html) ENU frame. Conversion to and from PX4 NED happens only at the PX4 boundary in `offboard_controller` and `mission_manager`.
 - Scenario integration tests in `tests/scenarios/` validate the capabilities of the current codebase. Verified milestones are recorded in `tests/capabilities.toml`.
 - Live topics are checked against the defined topic manifest in [docs/TOPICS.md](docs/TOPICS.md) with `just check-topics` to prevent interface drift.
--Each node writes logs to `logs/<node>.jsonl`. After a run, `just merge-logs` produces `logs/merged.jsonl` and `logs/run_summary.json`.
+- Each node writes logs to `logs/<node>.jsonl`. After a run, `just log summary` (or `just log merge`) produces the compressed logs and `logs/run_summary.json`.
 
 ## Runtime architecture
 
@@ -71,8 +71,7 @@ echo -e 'PX4_DIR=/path/to/PX4-Autopilot\nROS_SETUP=/opt/ros/jazzy/setup.bash\nPX
 2. Initialize and build:
 
 ```bash
-just clone-px4-msgs   # one-time: fetch px4_msgs on release/1.17
-just setup            # uv sync + colcon build
+just setup            # clones px4_msgs, uv sync, rosdep, and builds
 ```
 
 3. Launch the full simulation stack:
@@ -84,14 +83,14 @@ just sim              # Gazebo (GUI), PX4 SITL, XRCE, ROS nodes, rosbridge
 4. With the sim loaded, run a scenario and record the capability:
 
 ```bash
-just scenario 01_arm_takeoff
-just mark-capability arm_takeoff sim
+just test scenario --arg 01_arm_takeoff
+just log cap mark arm_takeoff sim
 ```
 
 5. Stop everything:
 
 ```bash
-just sim-stop
+just sim stop
 ```
 
 ## Project structure
@@ -127,15 +126,13 @@ ros-px4-template/
 
 | Command | Purpose |
 |---------|---------|
-| `just` | List all workflows |
-| `just build` | `colcon build` with symlink install |
-| `just check` | ruff, invariants, ty, unit tests |
-| `just sim` / `just sim-headless` | Full simulation stack |
-| `just hardware` | Core nodes + rosbridge on a serial FC |
-| `just scenario <name>` | Run `tests/scenarios/<name>.py` (no `.py` suffix) |
-| `just capabilities` | Show capability registry |
-| `just check-topics` | Audit live topics vs `docs/TOPICS.md` (sim must be up) |
-| `just merge-logs` | Merge JSONL into `logs/merged.jsonl` + `logs/run_summary.json` |
+| `just` | List all 5 workflows |
+| `just setup` | One-time workspace setup (auto-detects PX4 version) |
+| `just check` | Complete quality gate (formats, lints, typechecks, builds, unit tests) |
+| `just sim` / `just sim headless` | Full simulation stack (auto-compiles and launches sim) |
+| `just test scenario --arg <name>` | Run a scenario (e.g. `01_arm_takeoff`) |
+| `just log summary` | Auto-merge and summarize log events/errors |
+| `just log status` / `just log topics` | Show system JSON status or audit live topic graph |
 
 ## Docs
 

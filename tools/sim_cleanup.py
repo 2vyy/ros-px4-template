@@ -42,7 +42,7 @@ _PATTERNS = [
     r"e2e_sim_test",
     r"install/ros_px4_template_core/lib/ros_px4_template_core/",
     r"install/px4_ros_sim/lib/px4_ros_sim/",
-    r"ruby.*ros",      # any Ruby shim spawned by ros_gz_bridge
+    r"ruby.*ros",  # any Ruby shim spawned by ros_gz_bridge
     r"component_container",
 ]
 
@@ -119,8 +119,11 @@ def _stop_ros2_daemon() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Stop sim processes.")
-    ap.add_argument("--full", action="store_true",
-                    help="Also kill Gazebo (full teardown). Default keeps Gazebo warm.")
+    ap.add_argument(
+        "--full",
+        action="store_true",
+        help="Also kill Gazebo (full teardown). Default keeps Gazebo warm.",
+    )
     args = ap.parse_args()
 
     patterns = _FULL_PATTERNS if args.full else _PATTERNS
@@ -129,6 +132,7 @@ def main() -> None:
         try:
             sys.path.insert(0, str(Path(__file__).parent))
             from gz_lifecycle import clear_world_record
+
             clear_world_record()
         except Exception:
             pass

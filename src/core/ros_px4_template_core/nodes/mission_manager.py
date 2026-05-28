@@ -63,12 +63,20 @@ class MissionManager(Node):
 
         log_dir = str(self.get_parameter("log_dir").value)
         mission_path = str(self.get_parameter("mission_file").value).strip()
-        if not mission_path:
-            mission_path = str(_default_mission_path())
         self._takeoff_alt = float(self.get_parameter("takeoff_altitude_m").value)
 
         self.slog = StructuredLogger(self, log_dir=log_dir)
-        self._mission: WaypointMission = load_mission_yaml(mission_path)
+        # Empty mission_file means hover-only (no waypoints). Only load a mission
+        # when a path is explicitly provided. Relative paths are resolved against
+        # the project root (4 levels up from this node file).
+        if mission_path:
+            p = Path(mission_path)
+            if not p.is_absolute():
+                p = Path(__file__).resolve().parents[4] / p
+            self._mission: WaypointMission | None = load_mission_yaml(p)
+        else:
+            self._mission = None
+            self.get_logger().info("No mission_file set — hover-only mode (no waypoints).")
         self._ctx = MissionContext()
         self._pos_enu = (0.0, 0.0, 0.0)
         self._controller_armed = False
@@ -107,8 +115,8 @@ class MissionManager(Node):
         self.create_timer(1.0 / rate, self._tick)
         self.slog.info(
             "MissionManager ready",
-            mission=mission_path,
-            waypoints=len(self._mission.waypoints),
+            mission=mission_path or "(hover-only)",
+            waypoints=len(self._mission.waypoints) if self._mission else 0,
         )
 
     def _controller_cb(self, msg: ControllerStatus) -> None:
@@ -128,6 +136,23 @@ class MissionManager(Node):
 
     def _tick(self) -> None:
         now = self.get_clock().now().nanoseconds / 1e9
+
+        # Hover-only mode: no mission loaded. Just hold target altitude above origin.
+        if self._mission is None:
+            import types
+
+            hover_target = types.SimpleNamespace(x=0.0, y=0.0, z=float(self._takeoff_alt))
+            self._publish_target(hover_target, frame_id="map")
+            msg = MissionStatus()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.phase = "hover"
+            msg.waypoint_index = 0
+            msg.marker_seen = False
+            msg.position_error_m = 0.0
+            self._pub_status.publish(msg)
+            self._pub_markers.publish(MarkerArray())
+            return
+
         marker_valid = self._marker_valid
         if self._marker_stamp is not None:
             age = (self.get_clock().now() - self._marker_stamp).nanoseconds / 1e9
@@ -158,10 +183,10 @@ class MissionManager(Node):
         self._publish_status(out, now)
         self._publish_markers(out)
 
-    def _publish_target(self, target) -> None:
+    def _publish_target(self, target, frame_id: str | None = None) -> None:
         msg = PoseStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = self._mission.frame_id
+        msg.header.frame_id = frame_id or (self._mission.frame_id if self._mission else "map")
         msg.pose.position.x = target.x
         msg.pose.position.y = target.y
         msg.pose.position.z = target.z
@@ -182,6 +207,9 @@ class MissionManager(Node):
         self._pub_status.publish(msg)
 
     def _publish_markers(self, out) -> None:
+        if self._mission is None:
+            self._pub_markers.publish(MarkerArray())
+            return
         arr = MarkerArray()
         stamp = self.get_clock().now().to_msg()
         fid = self._mission.frame_id

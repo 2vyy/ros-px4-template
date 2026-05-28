@@ -20,11 +20,11 @@ def main(
     poll_s: float = typer.Option(0.25, "--poll-s"),
 ) -> None:
     offsets: dict[Path, int] = {}
-    typer.echo(f"Watching {log_dir.resolve()} (*.jsonl, excluding merged.jsonl)")
+    typer.echo(f"Watching {log_dir.resolve()} (*.jsonl, excluding merged.log)")
     try:
         while True:
             for path in sorted(log_dir.glob("*.jsonl")):
-                if path.name == "merged.jsonl":
+                if path.name == "merged.log":
                     continue
                 if not path.exists():
                     continue

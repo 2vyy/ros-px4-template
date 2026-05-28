@@ -8,10 +8,29 @@ from pathlib import Path
 from typing import Any
 
 
+def format_tabular(records: list[dict[str, Any]]) -> list[str]:
+    if not records:
+        return []
+    t0 = float(records[0].get("ts", 0))
+    lines = []
+    for r in records:
+        t = float(r.get("ts", 0)) - t0
+        node = r.get("node", "?")
+        level = r.get("level", "INFO")
+        msg = r.get("msg", "")
+        count = r.get("count", 1)
+
+        line = f"[{t:>7.2f}] {node} {level}: {msg}"
+        if count > 1:
+            line += f" (x{count})"
+        lines.append(line)
+    return lines
+
+
 def load_records(log_dir: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for jsonl_file in sorted(log_dir.glob("*.jsonl")):
-        if jsonl_file.name == "merged.jsonl":
+        if jsonl_file.name == "merged.log":
             continue
         with jsonl_file.open(encoding="utf-8") as handle:
             for line in handle:
@@ -44,42 +63,101 @@ def _average_numeric_fields(run: list[dict[str, Any]], base: dict[str, Any]) -> 
     return out
 
 
-def collapse_repeats(
+def suppress_high_frequency(
     records: list[dict[str, Any]],
     *,
-    min_count: int = 4,
-    window_s: float | None = None,
+    threshold_hz: float = 10.0,
+    gap_s: float = 1.0,
+    overrides: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Collapse consecutive identical (node, level, msg) runs into one record with count."""
+    """Dynamically suppress high-frequency telemetry while preserving state changes."""
     if not records:
         return []
 
+    overrides = overrides or {}
+
+    class Stream:
+        def __init__(self, sig: tuple[Any, ...], t0: float):
+            self.signature = sig
+            self.records: list[int] = []
+            self.t_first = t0
+            self.t_last = t0
+            self.levels: set[str] = set()
+            self.count = 0
+
+    active_streams: dict[tuple[Any, ...], Stream] = {}
+    all_streams: list[Stream] = []
+
+    for idx, r in enumerate(records):
+        sig = _record_signature(r)
+        t = float(r.get("ts", 0))
+
+        stream = active_streams.get(sig)
+        if stream and (t - stream.t_last) > gap_s:
+            all_streams.append(stream)
+            stream = None
+
+        if not stream:
+            stream = Stream(sig, t)
+            active_streams[sig] = stream
+
+        stream.records.append(idx)
+        stream.t_last = t
+        if "level" in r:
+            stream.levels.add(r["level"])
+        stream.count += 1
+
+    for stream in active_streams.values():
+        all_streams.append(stream)
+
+    suppressed_indices: set[int] = set()
+    summary_records: dict[int, dict[str, Any]] = {}
+
+    for stream in all_streams:
+        if stream.count <= 2:
+            continue
+
+        duration = stream.t_last - stream.t_first
+        hz = stream.count / duration if duration > 0 else float(stream.count)
+
+        node = str(stream.signature[0])
+        action = overrides.get(node, "auto")
+
+        if action == "never":
+            continue
+
+        if action == "always" or hz > threshold_hz:
+            last_level = None
+            for i, idx in enumerate(stream.records):
+                r = records[idx]
+                level = r.get("level")
+                is_first = i == 0
+                is_last = i == len(stream.records) - 1
+                level_changed = level != last_level
+
+                if is_first or is_last or level_changed:
+                    pass  # Keep
+                else:
+                    suppressed_indices.add(idx)
+
+                last_level = level
+
+            last_idx = stream.records[-1]
+            summary_records[last_idx] = {
+                "ts": stream.t_last,
+                "node": node,
+                "level": "INFO",
+                "msg": f"--- Summarized {stream.count} msgs @ {hz:.1f}Hz (span: {duration:.1f}s), levels: {','.join(stream.levels)} ---",
+                "is_summary": True,
+            }
+
     out: list[dict[str, Any]] = []
-    i = 0
-    while i < len(records):
-        r = records[i]
-        j = i + 1
-        while j < len(records):
-            nxt = records[j]
-            if _record_signature(nxt) != _record_signature(r):
-                break
-            if window_s is not None:
-                span = float(nxt.get("ts", 0)) - float(r.get("ts", 0))
-                if span > window_s:
-                    break
-            j += 1
-        count = j - i
-        if count >= min_count:
-            collapsed = dict(r)
-            collapsed["count"] = count
-            collapsed["t_first"] = float(r.get("ts", 0))
-            collapsed["t_last"] = float(records[j - 1].get("ts", 0))
-            collapsed["ts"] = collapsed["t_last"]
-            collapsed = _average_numeric_fields(records[i:j], collapsed)
-            out.append(collapsed)
-        else:
-            out.extend(records[i:j])
-        i = j
+    for idx, r in enumerate(records):
+        if idx not in suppressed_indices:
+            out.append(r)
+        if idx in summary_records:
+            out.append(summary_records[idx])
+
     return out
 
 
@@ -102,7 +180,7 @@ def build_run_summary(
     log_dir: Path,
     run_id: str | None = None,
 ) -> dict[str, Any]:
-    """Pre-digested flight arc for agents — read this before merged.jsonl."""
+    """Pre-digested flight arc for agents — read this before merged.log."""
     if not records:
         return {
             "run_id": run_id or infer_run_id(log_dir, records),
@@ -125,7 +203,7 @@ def build_run_summary(
     def rel_t(record: dict[str, Any]) -> float:
         return round(float(record.get("ts", 0)) - t0, 2)
 
-    event_timeline: list[dict[str, Any]] = []
+    raw_timeline: list[dict[str, Any]] = []
     for r in records:
         level = r.get("level")
         if level == "EVENT":
@@ -139,7 +217,7 @@ def build_run_summary(
                     entry[k] = v
             if r.get("count", 1) > 1:
                 entry["count"] = r["count"]
-            event_timeline.append(entry)
+            raw_timeline.append(entry)
         elif level == "ERROR":
             entry = {
                 "t": rel_t(r),
@@ -149,7 +227,33 @@ def build_run_summary(
             }
             if r.get("count", 1) > 1:
                 entry["count"] = r["count"]
-            event_timeline.append(entry)
+            raw_timeline.append(entry)
+
+    # Events that repeat 3+ times are collapsed to one summary entry (first occurrence,
+    # count, t_last). Single or rare events are kept verbatim in order.
+    # This keeps ARM retry storms as one line while preserving unique transitions.
+    from collections import defaultdict as _dd
+
+    _groups: dict[tuple[Any, Any], list[dict[str, Any]]] = _dd(list)
+    for entry in raw_timeline:
+        _groups[(entry.get("node"), entry.get("event"))].append(entry)
+
+    _seen: set[tuple[Any, Any]] = set()
+    event_timeline: list[dict[str, Any]] = []
+    for entry in raw_timeline:
+        key = (entry.get("node"), entry.get("event"))
+        if key in _seen:
+            continue
+        group = _groups[key]
+        if len(group) >= 3:
+            summarized = dict(group[0])
+            summarized["count"] = len(group)
+            summarized["t_last"] = group[-1]["t"]
+            event_timeline.append(summarized)
+        else:
+            for e in group:
+                event_timeline.append(dict(e))
+        _seen.add(key)
 
     errors: list[dict[str, Any]] = []
     seen: set[tuple[Any, ...]] = set()

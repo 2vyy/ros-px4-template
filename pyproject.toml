@@ -11,6 +11,7 @@ dependencies = [
     "typer>=0.12",
     "tomli-w>=1.0",
     "pymavlink>=2.4",
+    "lark>=1.1.9",
 ]
 
 [dependency-groups]

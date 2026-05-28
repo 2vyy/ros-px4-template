@@ -7,6 +7,7 @@ offboard_controller:
 
 mission_manager:
   ros__parameters:
-    mission_file: ""
+    # Use the inspect_aruco waypoint mission for sim. Set to "" for hover-only mode.
+    mission_file: "config/missions/inspect_aruco.yaml"
     tick_rate_hz: 10.0
-    takeoff_altitude_m: 2.5
+    takeoff_altitude_m: 3.0

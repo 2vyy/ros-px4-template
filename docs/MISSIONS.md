@@ -63,9 +63,9 @@ Live: `just tail-logs`.
 After a run:
 
 ```bash
-grep PHASE_CHANGE logs/merged.jsonl
-grep MARKER_ACQUIRED logs/merged.jsonl
-grep WAYPOINT_REACHED logs/merged.jsonl
+rg PHASE_CHANGE logs/merged.log
+rg MARKER_ACQUIRED logs/merged.log
+rg WAYPOINT_REACHED logs/merged.log
 ```
 
 Post-run summary: [AGENTS.md §MCP / logs](../AGENTS.md#mcp--logs).

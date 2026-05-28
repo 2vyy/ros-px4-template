@@ -88,11 +88,11 @@ def main() -> None:
 
     hints: list[str] = []
     if not sim_alive:
-        hints.append("just sim-headless  # start sim")
+        hints.append("just sim headless  # start sim")
     if not scenarios:
-        hints.append("just e2e  # run all scenarios")
+        hints.append("just test e2e  # run all scenarios")
     elif not LOG_DIR.joinpath("run_summary.json").exists():
-        hints.append("just merge-logs  # build event timeline")
+        hints.append("just log summary  # build event timeline")
     if hints:
         out["help"] = hints
 

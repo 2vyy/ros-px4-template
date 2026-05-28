@@ -1,4 +1,5 @@
 """Gazebo server lifecycle helpers — detection, world tracking, world reset."""
+
 from __future__ import annotations
 
 import subprocess
@@ -47,12 +48,18 @@ def reset_world(world: str) -> bool:
     try:
         r = subprocess.run(
             [
-                "gz", "service",
-                "-s", f"/world/{world}/control",
-                "--reqtype", "gz.msgs.WorldControl",
-                "--reptype", "gz.msgs.Boolean",
-                "--timeout", "3000",   # gz CLI timeout in ms; Python timeout below is the backstop in seconds
-                "--req", "reset: {all: true}",
+                "gz",
+                "service",
+                "-s",
+                f"/world/{world}/control",
+                "--reqtype",
+                "gz.msgs.WorldControl",
+                "--reptype",
+                "gz.msgs.Boolean",
+                "--timeout",
+                "3000",  # gz CLI timeout in ms; Python timeout below is the backstop in seconds
+                "--req",
+                "reset: {all: true}",
             ],
             capture_output=True,
             text=True,

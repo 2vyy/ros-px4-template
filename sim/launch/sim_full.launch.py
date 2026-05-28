@@ -168,8 +168,7 @@ def _gz_px4_stack(context, *args, **kwargs):
         headless_export = "export HEADLESS=1; " if headless else ""
         world_file = str(project_root / "logs" / "gz_world.txt")
         cmd = (
-            common_env
-            + f'setsid gz sim -r -s "{world_sdf}" & '
+            common_env + f'setsid gz sim -r -s "{world_sdf}" & '
             "GZPID=$!; "
             f"for _ in $(seq 1 900); do "
             f'  if gz service -i --service "/world/{world}/scene/info" 2>&1 | '
@@ -179,9 +178,7 @@ def _gz_px4_stack(context, *args, **kwargs):
             "  sleep 0.1; "
             "done; "
             f'echo "{world}" > "{world_file}"; '
-            f"{headless_export}"
-            + px4_launch
-            + "; "
+            f"{headless_export}" + px4_launch + "; "
             "PX4_EXIT=$?; kill $GZPID 2>/dev/null || true; exit $PX4_EXIT"
         )
 

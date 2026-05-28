@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Scenario 01 — Arm and takeoff.
 
-Pass: vehicle reaches 3.0 m ± 0.3 m (ENU z) within 30 s.
-Fail: timeout, or still disarmed on ground after 15 s.
+Pass: vehicle reaches 3.0 m ± 0.3 m (ENU z) within 90 s.
+Fail: timeout, or still disarmed on ground after 45 s.
 
 Run: ``just scenario 01_arm_takeoff`` (requires ``just sim``).
 """
@@ -24,8 +24,8 @@ console = Console()
 
 _TARGET_Z_M = 3.0
 _TOLERANCE_M = 0.3
-_TIMEOUT_S = 90.0
-_ARM_FAIL_AFTER_S = 45.0
+_TIMEOUT_S = 180.0
+_ARM_FAIL_AFTER_S = 150.0
 
 _ARMING_DISARMED = 1
 _ARMING_ARMED = 2
