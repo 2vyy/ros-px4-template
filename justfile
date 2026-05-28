@@ -257,7 +257,7 @@ sim-bg world="default" model="x500" enable_vision="false":
 
 # Remove per-node JSONL logs, run summary, and scenario reports for a clean-slate run.
 clean-logs:
-    rm -f {{LOG_DIR}}/*.jsonl {{LOG_DIR}}/run_summary.json {{LOG_DIR}}/scenario_*.json
+    rm -f {{LOG_DIR}}/*.jsonl {{LOG_DIR}}/run_summary.json {{LOG_DIR}}/scenario_*.json {{LOG_DIR}}/sim.pid
 
 # Block until rosbridge :9090 open and /fmu/out/vehicle_local_position is live.
 wait-ready timeout="180":

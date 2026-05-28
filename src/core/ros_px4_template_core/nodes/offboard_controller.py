@@ -147,8 +147,12 @@ class OffboardController(Node):
         self.slog.event(
             events.ARM_ACK_DENIED, result=result, reason=reason, param1=float(msg.result_param1)
         )
-        # Terminal failures: stop retrying. TEMPORARILY_REJECTED → keep trying.
-        if result != VehicleCommandAck.VEHICLE_CMD_RESULT_TEMPORARILY_REJECTED:
+        # Terminal failures: stop retrying. TEMPORARILY_REJECTED and IN_PROGRESS
+        # are non-terminal — PX4 may still accept on a later try / finish in-flight.
+        if result not in (
+            VehicleCommandAck.VEHICLE_CMD_RESULT_TEMPORARILY_REJECTED,
+            VehicleCommandAck.VEHICLE_CMD_RESULT_IN_PROGRESS,
+        ):
             if not self._arm_failed:
                 self._arm_failed = True
                 self._arm_fail_reason = reason
