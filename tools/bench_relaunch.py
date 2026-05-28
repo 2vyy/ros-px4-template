@@ -48,10 +48,18 @@ def _px4_standby() -> bool:
     """Return True if PX4 vehicle_status shows arming_state == DISARMED (1) — ready to arm."""
     try:
         result = subprocess.run(
-            ["ros2", "topic", "echo", "--once", "/fmu/out/vehicle_status"],
+            [
+                "ros2",
+                "topic",
+                "echo",
+                "--once",
+                "--qos-reliability",
+                "best_effort",
+                "/fmu/out/vehicle_status",
+            ],
             capture_output=True,
             text=True,
-            timeout=3,
+            timeout=8,
         )
         return "arming_state: 1" in result.stdout
     except (subprocess.TimeoutExpired, FileNotFoundError):
