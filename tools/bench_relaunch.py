@@ -122,11 +122,11 @@ def main() -> None:
     # ── Step 1: Stop sim (kills ROS nodes + PX4, Gazebo stays warm) ──────────
     print("Stopping sim (Gazebo stays warm)...", flush=True)
     result = subprocess.run(
-        ["uv", "run", "python", "tools/sim_cleanup.py"],
+        ["uv", "run", "python", "tasks.py", "sim", "stop"],
         cwd=str(ROOT),
     )
     if result.returncode != 0:
-        print("WARNING: sim_cleanup.py returned non-zero (may not have been running)", flush=True)
+        print("WARNING: sim stop returned non-zero (may not have been running)", flush=True)
     t_stop = time.monotonic()
     print(_format_milestone("sim stop complete", t_stop, t0), flush=True)
 

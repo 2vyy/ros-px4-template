@@ -247,7 +247,8 @@ def generate_launch_description() -> LaunchDescription:
         if agent_alive
         else [
             ExecuteProcess(
-                cmd=["MicroXRCEAgent", "udp4", "-p", "8888"],
+                # setsid detaches agent from the launch process group so it survives sim stop
+                cmd=["setsid", "MicroXRCEAgent", "udp4", "-p", "8888"],
                 name="micro_xrce_agent",
                 output="screen",
             )
