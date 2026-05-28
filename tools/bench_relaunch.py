@@ -9,7 +9,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
 import socket
 import subprocess
 import sys
@@ -17,11 +16,9 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-LOG_DIR = ROOT / "logs"
 
 _ROSBRIDGE_PORT = 9090
 _REQUIRED_TOPIC = "/fmu/out/vehicle_local_position"
-_PARAMS_MARKER = "Params committed"
 
 
 def _port_open(port: int) -> bool:
@@ -47,17 +44,17 @@ def _topic_live(topic: str) -> bool:
         return False
 
 
-def _params_sent(after_mtime: float) -> bool:
-    """Return True if a sim log newer than after_mtime contains 'Params committed'."""
-    sim_logs = sorted(LOG_DIR.glob("sim_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not sim_logs:
-        return False
-    newest = sim_logs[0]
-    if newest.stat().st_mtime < after_mtime:
-        return False
+def _px4_standby() -> bool:
+    """Return True if PX4 vehicle_status shows arming_state == STANDBY (2)."""
     try:
-        return _PARAMS_MARKER in newest.read_text(errors="replace")
-    except OSError:
+        result = subprocess.run(
+            ["ros2", "topic", "echo", "--once", "/fmu/out/vehicle_status"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        return "arming_state: 2" in result.stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
 
 
@@ -67,11 +64,18 @@ def _set_gz_physics(rtf: float) -> None:
     try:
         subprocess.run(
             [
-                "gz", "service", "-s", "/world/default/set_physics",
-                "--reqtype", "gz.msgs.Physics",
-                "--reptype", "gz.msgs.Boolean",
-                "--timeout", "3000",
-                "--req", f"real_time_factor: {rtf}, real_time_update_rate: {update_rate}, max_step_size: 0.004",
+                "gz",
+                "service",
+                "-s",
+                "/world/default/set_physics",
+                "--reqtype",
+                "gz.msgs.Physics",
+                "--reptype",
+                "gz.msgs.Boolean",
+                "--timeout",
+                "3000",
+                "--req",
+                f"real_time_factor: {rtf}, real_time_update_rate: {update_rate}, max_step_size: 0.004",
             ],
             capture_output=True,
             timeout=5,
@@ -97,7 +101,7 @@ def main() -> None:
         "--fast-ekf2",
         action="store_true",
         help="Use 5× Gazebo physics pre-arm for faster EKF2 convergence. "
-             "Disclosed in output. 1× restored at stack-ready.",
+        "Disclosed in output. 1× restored at stack-ready.",
     )
     args = ap.parse_args()
 
@@ -123,9 +127,7 @@ def main() -> None:
         _set_gz_physics(5.0)
         print("  [5× pre-arm physics set on Gazebo]", flush=True)
 
-    # ── Step 3: Record log freshness cutoff, then launch ─────────────────────
-    launch_mtime_cutoff = time.time()
-
+    # ── Step 3: Launch ────────────────────────────────────────────────────────
     subprocess.Popen(
         ["uv", "run", "python", "tasks.py", "sim", "bg", "--no-build"],
         cwd=str(ROOT),
@@ -151,10 +153,10 @@ def main() -> None:
             rosbridge_ok = True
             print(_format_milestone("rosbridge :9090 open", t_rosbridge, t0, t_launch), flush=True)
 
-        if not params_ok and _params_sent(launch_mtime_cutoff):
+        if not params_ok and _px4_standby():
             t_params = time.monotonic()
             params_ok = True
-            print(_format_milestone("gcs params committed", t_params, t0, t_launch), flush=True)
+            print(_format_milestone("PX4 in STANDBY", t_params, t0, t_launch), flush=True)
 
         if topic_ok and rosbridge_ok and params_ok:
             t_ready = max(t_xrce, t_rosbridge, t_params)  # type: ignore[type-var]
@@ -174,8 +176,7 @@ def main() -> None:
         time.sleep(0.2)
 
     print(
-        f"\nTIMEOUT after 180s — "
-        f"topic={topic_ok} rosbridge={rosbridge_ok} params={params_ok}",
+        f"\nTIMEOUT after 180s — topic={topic_ok} rosbridge={rosbridge_ok} params={params_ok}",
         file=sys.stderr,
     )
     sys.exit(1)

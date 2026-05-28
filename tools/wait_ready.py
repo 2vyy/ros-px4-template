@@ -5,8 +5,8 @@ Readiness criteria (all three must pass):
   1. /fmu/out/vehicle_local_position appears in `ros2 topic list`
      (confirms PX4 SITL + MicroXRCEAgent + px4_topic_relay are all up).
   2. rosbridge WebSocket port 9090 is open.
-  3. gcs_heartbeat has received a PX4 heartbeat and sent COM_ARM_WO_GPS=1,
-     confirmed by checking the gcs_heartbeat log for "Params committed".
+  3. PX4 vehicle_status reports arming_state == STANDBY (2), confirmed by
+     polling `ros2 topic echo /fmu/out/vehicle_status`.
 
 Exit 0 on ready, 1 on timeout.
 """
@@ -17,7 +17,6 @@ import socket
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 import typer
 
@@ -26,7 +25,6 @@ app = typer.Typer()
 _ROSBRIDGE_PORT = 9090
 _REQUIRED_TOPIC = "/fmu/out/vehicle_local_position"
 _POLL_INTERVAL_S = 0.2
-_LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 
 
 def _port_open(port: int) -> bool:
@@ -50,15 +48,17 @@ def _topic_live(topic: str) -> bool:
         return False
 
 
-def _params_sent() -> bool:
-    """Check sim log for gcs_heartbeat confirmation that params have been sent."""
-    sim_logs = sorted(_LOG_DIR.glob("sim_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not sim_logs:
-        return False
+def _px4_standby() -> bool:
+    """Return True if PX4 vehicle_status shows arming_state == STANDBY (2)."""
     try:
-        content = sim_logs[0].read_text(errors="replace")
-        return "Params committed" in content
-    except OSError:
+        result = subprocess.run(
+            ["ros2", "topic", "echo", "--once", "/fmu/out/vehicle_status"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        return "arming_state: 2" in result.stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
 
 
@@ -83,9 +83,9 @@ def main(timeout: int = typer.Option(180, "--timeout", help="Seconds before givi
                 typer.echo("  [OK] rosbridge :9090 open")
 
         if not params_ok:
-            params_ok = _params_sent()
+            params_ok = _px4_standby()
             if params_ok:
-                typer.echo("  [OK] gcs params committed")
+                typer.echo("  [OK] PX4 in STANDBY")
 
         if rosbridge_ok and topic_ok and params_ok:
             typer.echo("Stack ready.")
