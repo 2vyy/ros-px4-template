@@ -169,7 +169,7 @@ def _gz_px4_stack(context, *args, **kwargs):
         world_file = str(project_root / "logs" / "gz_world.txt")
         cmd = (
             common_env
-            + f'gz sim -r -s "{world_sdf}" & '
+            + f'setsid gz sim -r -s "{world_sdf}" & '
             "GZPID=$!; "
             f"for _ in $(seq 1 900); do "
             f'  if gz service -i --service "/world/{world}/scene/info" 2>&1 | '
