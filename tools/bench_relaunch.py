@@ -138,8 +138,8 @@ def main() -> None:
     print(_format_milestone("sim bg launched", t_launch, t0), flush=True)
 
     # ── Step 4: Poll all three gates ─────────────────────────────────────────
-    topic_ok = rosbridge_ok = params_ok = False
-    t_xrce = t_rosbridge = t_params = None
+    topic_ok = rosbridge_ok = standby_ok = False
+    t_xrce = t_rosbridge = t_standby = None
     deadline = t_launch + 180.0
 
     while time.monotonic() < deadline:
@@ -153,13 +153,13 @@ def main() -> None:
             rosbridge_ok = True
             print(_format_milestone("rosbridge :9090 open", t_rosbridge, t0, t_launch), flush=True)
 
-        if not params_ok and _px4_standby():
-            t_params = time.monotonic()
-            params_ok = True
-            print(_format_milestone("PX4 ready to arm (DISARMED)", t_params, t0, t_launch), flush=True)
+        if not standby_ok and _px4_standby():
+            t_standby = time.monotonic()
+            standby_ok = True
+            print(_format_milestone("PX4 ready to arm (DISARMED)", t_standby, t0, t_launch), flush=True)
 
-        if topic_ok and rosbridge_ok and params_ok:
-            t_ready = max(t_xrce, t_rosbridge, t_params)  # type: ignore[type-var]
+        if topic_ok and rosbridge_ok and standby_ok:
+            t_ready = max(t_xrce, t_rosbridge, t_standby)  # type: ignore[type-var]
 
             if args.fast_ekf2:
                 _set_gz_physics(1.0)
@@ -176,7 +176,7 @@ def main() -> None:
         time.sleep(0.2)
 
     print(
-        f"\nTIMEOUT after 180s — topic={topic_ok} rosbridge={rosbridge_ok} params={params_ok}",
+        f"\nTIMEOUT after 180s — topic={topic_ok} rosbridge={rosbridge_ok} standby={standby_ok}",
         file=sys.stderr,
     )
     sys.exit(1)
