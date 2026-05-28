@@ -8,6 +8,7 @@ Exit 0 always — meant as a read-only diagnostic, not a gating check.
 from __future__ import annotations
 
 import json
+import shutil
 import socket
 import subprocess
 from pathlib import Path
@@ -69,6 +70,7 @@ def _last_event() -> dict | None:
 
 def main() -> None:
     sim_alive = _port_open(9090)
+    ros2_on_path = bool(shutil.which("ros2"))
     nodes = _ros_nodes() if sim_alive else None
     scenarios = _scenarios()
 
@@ -78,6 +80,11 @@ def main() -> None:
         "scenarios": scenarios if scenarios else None,
         "last_event": _last_event(),
     }
+
+    if not ros2_on_path:
+        out["ros_env_error"] = (
+            "ros2 not on PATH — source ROS_SETUP (or enter distrobox) before running"
+        )
 
     hints: list[str] = []
     if not sim_alive:

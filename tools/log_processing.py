@@ -22,7 +22,9 @@ def load_records(log_dir: Path) -> list[dict[str, Any]]:
                     records.append(json.loads(line))
                 except json.JSONDecodeError:
                     pass
-    records.sort(key=lambda r: float(r.get("ts", 0)))
+    records.sort(
+        key=lambda r: (float(r.get("ts", 0)), str(r.get("node", "")), int(r.get("seq", 0)))
+    )
     return records
 
 

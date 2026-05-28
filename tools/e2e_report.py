@@ -33,7 +33,7 @@ def main() -> None:
 
     if not scenarios and not summary:
         print(json.dumps({"empty": True, "help": ["just e2e", "just merge-logs"]}, indent=2))
-        sys.exit(0)
+        sys.exit(1)
 
     scenario_rows = [
         {

@@ -104,8 +104,6 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
             if mission.marker is None:
                 _set_phase(ctx, PHASE_DONE)
                 _emit(ctx, events.MISSION_DONE)
-            else:
-                ctx.target = ctx.target
         else:
             ctx.target = wp
             if reached(pos, wp, tol):

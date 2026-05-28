@@ -39,6 +39,27 @@ def _port_free(port: int) -> bool:
         return True
 
 
+def _port_pid(port: int, proto: str = "tcp") -> str:
+    """Return 'pid NNNN (name)' for the process holding *port*, or ''."""
+    try:
+        r = subprocess.run(
+            ["ss", "-lnp", f"sport = :{port}"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        for line in r.stdout.splitlines():
+            if f":{port}" in line and "users:" in line:
+                import re
+
+                m = re.search(r'users:\(\("([^"]+)",pid=(\d+)', line)
+                if m:
+                    return f"pid {m.group(2)} ({m.group(1)})"
+    except Exception:
+        pass
+    return ""
+
+
 def _git_branch(path: Path) -> str:
     result = subprocess.run(
         ["git", "-C", str(path), "rev-parse", "--abbrev-ref", "HEAD"],
@@ -85,16 +106,22 @@ def main() -> None:
         )
     )
 
+    port_8888_free = _port_free(8888)
+    pid_8888 = "" if port_8888_free else _port_pid(8888, "tcp")
     results.append(
         _check(
             "Port 8888 (MicroXRCEAgent) free",
-            _port_free(8888),
-            "already in use — run: just sim-stop",
+            port_8888_free,
+            f"already in use {pid_8888} — run: just sim-stop".strip(),
         )
     )
+    port_9090_free = _port_free(9090)
+    pid_9090 = "" if port_9090_free else _port_pid(9090, "tcp")
     results.append(
         _check(
-            "Port 9090 (rosbridge) free", _port_free(9090), "already in use — run: just sim-stop"
+            "Port 9090 (rosbridge) free",
+            port_9090_free,
+            f"already in use {pid_9090} — run: just sim-stop".strip(),
         )
     )
 

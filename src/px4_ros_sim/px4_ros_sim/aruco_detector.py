@@ -23,7 +23,12 @@ _RELIABLE_QOS = QoSProfile(
 
 
 class ArucoDetector(Node):
-    """Detect DICT_4X4_50 markers; publish known map pose when seen."""
+    """Detect DICT_4X4_50 markers; publish known map pose when seen.
+
+    SIM SHORTCUT: publishes the world-frame pose from ``marker_world_*`` params,
+    NOT the pose estimated from the detected marker corners. Real detection
+    requires camera intrinsics, solvePnP, and a proper TF chain.
+    """
 
     def __init__(self) -> None:
         super().__init__("aruco_detector")
