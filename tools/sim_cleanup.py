@@ -124,14 +124,14 @@ def _graceful_px4_stop(timeout_s: float = 1.5) -> None:
             text=True,
             timeout=2,
         )
-        for pid_str in result.stdout.splitlines():
-            pid_str = pid_str.strip()
-            if pid_str.isdigit():
-                try:
-                    os.kill(int(pid_str), signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-        time.sleep(timeout_s)
+        pids_found = [int(p) for p in result.stdout.splitlines() if p.strip().isdigit()]
+        for pid in pids_found:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        if pids_found:
+            time.sleep(timeout_s)
     except Exception:
         pass
 
