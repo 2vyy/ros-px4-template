@@ -97,7 +97,7 @@ def _kill_pidfile_group() -> int | None:
 
 
 def _clean_artifacts() -> None:
-    """Remove PX4 lock files and FastDDS shared memory left behind after kills."""
+    """Remove PX4 lock files, FastDDS shared memory, and readiness flags."""
     for i in range(4):
         for p in [Path(f"/tmp/px4_lock-{i}"), Path(f"/tmp/px4-sock-{i}")]:
             p.unlink(missing_ok=True)
@@ -106,6 +106,7 @@ def _clean_artifacts() -> None:
             Path(p).unlink(missing_ok=True)
         except OSError:
             pass
+    Path("/tmp/gcs_params_flag").unlink(missing_ok=True)
 
 
 def _stop_ros2_daemon() -> None:

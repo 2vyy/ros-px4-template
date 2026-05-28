@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 
 from typer.testing import CliRunner
@@ -13,7 +15,7 @@ from wait_ready import app
 
 
 def test_ready_requires_standby_gate():
-    """Stack ready must wait for all three gates including PX4 ready to arm (DISARMED)."""
+    """Stack ready must wait for all three gates including GCS params committed."""
     runner = CliRunner()
     with (
         patch("wait_ready._topic_live", return_value=True),
@@ -22,7 +24,7 @@ def test_ready_requires_standby_gate():
     ):
         result = runner.invoke(app, ["--timeout", "5"])
     assert result.exit_code == 0
-    assert "PX4 ready to arm (DISARMED)" in result.output
+    assert "GCS params committed" in result.output
     assert "Stack ready" in result.output
 
 
@@ -63,33 +65,18 @@ def test_timeout_reports_standby_state():
 # ── _px4_standby unit tests ──────────────────────────────────────────────────
 
 
-def test_px4_standby_true_when_arming_state_1_in_output():
-    mock_result = MagicMock()
-    mock_result.stdout = "arming_state: 1\n"
-    with patch("wait_ready.subprocess.run", return_value=mock_result):
-        from wait_ready import _px4_standby
+def test_px4_standby_true_when_flag_exists(tmp_path, monkeypatch):
+    flag = tmp_path / "gcs_params_flag"
+    flag.write_text("12345.6")
+    import wait_ready
 
-        assert _px4_standby() is True
-
-
-def test_px4_standby_false_when_arming_state_not_disarmed():
-    mock_result = MagicMock()
-    mock_result.stdout = "arming_state: 2\n"
-    with patch("wait_ready.subprocess.run", return_value=mock_result):
-        from wait_ready import _px4_standby
-
-        assert _px4_standby() is False
+    monkeypatch.setattr(wait_ready, "_GCS_PARAMS_FLAG", flag)
+    assert wait_ready._px4_standby() is True
 
 
-def test_px4_standby_false_on_timeout():
-    with patch("wait_ready.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="ros2", timeout=3)):
-        from wait_ready import _px4_standby
+def test_px4_standby_false_when_flag_missing(tmp_path, monkeypatch):
+    flag = tmp_path / "gcs_params_flag"
+    import wait_ready
 
-        assert _px4_standby() is False
-
-
-def test_px4_standby_false_when_ros2_not_found():
-    with patch("wait_ready.subprocess.run", side_effect=FileNotFoundError()):
-        from wait_ready import _px4_standby
-
-        assert _px4_standby() is False
+    monkeypatch.setattr(wait_ready, "_GCS_PARAMS_FLAG", flag)
+    assert wait_ready._px4_standby() is False

@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 _ROSBRIDGE_PORT = 9090
 _REQUIRED_TOPIC = "/fmu/out/vehicle_local_position"
+_GCS_PARAMS_FLAG = Path("/tmp/gcs_params_flag")
 
 
 def _port_open(port: int) -> bool:
@@ -45,25 +46,13 @@ def _topic_live(topic: str) -> bool:
 
 
 def _px4_standby() -> bool:
-    """Return True if PX4 vehicle_status shows arming_state == DISARMED (1) — ready to arm."""
-    try:
-        result = subprocess.run(
-            [
-                "ros2",
-                "topic",
-                "echo",
-                "--once",
-                "--qos-reliability",
-                "best_effort",
-                "/fmu/out/vehicle_status",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=8,
-        )
-        return "arming_state: 1" in result.stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return False
+    """Return True if gcs_heartbeat has committed PX4 params (flag file present).
+
+    The flag is written by gcs_heartbeat when PX4 acknowledges a Params committed
+    event. It persists through arm transitions, unlike arming_state DDS polling.
+    Deleted by sim_cleanup on each stop so stale state does not carry over.
+    """
+    return _GCS_PARAMS_FLAG.exists()
 
 
 def _set_gz_physics(rtf: float) -> None:
@@ -136,11 +125,14 @@ def main() -> None:
         print("  [5× pre-arm physics set on Gazebo]", flush=True)
 
     # ── Step 3: Launch ────────────────────────────────────────────────────────
+    # start_new_session=True detaches sim bg from the bench process's session so
+    # the sim survives when the bench (and its parent distrobox session) exits.
     subprocess.Popen(
         ["uv", "run", "python", "tasks.py", "sim", "bg", "--no-build"],
         cwd=str(ROOT),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        start_new_session=True,
     )
     t_launch = time.monotonic()
     print(_format_milestone("sim bg launched", t_launch, t0), flush=True)
@@ -164,7 +156,7 @@ def main() -> None:
         if not standby_ok and _px4_standby():
             t_standby = time.monotonic()
             standby_ok = True
-            print(_format_milestone("PX4 ready to arm (DISARMED)", t_standby, t0, t_launch), flush=True)
+            print(_format_milestone("GCS params committed (PX4 ready)", t_standby, t0, t_launch), flush=True)
 
         if topic_ok and rosbridge_ok and standby_ok:
             t_ready = max(t_xrce, t_rosbridge, t_standby)  # type: ignore[type-var]

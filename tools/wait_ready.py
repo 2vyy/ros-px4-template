@@ -5,8 +5,8 @@ Readiness criteria (all three must pass):
   1. /fmu/out/vehicle_local_position appears in `ros2 topic list`
      (confirms PX4 SITL + MicroXRCEAgent + px4_topic_relay are all up).
   2. rosbridge WebSocket port 9090 is open.
-  3. PX4 vehicle_status reports arming_state == DISARMED (1), confirmed by
-     polling `ros2 topic echo /fmu/out/vehicle_status`.
+  3. gcs_heartbeat has committed PX4 params (/tmp/gcs_params_flag exists),
+     confirming MAVLink GCS link is established and PX4 is responsive.
 
 Exit 0 on ready, 1 on timeout.
 """
@@ -17,6 +17,7 @@ import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import typer
 
@@ -25,6 +26,7 @@ app = typer.Typer()
 _ROSBRIDGE_PORT = 9090
 _REQUIRED_TOPIC = "/fmu/out/vehicle_local_position"
 _POLL_INTERVAL_S = 0.2
+_GCS_PARAMS_FLAG = Path("/tmp/gcs_params_flag")
 
 
 def _port_open(port: int) -> bool:
@@ -49,25 +51,13 @@ def _topic_live(topic: str) -> bool:
 
 
 def _px4_standby() -> bool:
-    """Return True if PX4 vehicle_status shows arming_state == DISARMED (1) — ready to arm."""
-    try:
-        result = subprocess.run(
-            [
-                "ros2",
-                "topic",
-                "echo",
-                "--once",
-                "--qos-reliability",
-                "best_effort",
-                "/fmu/out/vehicle_status",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=8,
-        )
-        return "arming_state: 1" in result.stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return False
+    """Return True if gcs_heartbeat has committed PX4 params (flag file present).
+
+    The flag is written by gcs_heartbeat when PX4 acknowledges a Params committed
+    event. It persists through arm transitions, unlike arming_state DDS polling.
+    Deleted by sim_cleanup on each stop so stale state does not carry over.
+    """
+    return _GCS_PARAMS_FLAG.exists()
 
 
 @app.command()
@@ -93,7 +83,7 @@ def main(timeout: int = typer.Option(180, "--timeout", help="Seconds before givi
         if not standby_ok:
             standby_ok = _px4_standby()
             if standby_ok:
-                typer.echo("  [OK] PX4 ready to arm (DISARMED)")
+                typer.echo("  [OK] GCS params committed (PX4 ready)")
 
         if rosbridge_ok and topic_ok and standby_ok:
             typer.echo("Stack ready.")
