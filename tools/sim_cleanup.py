@@ -127,8 +127,7 @@ def main() -> None:
 
     if args.full:
         try:
-            import sys as _sys
-            _sys.path.insert(0, str(Path(__file__).parent))
+            sys.path.insert(0, str(Path(__file__).parent))
             from gz_lifecycle import clear_world_record
             clear_world_record()
         except Exception:
