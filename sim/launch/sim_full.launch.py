@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys as _sys
 from pathlib import Path
 
 from launch import LaunchDescription
@@ -12,11 +13,13 @@ from launch.actions import (
     IncludeLaunchDescription,
     OpaqueFunction,
     SetEnvironmentVariable,
-    TimerAction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+_sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+from gz_lifecycle import gazebo_matches, reset_world
 
 
 def _require_px4_dir() -> str:
@@ -119,7 +122,7 @@ def _clock_bridge(context, *args, **kwargs):
 
 
 def _gz_px4_stack(context, *args, **kwargs):
-    """Start Gazebo server, wait for scene/info, then PX4 in standalone mode."""
+    """Start PX4 in standalone mode. Starts Gazebo first if not already warm."""
     world = LaunchConfiguration("world").perform(context)
     model = LaunchConfiguration("model").perform(context)
     headless = LaunchConfiguration("headless").perform(context).lower() == "true"
@@ -131,9 +134,8 @@ def _gz_px4_stack(context, *args, **kwargs):
     gz_paths = _gz_paths(project_root, px4_dir)
     plugins = f"{build}/src/modules/simulation/gz_plugins"
     server_config = f"{px4_dir}/src/modules/simulation/gz_bridge/server.config"
-    headless_export = "export HEADLESS=1; " if headless else ""
 
-    cmd = (
+    common_env = (
         "set -e; "
         "export GZ_IP=127.0.0.1; "
         f'export GZ_SIM_RESOURCE_PATH="{gz_paths}"; '
@@ -144,21 +146,44 @@ def _gz_px4_stack(context, *args, **kwargs):
         f'export GZ_SIM_SYSTEM_PLUGIN_PATH="{plugins}"; '
         f'export GZ_SIM_SERVER_CONFIG_PATH="{server_config}"; '
         f'export LD_LIBRARY_PATH="{plugins}:${{LD_LIBRARY_PATH}}"; '
-        f'gz sim -r -s "{world_sdf}" & '
-        "GZPID=$!; "
-        f"for _ in $(seq 1 90); do "
-        f'  if gz service -i --service "/world/{world}/scene/info" 2>&1 | '
-        f'grep -q "Service providers"; then '
-        "    break; "
-        "  fi; "
-        "  sleep 1; "
-        "done; "
-        f"{headless_export}"
+    )
+
+    px4_launch = (
         "export PX4_GZ_STANDALONE=1; "
         f'cd "{build}"; '
-        f'PX4_GZ_WORLD="{world}" PX4_SIM_MODEL=gz_{model} exec ./bin/px4; '
-        "PX4_EXIT=$?; kill $GZPID 2>/dev/null || true; exit $PX4_EXIT"
+        f'PX4_GZ_WORLD="{world}" PX4_SIM_MODEL=gz_{model} exec ./bin/px4'
     )
+
+    if gazebo_matches(world):
+        print(f"[sim_full] Gazebo warm for world='{world}' — resetting world state", flush=True)
+        reset_ok = reset_world(world)
+        if not reset_ok:
+            print(
+                "[sim_full] WARNING: world reset failed; PX4 connecting to unreset state",
+                flush=True,
+            )
+        cmd = common_env + px4_launch
+    else:
+        print(f"[sim_full] Gazebo cold — starting gz sim for world='{world}'", flush=True)
+        headless_export = "export HEADLESS=1; " if headless else ""
+        world_file = str(project_root / "logs" / "gz_world.txt")
+        cmd = (
+            common_env
+            + f'gz sim -r -s "{world_sdf}" & '
+            "GZPID=$!; "
+            f"for _ in $(seq 1 900); do "
+            f'  if gz service -i --service "/world/{world}/scene/info" 2>&1 | '
+            f'grep -q "Service providers"; then '
+            "    break; "
+            "  fi; "
+            "  sleep 0.1; "
+            "done; "
+            f'echo "{world}" > "{world_file}"; '
+            f"{headless_export}"
+            + px4_launch
+            + "; "
+            "PX4_EXIT=$?; kill $GZPID 2>/dev/null || true; exit $PX4_EXIT"
+        )
 
     return [ExecuteProcess(cmd=["bash", "-c", cmd], name="gz_px4_stack", output="screen")]
 
@@ -187,17 +212,12 @@ def generate_launch_description() -> LaunchDescription:
                 output="screen",
             ),
             OpaqueFunction(function=_gz_px4_stack),
-            TimerAction(
-                period=12.0,
-                actions=[
-                    ExecuteProcess(
-                        cmd=["python3", str(project_root / "tools" / "gcs_heartbeat.py")],
-                        name="gcs_heartbeat",
-                        output="screen",
-                    )
-                ],
+            ExecuteProcess(
+                cmd=["python3", str(project_root / "tools" / "gcs_heartbeat.py")],
+                name="gcs_heartbeat",
+                output="screen",
             ),
-            TimerAction(period=8.0, actions=[OpaqueFunction(function=_clock_bridge)]),
+            OpaqueFunction(function=_clock_bridge),
             OpaqueFunction(function=_vision_setup),
             IncludeLaunchDescription(
                 hardware_launch,
