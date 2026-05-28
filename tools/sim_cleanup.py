@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Aggressive sim process cleanup — SIGKILL-first, parallel, no grace period.
+"""Aggressive sim process cleanup with graceful PX4 shutdown.
 
-SITL processes hold no persistent state that needs flushing, so we skip the
-SIGTERM grace window and go straight to SIGKILL.  Artifact cleanup (PX4 locks,
-FastDDS shm) runs in parallel with the kill pass so the whole thing finishes
-in well under 2 s.
+Sends SIGTERM to PX4 first (1.5s grace period for parameters.bson flush),
+then SIGKILL all known process patterns. Artifact cleanup (PX4 locks, FastDDS shm)
+runs in parallel so the whole thing finishes in well under 2 s.
 
 Exit 0 if clean, 1 if processes remain after all kill passes.
 """
