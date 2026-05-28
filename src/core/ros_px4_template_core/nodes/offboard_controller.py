@@ -85,7 +85,7 @@ class OffboardController(Node):
         self._nav_state = 0
         self._arm_failed = False
         self._arm_fail_reason = ""
-        self._px4_ever_disarmed: bool = False
+        self._px4_ever_disarmed: bool = False  # latch: blocks arm until PX4 DISARMED seen
         # Wall-clock time when first VehicleLocalPosition arrived (XRCE connected + PX4 alive).
         # Used as the real arm-readiness signal instead of a fixed delay from node start.
         self._xrce_connect_time: float | None = None
@@ -142,9 +142,9 @@ class OffboardController(Node):
     def _status_cb(self, msg: VehicleStatus) -> None:
         self._armed = msg.arming_state == VehicleStatus.ARMING_STATE_ARMED
         self._nav_state = int(msg.nav_state)
-        self._px4_ever_disarmed = (
-            self._px4_ever_disarmed or msg.arming_state == VehicleStatus.ARMING_STATE_DISARMED
-        )
+        if not self._px4_ever_disarmed and msg.arming_state == VehicleStatus.ARMING_STATE_DISARMED:
+            self._px4_ever_disarmed = True
+            self.slog.event("PX4_DISARMED_OBSERVED")
 
     def _command_ack_cb(self, msg: VehicleCommandAck) -> None:
         if msg.command != VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM:
