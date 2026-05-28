@@ -29,6 +29,8 @@ app = typer.Typer(help="Hypermodern ROS 2 + PX4 Task Runner")
 console = Console()
 ROOT = Path(__file__).resolve().parent
 LOG_DIR = ROOT / "logs"
+_GZ_RESET_FLAG = Path("/tmp/gz_world_reset")
+
 
 def _load_dotenv() -> None:
     dotenv_path = ROOT / ".env"
@@ -44,7 +46,9 @@ def _load_dotenv() -> None:
                 if key not in os.environ:
                     os.environ[key] = val
 
+
 _load_dotenv()
+
 
 def _source_workspace_env() -> None:
     ws_setup = ROOT / "install" / "setup.bash"
@@ -52,11 +56,7 @@ def _source_workspace_env() -> None:
         try:
             cmd = f"source {ws_setup} && python3 -c 'import os, json; print(json.dumps(dict(os.environ)))'"
             res = subprocess.run(
-                ["bash", "-c", cmd],
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=str(ROOT)
+                ["bash", "-c", cmd], capture_output=True, text=True, check=True, cwd=str(ROOT)
             )
             new_env = json.loads(res.stdout.strip())
             for k, v in new_env.items():
@@ -64,7 +64,9 @@ def _source_workspace_env() -> None:
         except Exception as e:
             console.print(f"[yellow]Warning: failed to source workspace env: {e}[/yellow]")
 
+
 _source_workspace_env()
+
 
 def _get_clean_env() -> dict[str, str]:
     env = dict(os.environ)
@@ -77,6 +79,7 @@ def _get_clean_env() -> dict[str, str]:
         cleaned_dirs.append(d)
     env["PATH"] = os.pathsep.join(cleaned_dirs)
     return env
+
 
 # Ensure tools/ is on path to import sub-apps
 sys.path.append(str(ROOT / "tools"))
@@ -262,9 +265,25 @@ def check():
         raise typer.Exit(1) from None
 
 
+def _preemptive_world_reset(world: str) -> None:
+    """Reset Gazebo world now (during stop) so the next launch can skip it."""
+    try:
+        sys.path.insert(0, str(ROOT / "tools"))
+        from gz_lifecycle import gazebo_matches, reset_world  # type: ignore[import]
+
+        if gazebo_matches(world):
+            if reset_world(world):
+                _GZ_RESET_FLAG.write_text(world)
+                console.print(f"[green]World '{world}' reset preemptively.[/green]")
+    except Exception:
+        pass  # non-fatal — launch will reset on its own if flag absent
+
+
 @app.command()
 def sim(
-    mode: str = typer.Argument("gui", help="Mode: gui, headless, bg, px4, edit, hardware, stop, kill"),
+    mode: str = typer.Argument(
+        "gui", help="Mode: gui, headless, bg, px4, edit, hardware, stop, kill"
+    ),
     world: str = typer.Option("default", "--world", help="World file name"),
     model: str = typer.Option("x500", "--model", help="Airframe model"),
     vision: str = typer.Option("false", "--vision", help="Enable vision/aruco detection"),
@@ -280,10 +299,13 @@ def sim(
     if mode == "stop":
         console.print("[cyan]Stopping sim (Gazebo stays warm for next launch)...[/cyan]")
         subprocess.run(["uv", "run", "python", "tools/sim_cleanup.py"], cwd=str(ROOT))
+        _preemptive_world_reset(world)
         return
 
     if mode == "kill":
-        console.print("[cyan]Full teardown — killing Gazebo too (next launch will be cold)...[/cyan]")
+        console.print(
+            "[cyan]Full teardown — killing Gazebo too (next launch will be cold)...[/cyan]"
+        )
         subprocess.run(["uv", "run", "python", "tools/sim_cleanup.py", "--full"], cwd=str(ROOT))
         return
 
@@ -313,7 +335,9 @@ def sim(
         return
 
     # Check preflight first for all active sim modes
-    res = subprocess.run(["uv", "run", "python", "tools/preflight.py", f"--mode={mode}"], cwd=str(ROOT))
+    res = subprocess.run(
+        ["uv", "run", "python", "tools/preflight.py", f"--mode={mode}"], cwd=str(ROOT)
+    )
     if res.returncode != 0:
         console.print("[bold red]Preflight check failed. Aborting simulation launch.[/bold red]")
         raise typer.Exit(1) from None
@@ -359,7 +383,9 @@ def sim(
             )
             raise typer.Exit(1) from None
 
-        console.print(f"[cyan]Starting standalone PX4 SITL (world: {world}, model: {model})...[/cyan]")
+        console.print(
+            f"[cyan]Starting standalone PX4 SITL (world: {world}, model: {model})...[/cyan]"
+        )
         gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models:{px4_dir}/Tools/simulation/gz/worlds:{px4_dir}/Tools/simulation/gz/models"
 
         env = _get_clean_env()
@@ -367,17 +393,19 @@ def sim(
         env["GZ_SIM_RESOURCE_PATH"] = f"{gz_resource}:{env.get('GZ_SIM_RESOURCE_PATH', '')}"
         env["PX4_GZ_WORLDS"] = f"{px4_dir}/Tools/simulation/gz/worlds"
         env["PX4_GZ_MODELS"] = f"{px4_dir}/Tools/simulation/gz/models"
-        env["PX4_GZ_PLUGINS"] = f"{px4_dir}/build/px4_sitl_default/src/modules/simulation/gz_plugins"
+        env["PX4_GZ_PLUGINS"] = (
+            f"{px4_dir}/build/px4_sitl_default/src/modules/simulation/gz_plugins"
+        )
         env["PX4_GZ_SERVER_CONFIG"] = f"{px4_dir}/src/modules/simulation/gz_bridge/server.config"
         env["GZ_SIM_SYSTEM_PLUGIN_PATH"] = env["PX4_GZ_PLUGINS"]
         env["GZ_SIM_SERVER_CONFIG_PATH"] = env["PX4_GZ_SERVER_CONFIG"]
         env["LD_LIBRARY_PATH"] = f"{env['PX4_GZ_PLUGINS']}:{env.get('LD_LIBRARY_PATH', '')}"
 
         cwd = Path(px4_dir) / "build" / "px4_sitl_default"
-        
+
         sys.path.insert(0, str(ROOT / "tools"))
         from gz_lifecycle import gazebo_matches, is_model_present
-        
+
         px4_env = {
             **env,
             "PX4_GZ_WORLD": world,
@@ -390,10 +418,14 @@ def sim(
             "PX4_PARAM_EKF2_GPS_CTRL": "7",
         }
         if gazebo_matches(world) and is_model_present(world, f"{model}_0"):
-            console.print(f"[cyan]Gazebo warm for world '{world}' — attaching to existing '{model}_0' model...[/cyan]")
+            console.print(
+                f"[cyan]Gazebo warm for world '{world}' — attaching to existing '{model}_0' model...[/cyan]"
+            )
             px4_env["PX4_GZ_MODEL_NAME"] = f"{model}_0"
         else:
-            console.print(f"[cyan]Gazebo cold or model missing for world '{world}' — PX4 will spawn a new model...[/cyan]")
+            console.print(
+                f"[cyan]Gazebo cold or model missing for world '{world}' — PX4 will spawn a new model...[/cyan]"
+            )
 
         try:
             subprocess.run(
@@ -424,7 +456,9 @@ def sim(
 
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         log_file = LOG_DIR / f"sim_{datetime.now().strftime('%Y%m%dT%H%M%S')}.log"
-        console.print(f"[cyan]Starting headless simulation in background (log: {log_file})...[/cyan]")
+        console.print(
+            f"[cyan]Starting headless simulation in background (log: {log_file})...[/cyan]"
+        )
 
         gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
         env = _get_clean_env()
@@ -667,7 +701,9 @@ def test(
 
 @app.command()
 def bench(
-    fast_ekf2: bool = typer.Option(False, "--fast-ekf2", help="5× pre-arm physics (disclosed in output)"),
+    fast_ekf2: bool = typer.Option(
+        False, "--fast-ekf2", help="5× pre-arm physics (disclosed in output)"
+    ),
 ):
     """Honest warm-relaunch benchmark: stop → relaunch → stack ready (1× physics, no cheating)."""
     cmd = ["uv", "run", "python", "tools/bench_relaunch.py"]

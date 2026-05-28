@@ -153,7 +153,9 @@ def _gz_px4_stack(context, *args, **kwargs):
     plugins = f"{build}/src/modules/simulation/gz_plugins"
     server_config = f"{px4_dir}/src/modules/simulation/gz_bridge/server.config"
 
-    _session_key = (_time.time_ns() // 1_000_000) % 65534 + 1  # 1-65534, ms-resolution (65535 is XRCE broadcast key)
+    _session_key = (
+        _time.time_ns() // 1_000_000
+    ) % 65534 + 1  # 1-65534, ms-resolution (65535 is XRCE broadcast key)
 
     common_env = (
         "set -e; "
@@ -181,13 +183,25 @@ def _gz_px4_stack(context, *args, **kwargs):
     )
 
     if gazebo_matches(world):
-        print(f"[sim_full] Gazebo warm for world='{world}' — resetting world state", flush=True)
-        reset_ok = reset_world(world)
-        if not reset_ok:
+        _reset_flag = Path("/tmp/gz_world_reset")
+        already_reset = _reset_flag.exists() and _reset_flag.read_text().strip() == world
+        if already_reset:
+            _reset_flag.unlink(missing_ok=True)
             print(
-                "[sim_full] WARNING: world reset failed; PX4 connecting to unreset state",
+                f"[sim_full] World '{world}' already reset during stop — skipping",
                 flush=True,
             )
+        else:
+            print(
+                f"[sim_full] Gazebo warm for world='{world}' — resetting world state",
+                flush=True,
+            )
+            reset_ok = reset_world(world)
+            if not reset_ok:
+                print(
+                    "[sim_full] WARNING: world reset failed; PX4 connecting to unreset state",
+                    flush=True,
+                )
         # The world reset deletes the dynamically spawned model, so we let PX4 spawn a new one.
         px4_warm_launch = (
             "export PX4_GZ_STANDALONE=1; "
