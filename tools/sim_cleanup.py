@@ -33,7 +33,6 @@ _PATTERNS = [
     r"hardware/launch/hardware\.launch\.py",
     r"gz_px4_stack",
     r"/bin/px4$",
-    r"MicroXRCEAgent",
     r"parameter_bridge",
     r"rosbridge_websocket",
     r"gcs_heartbeat",
@@ -46,7 +45,7 @@ _PATTERNS = [
 ]
 
 # Extra patterns added only when --full is passed (kills Gazebo too).
-_FULL_PATTERNS = [*_PATTERNS, r"gz sim", r"gz server", r"gzserver"]
+_FULL_PATTERNS = [*_PATTERNS, r"MicroXRCEAgent", r"gz sim", r"gz server", r"gzserver"]
 
 _MY_PID = os.getpid()
 

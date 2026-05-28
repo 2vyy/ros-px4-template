@@ -33,6 +33,20 @@ def test_full_patterns_is_superset():
         )
 
 
+def test_xrce_agent_excluded_from_default_patterns():
+    """MicroXRCEAgent must NOT be killed on normal sim stop (kept alive for reuse)."""
+    assert r"MicroXRCEAgent" not in sim_cleanup._PATTERNS, (
+        "MicroXRCEAgent must not be in _PATTERNS — it is kept alive across warm stops"
+    )
+
+
+def test_xrce_agent_included_in_full_patterns():
+    """MicroXRCEAgent must be killed on --full teardown."""
+    assert r"MicroXRCEAgent" in sim_cleanup._FULL_PATTERNS, (
+        "MicroXRCEAgent must be in _FULL_PATTERNS — killed only on full teardown"
+    )
+
+
 def test_graceful_px4_stop_sends_sigterm():
     """_graceful_px4_stop must SIGTERM the PX4 pid found by pgrep."""
     mock_run = MagicMock()

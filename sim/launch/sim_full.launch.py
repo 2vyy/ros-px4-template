@@ -64,6 +64,22 @@ def _px4_build(px4_dir: str) -> str:
     return str(Path(px4_dir) / "build" / "px4_sitl_default")
 
 
+def _xrce_agent_running() -> bool:
+    """Return True if MicroXRCEAgent is already running (pgrep check)."""
+    import subprocess as _subprocess
+
+    try:
+        result = _subprocess.run(
+            ["pgrep", "-x", "MicroXRCEAgent"],
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+        return bool(result.stdout.strip())
+    except Exception:
+        return False
+
+
 def _vision_setup(context, *args, **kwargs):
     world = LaunchConfiguration("world").perform(context)
     model = LaunchConfiguration("model").perform(context)
@@ -123,6 +139,8 @@ def _clock_bridge(context, *args, **kwargs):
 
 def _gz_px4_stack(context, *args, **kwargs):
     """Start PX4 in standalone mode. Starts Gazebo first if not already warm."""
+    import time as _time
+
     world = LaunchConfiguration("world").perform(context)
     model = LaunchConfiguration("model").perform(context)
     headless = LaunchConfiguration("headless").perform(context).lower() == "true"
@@ -135,6 +153,8 @@ def _gz_px4_stack(context, *args, **kwargs):
     plugins = f"{build}/src/modules/simulation/gz_plugins"
     server_config = f"{px4_dir}/src/modules/simulation/gz_bridge/server.config"
 
+    _session_key = (_time.time_ns() // 1_000_000) % 65534 + 1  # 1-65535, ms-resolution
+
     common_env = (
         "set -e; "
         "export GZ_IP=127.0.0.1; "
@@ -143,6 +163,7 @@ def _gz_px4_stack(context, *args, **kwargs):
         "export PX4_PARAM_COM_SPOOLUP_TIME=0.0; "
         "export PX4_PARAM_EKF2_GPS_CHECK=0; "
         "export PX4_PARAM_EKF2_GPS_CTRL=7; "
+        f"export PX4_PARAM_UXRCE_DDS_KEY={_session_key}; "
         f'export GZ_SIM_RESOURCE_PATH="{gz_paths}"; '
         f'export PX4_GZ_WORLDS="{px4_gz_worlds}"; '
         f'export PX4_GZ_MODELS="{px4_dir}/Tools/simulation/gz/models"; '
@@ -201,6 +222,24 @@ def generate_launch_description() -> LaunchDescription:
     px4_dir = _require_px4_dir()
     gz_paths = _gz_paths(project_root, px4_dir)
 
+    agent_alive = _xrce_agent_running()
+    if agent_alive:
+        print("[sim_full] MicroXRCEAgent already running — reusing existing agent", flush=True)
+    else:
+        print("[sim_full] MicroXRCEAgent not running — starting fresh agent", flush=True)
+
+    agent_action = (
+        []
+        if agent_alive
+        else [
+            ExecuteProcess(
+                cmd=["MicroXRCEAgent", "udp4", "-p", "8888"],
+                name="micro_xrce_agent",
+                output="screen",
+            )
+        ]
+    )
+
     hardware_launch = PythonLaunchDescriptionSource(
         str(project_root / "hardware" / "launch" / "hardware.launch.py")
     )
@@ -214,11 +253,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("headless", default_value="false"),
             SetEnvironmentVariable(name="GZ_IP", value="127.0.0.1"),
             SetEnvironmentVariable(name="GZ_SIM_RESOURCE_PATH", value=gz_paths),
-            ExecuteProcess(
-                cmd=["MicroXRCEAgent", "udp4", "-p", "8888"],
-                name="micro_xrce_agent",
-                output="screen",
-            ),
+            *agent_action,
             OpaqueFunction(function=_gz_px4_stack),
             ExecuteProcess(
                 cmd=["python3", str(project_root / "tools" / "gcs_heartbeat.py")],
