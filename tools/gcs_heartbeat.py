@@ -9,6 +9,7 @@ the system/component ID and send the param overrides.
 
 from __future__ import annotations
 
+import struct
 import sys
 import time
 from pathlib import Path
@@ -31,6 +32,25 @@ _PARAMS: tuple[tuple[str, float, str], ...] = (
 )
 
 _CONNECT_TIMEOUT_S = 120.0
+
+
+def _send_params(conn: mavutil.mavudp) -> None:
+    for name, value, type_str in _PARAMS:
+        if type_str == "INT32":
+            type_id = mavutil.mavlink.MAV_PARAM_TYPE_INT32
+            vstr = struct.pack(">i", int(value))
+            (numeric_value,) = struct.unpack(">f", vstr)
+        else:
+            type_id = mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+            numeric_value = float(value)
+
+        conn.mav.param_set_send(
+            conn.target_system,
+            conn.target_component,
+            name.encode("utf-8"),
+            numeric_value,
+            type_id,  # type: ignore[unresolved-attribute]
+        )
 
 
 def main() -> None:
@@ -68,24 +88,7 @@ def main() -> None:
 
     # Retry param_set a few times — UDP is lossy.
     for _ in range(5):
-        for name, value, type_str in _PARAMS:
-            import struct
-
-            if type_str == "INT32":
-                type_id = mavutil.mavlink.MAV_PARAM_TYPE_INT32
-                vstr = struct.pack(">i", int(value))
-                (numeric_value,) = struct.unpack(">f", vstr)
-            else:
-                type_id = mavutil.mavlink.MAV_PARAM_TYPE_REAL32
-                numeric_value = float(value)
-
-            conn.mav.param_set_send(
-                conn.target_system,
-                conn.target_component,
-                name.encode("utf-8"),
-                numeric_value,
-                type_id,  # type: ignore[unresolved-attribute]
-            )
+        _send_params(conn)
         time.sleep(0.3)
 
     _PARAMS_FLAG.write_text(str(time.time()))
@@ -126,25 +129,8 @@ def main() -> None:
 
         if need_send_params and time.monotonic() - last_heartbeat_time < 1.0:
             print("[gcs_heartbeat] Re-sending parameters to restarted PX4 SITL...", flush=True)
-            for _ in range(3):  # Send 3 times to ensure delivery over UDP
-                for name, value, type_str in _PARAMS:
-                    import struct
-
-                    if type_str == "INT32":
-                        type_id = mavutil.mavlink.MAV_PARAM_TYPE_INT32
-                        vstr = struct.pack(">i", int(value))
-                        (numeric_value,) = struct.unpack(">f", vstr)
-                    else:
-                        type_id = mavutil.mavlink.MAV_PARAM_TYPE_REAL32
-                        numeric_value = float(value)
-
-                    conn.mav.param_set_send(
-                        conn.target_system,
-                        conn.target_component,
-                        name.encode("utf-8"),
-                        numeric_value,
-                        type_id,  # type: ignore[unresolved-attribute]
-                    )
+            for _ in range(3):
+                _send_params(conn)
                 time.sleep(0.1)
             _PARAMS_FLAG.write_text(str(time.time()))
             print("[gcs_heartbeat] Params committed.", flush=True)
