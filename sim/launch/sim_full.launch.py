@@ -153,7 +153,7 @@ def _gz_px4_stack(context, *args, **kwargs):
     plugins = f"{build}/src/modules/simulation/gz_plugins"
     server_config = f"{px4_dir}/src/modules/simulation/gz_bridge/server.config"
 
-    _session_key = (_time.time_ns() // 1_000_000) % 65534 + 1  # 1-65535, ms-resolution
+    _session_key = (_time.time_ns() // 1_000_000) % 65534 + 1  # 1-65534, ms-resolution (65535 is XRCE broadcast key)
 
     common_env = (
         "set -e; "
