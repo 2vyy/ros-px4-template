@@ -138,6 +138,11 @@ def _gz_px4_stack(context, *args, **kwargs):
     common_env = (
         "set -e; "
         "export GZ_IP=127.0.0.1; "
+        "export PX4_PARAM_COM_ARM_WO_GPS=1; "
+        "export PX4_PARAM_CBRK_SUPPLY_CHK=894281; "
+        "export PX4_PARAM_COM_SPOOLUP_TIME=0.0; "
+        "export PX4_PARAM_EKF2_GPS_CHECK=0; "
+        "export PX4_PARAM_EKF2_GPS_CTRL=7; "
         f'export GZ_SIM_RESOURCE_PATH="{gz_paths}"; '
         f'export PX4_GZ_WORLDS="{px4_gz_worlds}"; '
         f'export PX4_GZ_MODELS="{px4_dir}/Tools/simulation/gz/models"; '
@@ -162,7 +167,13 @@ def _gz_px4_stack(context, *args, **kwargs):
                 "[sim_full] WARNING: world reset failed; PX4 connecting to unreset state",
                 flush=True,
             )
-        cmd = common_env + px4_launch
+        # The world reset deletes the dynamically spawned model, so we let PX4 spawn a new one.
+        px4_warm_launch = (
+            "export PX4_GZ_STANDALONE=1; "
+            f'cd "{build}"; '
+            f'PX4_GZ_WORLD="{world}" PX4_SIM_MODEL=gz_{model} exec ./bin/px4'
+        )
+        cmd = common_env + px4_warm_launch
     else:
         print(f"[sim_full] Gazebo cold — starting gz sim for world='{world}'", flush=True)
         headless_export = "export HEADLESS=1; " if headless else ""

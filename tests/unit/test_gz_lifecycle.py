@@ -50,7 +50,7 @@ def test_reset_world_success():
         assert result is True
         call_args = mock_run.call_args.args[0]
         assert "/world/default/control" in call_args
-        assert "reset: {all: true}" in call_args
+        assert "reset: {all: true}, pause: false" in call_args
 
 
 def test_reset_world_failure():

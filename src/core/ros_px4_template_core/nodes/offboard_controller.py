@@ -85,6 +85,9 @@ class OffboardController(Node):
         self._nav_state = 0
         self._arm_failed = False
         self._arm_fail_reason = ""
+        # Wall-clock time when first VehicleLocalPosition arrived (XRCE connected + PX4 alive).
+        # Used as the real arm-readiness signal instead of a fixed delay from node start.
+        self._xrce_connect_time: float | None = None
 
         self.create_subscription(
             PoseStamped, "/drone/target_pose", self._target_pose_cb, _RELIABLE_QOS
@@ -131,6 +134,9 @@ class OffboardController(Node):
 
     def _position_cb(self, msg: VehicleLocalPosition) -> None:
         self._current_pos_enu = ned_to_enu(msg.x, msg.y, msg.z)
+        if self._xrce_connect_time is None:
+            self._xrce_connect_time = time.monotonic()
+            self.slog.event("XRCE_CONNECTED", wall_elapsed_s=round(self._elapsed(), 2))
 
     def _status_cb(self, msg: VehicleStatus) -> None:
         self._armed = msg.arming_state == VehicleStatus.ARMING_STATE_ARMED
@@ -147,11 +153,12 @@ class OffboardController(Node):
         self.slog.event(
             events.ARM_ACK_DENIED, result=result, reason=reason, param1=float(msg.result_param1)
         )
-        # Terminal failures: stop retrying. TEMPORARILY_REJECTED and IN_PROGRESS
-        # are non-terminal — PX4 may still accept on a later try / finish in-flight.
-        if result not in (
-            VehicleCommandAck.VEHICLE_CMD_RESULT_TEMPORARILY_REJECTED,
-            VehicleCommandAck.VEHICLE_CMD_RESULT_IN_PROGRESS,
+        # Only truly terminal: UNSUPPORTED or FAILED. DENIED can happen before
+        # COM_ARM_WO_GPS=1 is applied via GCS; keep retrying so the next cycle succeeds.
+        # TEMPORARILY_REJECTED and IN_PROGRESS are also non-terminal.
+        if result in (
+            VehicleCommandAck.VEHICLE_CMD_RESULT_UNSUPPORTED,
+            VehicleCommandAck.VEHICLE_CMD_RESULT_FAILED,
         ):
             if not self._arm_failed:
                 self._arm_failed = True
@@ -167,16 +174,30 @@ class OffboardController(Node):
             return
 
         elapsed = self._elapsed()
-        if elapsed < self._prestream_s:
+
+        # XRCE-triggered arm: don't use a fixed wall-clock delay from node start,
+        # because ROS timers only fire once Gazebo's sim clock flows, which means
+        # arm_delay_s has already elapsed by the time the first callback fires.
+        # Instead, arm as soon as the first VehicleLocalPosition message arrives
+        # (proving XRCE is connected and PX4 is live), with a small settle buffer.
+        xrce_ready = (
+            self._xrce_connect_time is not None
+            and (time.monotonic() - self._xrce_connect_time) >= self._arm_delay_s
+            and self._setpoints_sent > 5
+        )
+
+        if not xrce_ready:
             self._state = "PREARM"
             return
 
+        # Hammer OFFBOARD mode at 2.0s until confirmed — early commands are
+        # discarded by PX4 while XRCE timestamps are not yet synced.
         if self._nav_state != VehicleStatus.NAVIGATION_STATE_OFFBOARD:
-            if elapsed - self._last_offboard_try >= 2.0 and self._setpoints_sent > 5:
+            if elapsed - self._last_offboard_try >= 2.0:
                 self._send_offboard_mode()
                 self._last_offboard_try = elapsed
 
-        if not self._armed and elapsed >= self._arm_delay_s and not self._arm_failed:
+        if not self._armed and not self._arm_failed:
             if elapsed - self._last_arm_try >= 2.0:
                 self._send_arm(True)
                 self._last_arm_try = elapsed
@@ -186,10 +207,8 @@ class OffboardController(Node):
             self._state = "ARMED"
         elif self._arm_failed:
             self._state = "ARM_FAILED"
-        elif elapsed >= self._arm_delay_s:
-            self._state = "ARMING"
         else:
-            self._state = "PREARM"
+            self._state = "ARMING"
 
     def _control_loop(self) -> None:
         self._publish_offboard_mode()

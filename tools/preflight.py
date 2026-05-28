@@ -71,6 +71,12 @@ def _git_branch(path: Path) -> str:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", default="gui")
+    args = parser.parse_args()
+
     ros_setup = os.environ.get("ROS_SETUP", "")
     px4_dir = os.environ.get("PX4_DIR", "")
     px4_msgs = ROOT / "src" / "px4_msgs"
@@ -106,24 +112,25 @@ def main() -> None:
         )
     )
 
-    port_8888_free = _port_free(8888)
-    pid_8888 = "" if port_8888_free else _port_pid(8888, "tcp")
-    results.append(
-        _check(
-            "Port 8888 (MicroXRCEAgent) free",
-            port_8888_free,
-            f"already in use {pid_8888} — run: just sim-stop".strip(),
+    if args.mode not in ("px4", "edit"):
+        port_8888_free = _port_free(8888)
+        pid_8888 = "" if port_8888_free else _port_pid(8888, "tcp")
+        results.append(
+            _check(
+                "Port 8888 (MicroXRCEAgent) free",
+                port_8888_free,
+                f"already in use {pid_8888} — run: just sim-stop".strip(),
+            )
         )
-    )
-    port_9090_free = _port_free(9090)
-    pid_9090 = "" if port_9090_free else _port_pid(9090, "tcp")
-    results.append(
-        _check(
-            "Port 9090 (rosbridge) free",
-            port_9090_free,
-            f"already in use {pid_9090} — run: just sim-stop".strip(),
+        port_9090_free = _port_free(9090)
+        pid_9090 = "" if port_9090_free else _port_pid(9090, "tcp")
+        results.append(
+            _check(
+                "Port 9090 (rosbridge) free",
+                port_9090_free,
+                f"already in use {pid_9090} — run: just sim-stop".strip(),
+            )
         )
-    )
 
     results.append(_check("uv on PATH", shutil.which("uv") is not None))
 

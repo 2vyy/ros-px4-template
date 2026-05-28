@@ -59,7 +59,7 @@ def reset_world(world: str) -> bool:
                 "--timeout",
                 "3000",  # gz CLI timeout in ms; Python timeout below is the backstop in seconds
                 "--req",
-                "reset: {all: true}",
+                "reset: {all: true}, pause: false",
             ],
             capture_output=True,
             text=True,
@@ -76,3 +76,25 @@ def gazebo_matches(world: str) -> bool:
     if current != world:
         return False
     return is_gazebo_running(world)
+
+
+def is_model_present(world: str, model: str) -> bool:
+    """Return True if the model is currently present in Gazebo."""
+    try:
+        r = subprocess.run(
+            ["gz", "model", "--list"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if r.returncode != 0:
+            return False
+        for line in r.stdout.splitlines():
+            line_str = line.strip()
+            if line_str.startswith("-") or line_str.startswith("*"):
+                name = line_str.lstrip("-* ").strip()
+                if name == model:
+                    return True
+        return False
+    except Exception:
+        return False
