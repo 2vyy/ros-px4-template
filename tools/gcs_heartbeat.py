@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import sys
 import time
+from pathlib import Path
 
 from pymavlink import mavutil
+
+_PARAMS_FLAG = Path("/tmp/gcs_params_flag")
 
 _PARAMS: tuple[tuple[str, float, str], ...] = (
     ("COM_ARM_WO_GPS", 1.0, "INT32"),  # arm without GPS/EKF fix
@@ -85,6 +88,7 @@ def main() -> None:
             )
         time.sleep(0.3)
 
+    _PARAMS_FLAG.write_text(str(time.time()))
     print("[gcs_heartbeat] Params committed. Sending heartbeats...", flush=True)
     last_heartbeat_time = time.monotonic()
     need_send_params = False
@@ -142,6 +146,7 @@ def main() -> None:
                         type_id,  # type: ignore[unresolved-attribute]
                     )
                 time.sleep(0.1)
+            _PARAMS_FLAG.write_text(str(time.time()))
             print("[gcs_heartbeat] Params committed.", flush=True)
             need_send_params = False
 
