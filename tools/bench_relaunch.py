@@ -127,7 +127,7 @@ def main() -> None:
     launch_mtime_cutoff = time.time()
 
     subprocess.Popen(
-        ["uv", "run", "python", "tasks.py", "sim", "bg"],
+        ["uv", "run", "python", "tasks.py", "sim", "bg", "--no-build"],
         cwd=str(ROOT),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
