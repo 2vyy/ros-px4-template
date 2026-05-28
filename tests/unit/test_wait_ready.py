@@ -86,3 +86,10 @@ def test_px4_standby_false_on_timeout():
         from wait_ready import _px4_standby
 
         assert _px4_standby() is False
+
+
+def test_px4_standby_false_when_ros2_not_found():
+    with patch("subprocess.run", side_effect=FileNotFoundError()):
+        from wait_ready import _px4_standby
+
+        assert _px4_standby() is False
