@@ -51,7 +51,7 @@ def reset_world(world: str) -> bool:
                 "-s", f"/world/{world}/control",
                 "--reqtype", "gz.msgs.WorldControl",
                 "--reptype", "gz.msgs.Boolean",
-                "--timeout", "3000",
+                "--timeout", "3000",   # gz CLI timeout in ms; Python timeout below is the backstop in seconds
                 "--req", "reset: {all: true}",
             ],
             capture_output=True,
