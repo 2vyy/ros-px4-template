@@ -69,7 +69,7 @@ def main(timeout: int = typer.Option(180, "--timeout", help="Seconds before givi
 
     rosbridge_ok = False
     topic_ok = False
-    params_ok = False
+    standby_ok = False
 
     while time.monotonic() < deadline:
         if not topic_ok:
@@ -82,12 +82,12 @@ def main(timeout: int = typer.Option(180, "--timeout", help="Seconds before givi
             if rosbridge_ok:
                 typer.echo("  [OK] rosbridge :9090 open")
 
-        if not params_ok:
-            params_ok = _px4_standby()
-            if params_ok:
+        if not standby_ok:
+            standby_ok = _px4_standby()
+            if standby_ok:
                 typer.echo("  [OK] PX4 ready to arm (DISARMED)")
 
-        if rosbridge_ok and topic_ok and params_ok:
+        if rosbridge_ok and topic_ok and standby_ok:
             typer.echo("Stack ready.")
             raise typer.Exit(0)
 
@@ -95,12 +95,12 @@ def main(timeout: int = typer.Option(180, "--timeout", help="Seconds before givi
         typer.echo(
             f"  waiting... topic={'OK' if topic_ok else '...'} "
             f"rosbridge={'OK' if rosbridge_ok else '...'} "
-            f"params={'OK' if params_ok else '...'} ({remaining}s left)"
+            f"standby={'OK' if standby_ok else '...'} ({remaining}s left)"
         )
         time.sleep(_POLL_INTERVAL_S)
 
     typer.echo(
-        f"TIMEOUT after {timeout}s — topic={topic_ok} rosbridge={rosbridge_ok} params={params_ok}",
+        f"TIMEOUT after {timeout}s — topic={topic_ok} rosbridge={rosbridge_ok} standby={standby_ok}",
         err=True,
     )
     sys.exit(1)

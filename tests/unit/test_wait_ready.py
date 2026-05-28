@@ -57,7 +57,7 @@ def test_timeout_reports_standby_state():
     ):
         result = runner.invoke(app, ["--timeout", "1"])
     assert result.exit_code == 1
-    assert "params=False" in result.output
+    assert "standby=False" in result.output
 
 
 # ── _px4_standby unit tests ──────────────────────────────────────────────────
@@ -66,7 +66,7 @@ def test_timeout_reports_standby_state():
 def test_px4_standby_true_when_arming_state_1_in_output():
     mock_result = MagicMock()
     mock_result.stdout = "arming_state: 1\n"
-    with patch("subprocess.run", return_value=mock_result):
+    with patch("wait_ready.subprocess.run", return_value=mock_result):
         from wait_ready import _px4_standby
 
         assert _px4_standby() is True
@@ -75,21 +75,21 @@ def test_px4_standby_true_when_arming_state_1_in_output():
 def test_px4_standby_false_when_arming_state_not_disarmed():
     mock_result = MagicMock()
     mock_result.stdout = "arming_state: 2\n"
-    with patch("subprocess.run", return_value=mock_result):
+    with patch("wait_ready.subprocess.run", return_value=mock_result):
         from wait_ready import _px4_standby
 
         assert _px4_standby() is False
 
 
 def test_px4_standby_false_on_timeout():
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="ros2", timeout=3)):
+    with patch("wait_ready.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="ros2", timeout=3)):
         from wait_ready import _px4_standby
 
         assert _px4_standby() is False
 
 
 def test_px4_standby_false_when_ros2_not_found():
-    with patch("subprocess.run", side_effect=FileNotFoundError()):
+    with patch("wait_ready.subprocess.run", side_effect=FileNotFoundError()):
         from wait_ready import _px4_standby
 
         assert _px4_standby() is False
