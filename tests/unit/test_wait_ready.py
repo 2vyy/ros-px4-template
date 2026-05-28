@@ -13,7 +13,7 @@ from wait_ready import app
 
 
 def test_ready_requires_standby_gate():
-    """Stack ready must wait for all three gates including PX4 STANDBY."""
+    """Stack ready must wait for all three gates including PX4 ready to arm (DISARMED)."""
     runner = CliRunner()
     with (
         patch("wait_ready._topic_live", return_value=True),
@@ -22,7 +22,7 @@ def test_ready_requires_standby_gate():
     ):
         result = runner.invoke(app, ["--timeout", "5"])
     assert result.exit_code == 0
-    assert "PX4 in STANDBY" in result.output
+    assert "PX4 ready to arm (DISARMED)" in result.output
     assert "Stack ready" in result.output
 
 
@@ -63,18 +63,18 @@ def test_timeout_reports_standby_state():
 # ── _px4_standby unit tests ──────────────────────────────────────────────────
 
 
-def test_px4_standby_true_when_arming_state_2_in_output():
+def test_px4_standby_true_when_arming_state_1_in_output():
     mock_result = MagicMock()
-    mock_result.stdout = "arming_state: 2\n"
+    mock_result.stdout = "arming_state: 1\n"
     with patch("subprocess.run", return_value=mock_result):
         from wait_ready import _px4_standby
 
         assert _px4_standby() is True
 
 
-def test_px4_standby_false_when_arming_state_not_standby():
+def test_px4_standby_false_when_arming_state_not_disarmed():
     mock_result = MagicMock()
-    mock_result.stdout = "arming_state: 1\n"
+    mock_result.stdout = "arming_state: 2\n"
     with patch("subprocess.run", return_value=mock_result):
         from wait_ready import _px4_standby
 

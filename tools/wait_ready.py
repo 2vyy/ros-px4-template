@@ -5,7 +5,7 @@ Readiness criteria (all three must pass):
   1. /fmu/out/vehicle_local_position appears in `ros2 topic list`
      (confirms PX4 SITL + MicroXRCEAgent + px4_topic_relay are all up).
   2. rosbridge WebSocket port 9090 is open.
-  3. PX4 vehicle_status reports arming_state == STANDBY (2), confirmed by
+  3. PX4 vehicle_status reports arming_state == DISARMED (1), confirmed by
      polling `ros2 topic echo /fmu/out/vehicle_status`.
 
 Exit 0 on ready, 1 on timeout.
@@ -49,7 +49,7 @@ def _topic_live(topic: str) -> bool:
 
 
 def _px4_standby() -> bool:
-    """Return True if PX4 vehicle_status shows arming_state == STANDBY (2)."""
+    """Return True if PX4 vehicle_status shows arming_state == DISARMED (1) — ready to arm."""
     try:
         result = subprocess.run(
             ["ros2", "topic", "echo", "--once", "/fmu/out/vehicle_status"],
@@ -57,7 +57,7 @@ def _px4_standby() -> bool:
             text=True,
             timeout=3,
         )
-        return "arming_state: 2" in result.stdout
+        return "arming_state: 1" in result.stdout
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
 
@@ -85,7 +85,7 @@ def main(timeout: int = typer.Option(180, "--timeout", help="Seconds before givi
         if not params_ok:
             params_ok = _px4_standby()
             if params_ok:
-                typer.echo("  [OK] PX4 in STANDBY")
+                typer.echo("  [OK] PX4 ready to arm (DISARMED)")
 
         if rosbridge_ok and topic_ok and params_ok:
             typer.echo("Stack ready.")

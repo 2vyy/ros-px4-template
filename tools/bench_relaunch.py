@@ -45,7 +45,7 @@ def _topic_live(topic: str) -> bool:
 
 
 def _px4_standby() -> bool:
-    """Return True if PX4 vehicle_status shows arming_state == STANDBY (2)."""
+    """Return True if PX4 vehicle_status shows arming_state == DISARMED (1) — ready to arm."""
     try:
         result = subprocess.run(
             ["ros2", "topic", "echo", "--once", "/fmu/out/vehicle_status"],
@@ -53,7 +53,7 @@ def _px4_standby() -> bool:
             text=True,
             timeout=3,
         )
-        return "arming_state: 2" in result.stdout
+        return "arming_state: 1" in result.stdout
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
 
@@ -156,7 +156,7 @@ def main() -> None:
         if not params_ok and _px4_standby():
             t_params = time.monotonic()
             params_ok = True
-            print(_format_milestone("PX4 in STANDBY", t_params, t0, t_launch), flush=True)
+            print(_format_milestone("PX4 ready to arm (DISARMED)", t_params, t0, t_launch), flush=True)
 
         if topic_ok and rosbridge_ok and params_ok:
             t_ready = max(t_xrce, t_rosbridge, t_params)  # type: ignore[type-var]

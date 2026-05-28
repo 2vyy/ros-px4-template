@@ -34,18 +34,18 @@ def test_format_milestone_with_launch_ref():
 # ── _px4_standby ─────────────────────────────────────────────────────────────
 
 
-def test_px4_standby_true_when_arming_state_2_in_output():
+def test_px4_standby_true_when_arming_state_1_in_output():
     mock_result = MagicMock()
-    mock_result.stdout = "arming_state: 2\nsome_other_field: 1\n"
+    mock_result.stdout = "arming_state: 1\nsome_other_field: 2\n"
     with patch("subprocess.run", return_value=mock_result):
         from bench_relaunch import _px4_standby
 
         assert _px4_standby() is True
 
 
-def test_px4_standby_false_when_arming_state_not_2():
+def test_px4_standby_false_when_arming_state_not_1():
     mock_result = MagicMock()
-    mock_result.stdout = "arming_state: 1\n"
+    mock_result.stdout = "arming_state: 2\n"
     with patch("subprocess.run", return_value=mock_result):
         from bench_relaunch import _px4_standby
 
