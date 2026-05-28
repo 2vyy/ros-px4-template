@@ -49,7 +49,7 @@ def main() -> None:
             0,
             0,
         )
-        msg = conn.recv_match(type="HEARTBEAT", blocking=True, timeout=1.0)
+        msg = conn.recv_match(type="HEARTBEAT", blocking=True, timeout=0.1)
         if msg is not None:
             conn.target_system = msg.get_srcSystem()
             conn.target_component = msg.get_srcComponent()
@@ -150,7 +150,7 @@ def main() -> None:
             print("[gcs_heartbeat] Params committed.", flush=True)
             need_send_params = False
 
-        time.sleep(1.0)
+        time.sleep(0.1)
 
 
 if __name__ == "__main__":
