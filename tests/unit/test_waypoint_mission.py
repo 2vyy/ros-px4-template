@@ -4,22 +4,44 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from ros_px4_template_core.lib.mission_profile import (
+    MissionProfileParams,
+    build_mission_profile,
+)
 from ros_px4_template_core.lib.waypoint_mission import (
     EnuPoint,
     current_waypoint,
-    load_mission_yaml,
+    load_path_yaml,
     reached,
 )
 
-MISSION = Path(__file__).resolve().parents[2] / "config/missions/inspect_aruco.yaml"
+DEMO_PATH = Path(__file__).resolve().parents[2] / "config/paths/demo.yaml"
 
 
-def test_load_inspect_aruco() -> None:
-    m = load_mission_yaml(MISSION)
-    assert m.frame_id == "map"
-    assert len(m.waypoints) == 3
-    assert m.marker is not None
-    assert m.marker.hold_offset_enu.z == 1.5
+def test_load_path_demo_list() -> None:
+    wps = load_path_yaml(DEMO_PATH)
+    assert len(wps) == 3
+    assert wps[0].z == 3.0
+
+
+def test_load_path_empty_raises() -> None:
+    bad = Path(__file__).resolve().parents[2] / "config/paths/_test_empty.yaml"
+    bad.write_text("[]\n")
+    try:
+        with pytest.raises(ValueError, match="at least one waypoint"):
+            load_path_yaml(bad)
+    finally:
+        bad.unlink(missing_ok=True)
+
+
+def test_profile_marker_matches_path_only() -> None:
+    wps = load_path_yaml(DEMO_PATH)
+    plain = build_mission_profile(wps, MissionProfileParams(enable_marker_hover=False))
+    inspect = build_mission_profile(wps, MissionProfileParams(enable_marker_hover=True))
+    assert plain.marker is None
+    assert inspect.marker is not None
+    assert plain.waypoints == inspect.waypoints
 
 
 def test_reached_within_tolerance() -> None:
@@ -29,6 +51,9 @@ def test_reached_within_tolerance() -> None:
 
 
 def test_current_waypoint_bounds() -> None:
-    m = load_mission_yaml(MISSION)
-    assert current_waypoint(m, 0) == m.waypoints[0]
-    assert current_waypoint(m, 99) is None
+    mission = build_mission_profile(
+        load_path_yaml(DEMO_PATH),
+        MissionProfileParams(),
+    )
+    assert current_waypoint(mission, 0) == mission.waypoints[0]
+    assert current_waypoint(mission, 99) is None

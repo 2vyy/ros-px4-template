@@ -25,7 +25,7 @@ setup(
     entry_points={
         "console_scripts": [
             "offboard_controller = ros_px4_template_core.nodes.offboard_controller:main",
-            "state_estimator = ros_px4_template_core.nodes.state_estimator:main",
+            "px4_pose_adapter = ros_px4_template_core.nodes.px4_pose_adapter:main",
             "mission_manager = ros_px4_template_core.nodes.mission_manager:main",
             "px4_topic_relay = ros_px4_template_core.nodes.px4_topic_relay:main",
         ],

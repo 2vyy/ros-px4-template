@@ -1,80 +1,129 @@
 # Missions
 
-Missions are a phase string plus one `tick()` in `ros_px4_template_core.lib.mission_runtime`, not a class-per-state FSM. Mission YAML is loaded by `waypoint_mission.load_mission_yaml`. Phases live in `mission_runtime`. `mission_manager` (the node) wires both to ROS.
+A **mission** in this template is not a YAML file. It is a **launch recipe + param profile** running a shared navigation **routine** in code (`lib/mission_runtime.tick()`). Geometry lives in path files only.
 
-## Inspect ArUco demo
+## Three layers
 
-```bash
-just demo-inspect      # sim + vision in background, RViz in foreground
-just sim-inspect       # sim only (vision enabled, no RViz)
-just rviz-inspect      # RViz against an already-running sim
+| Layer | Where | Example |
+|-------|--------|---------|
+| **Path** | `config/paths/*.yaml` | `demo.yaml` — ENU points only |
+| **Profile** | `config/params/*.yaml` + overlays | `path_file`, `enable_marker_hover`, tolerances |
+| **Routine** | `lib/mission_runtime.py` | `follow_path` → optional `hover_marker` → `done` |
+
+**Composition** (vision, world, future pose backends) is chosen in **launch** and `just` recipes, not in path files.
+
+```mermaid
+flowchart LR
+  P[config/paths/demo.yaml]
+  Params[config/params/sim.yaml]
+  Ovl[overlays/inspect.yaml]
+  Launch[sim_full.launch.py]
+  MM[mission_manager]
+  RT[mission_runtime.tick]
+  P --> MM
+  Params --> MM
+  Ovl --> MM
+  Launch --> MM
+  MM --> RT
 ```
 
-Mission config: `config/missions/inspect_aruco.yaml`. Waypoints are ENU `(x, y, z)`. After the path completes, hover above the ArUco marker while `/vision/marker_pose` is valid.
+## Path files
 
-### Phases
+`config/paths/demo.yaml`:
+
+```yaml
+- {x: 0.0, y: 0.0, z: 3.0}
+- {x: 5.0, y: 0.0, z: 3.0}
+- {x: 8.0, y: 0.0, z: 3.0}
+```
+
+A `waypoints:` wrapper is also accepted. Paths contain **no** marker settings, tolerances, or takeoff logic.
+
+## Mission profiles (ROS params)
+
+Default sim (`config/params/sim.yaml`):
+
+```yaml
+mission_manager:
+  ros__parameters:
+    path_file: "config/paths/demo.yaml"
+    enable_marker_hover: false
+    takeoff_altitude_m: 3.0
+    tolerance_m: 0.4
+    hold_s: 2.0
+```
+
+Inspect overlay (`config/params/overlays/inspect.yaml`) — same path, marker phase enabled:
+
+```yaml
+mission_manager:
+  ros__parameters:
+    enable_marker_hover: true
+```
+
+Hover-only: set `path_file: ""` (see `config/params/mission.yaml`).
+
+| Param | Meaning |
+|-------|---------|
+| `path_file` | Path to `config/paths/*.yaml`; empty = hover at `takeoff_altitude_m` |
+| `enable_marker_hover` | After path (or early acquire), run `hover_marker` using `/vision/marker_pose` |
+| `takeoff_altitude_m` | Gate before `follow_path` |
+| `tolerance_m`, `hold_s` | Waypoint reach criteria |
+| `marker_*` | Debounce and hold when marker hover is enabled |
+
+## Phases
 
 | Phase | Meaning |
 |-------|---------|
-| `wait_arm_altitude` | Hold first waypoint until `offboard_controller` reports armed and ENU altitude is at or above `takeoff_altitude_m` |
-| `follow_path` | Step through waypoints, requiring tolerance plus hold time on each |
-| `hover_marker` | Track the marker plus offset for `hold_duration_s` |
-| `done` | Mission complete |
+| `wait_arm_altitude` | Hold until armed and at/above `takeoff_altitude_m` |
+| `follow_path` | Visit each path point (tolerance + hold time) |
+| `hover_marker` | Track marker + offset (only if `enable_marker_hover`) |
+| `done` | Complete |
 
-Transitions and event names (`PHASE_CHANGE`, `WAYPOINT_REACHED`, `MARKER_ACQUIRED`, `MARKER_LOST`, `MISSION_DONE`) come from `mission_runtime.tick`.
+Events: `PHASE_CHANGE`, `WAYPOINT_REACHED`, `MARKER_ACQUIRED`, `MARKER_LOST`, `MISSION_DONE`.
 
-### YAML schema
-
-```yaml
-frame_id: map
-defaults:
-  tolerance_m: 0.4
-  hold_s: 2.0
-marker:                      # optional
-  hold_offset_enu: {x: 0.0, y: 0.0, z: 1.5}
-  hold_duration_s: 30.0
-  lost_timeout_s: 1.0
-  acquire_frames: 5
-waypoints:
-  - {x: 0.0, y: 0.0, z: 3.0}
-  - {x: 5.0, y: 0.0, z: 3.0}
-```
-
-`marker.acquire_frames` is the number of consecutive valid frames needed before transitioning into `hover_marker`. `marker.lost_timeout_s` debounces the `MARKER_LOST` event after the marker drops out.
-
-### Topics
-
-| Topic | Type |
-|-------|------|
-| `/drone/mission_status` | `px4_ros_msgs/MissionStatus` |
-| `/drone/mission_markers` | `visualization_msgs/MarkerArray` |
-| `/vision/marker_pose` | `geometry_msgs/PoseStamped` (sim detector) |
-
-Publishers and subscribers: [docs/TOPICS.md](TOPICS.md).
-
-### Params
-
-`config/params/sim.yaml` sets `mission_manager.mission_file`, `tick_rate_hz`, `takeoff_altitude_m`, and the `offboard_controller` arming and prestream timings. Common defaults live in `config/params/common.yaml`.
-
-### Logs
-
-Live: `just tail-logs`.
-
-After a run:
+## Running demos
 
 ```bash
-rg PHASE_CHANGE logs/merged.log
-rg MARKER_ACQUIRED logs/merged.log
-rg WAYPOINT_REACHED logs/merged.log
+just sim                                    # path_demo profile (default)
+just sim inspect                            # + inspect overlay + vision + inspect world
+just test scenario --arg 03_waypoint        # path following (default sim)
+just test scenario --arg inspect_aruco      # needs just sim inspect
+uv run tasks.py rviz --config inspect       # RViz for inspect
 ```
 
-Post-run summary: [AGENTS.md §MCP / logs](../AGENTS.md#mcp--logs).
+## Topics
 
-### Scenario coverage
+| Topic | Role |
+|-------|------|
+| `/drone/mission_status` | Phase, waypoint index |
+| `/drone/target_pose` | Setpoint to `offboard_controller` |
+| `/vision/marker_pose` | Sim detector when vision enabled |
 
-| Scenario | Pass condition |
-|----------|----------------|
-| `tests/scenarios/inspect_aruco.py` | Mission reaches `hover_marker` or `done` before timeout |
-| `tests/scenarios/03_waypoint.py` | Mission phase reaches `done` |
+Full manifest: [docs/TOPICS.md](TOPICS.md).
 
-ArUco vision is sim-only in v1 (`px4_ros_sim/aruco_detector`). Hardware can publish the same `/vision/marker_pose` contract later without changes to `mission_manager`.
+## Pose (`/drone/pose_enu`)
+
+Mission logic reads **one** canonical topic. Launch picks the backend:
+
+| Context | Node | Source |
+|---------|------|--------|
+| `just sim` / hardware | `px4_pose_adapter` | PX4 `/fmu/out/vehicle_local_position` → ENU |
+
+`offboard_controller` still uses PX4 directly for closed-loop control. Future ZED/lidar missions publish `/drone/pose_enu` from an external node (see `missions/README.md`).
+
+Optional wrapped launch: `ros2 launch missions/inspect/launch/inspect.launch.py` (same as `just sim inspect`).
+
+## Adding a mission
+
+1. Add `config/paths/<name>.yaml` (points only).
+2. Add or extend a param overlay (`enable_marker_hover`, tolerances, `path_file`).
+3. Add launch extras if needed (vision, sensors) in `sim_full` or a future `missions/<name>/launch/`.
+4. Add `tests/scenarios/<NN>_<name>.py` and a row in `tests/capabilities.toml`.
+
+## Scenario coverage
+
+| Scenario | Needs |
+|----------|--------|
+| `03_waypoint` | Default sim (`path_file` + no marker) |
+| `inspect_aruco` | `just sim inspect` (`enable_marker_hover` + vision) |

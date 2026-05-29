@@ -109,8 +109,9 @@ ros-px4-template/
 ├── sim/                             # Gazebo worlds, models, sim_full.launch.py
 ├── hardware/                        # Serial FC + rosbridge; no Gazebo
 ├── config/
-│   ├── params/                      # common, sim, hardware overlays
-│   └── missions/                    # YAML missions (ENU meters)
+│   ├── params/                      # sim/hardware overlays; path_file, enable_marker_hover
+│   └── paths/                       # ENU waypoint lists only
+├── missions/                        # per-mission launch recipes (e.g. inspect)
 ├── tests/
 │   ├── scenarios/                   # Live acceptance tests on a running graph
 │   ├── unit/                        # Pure logic (no ROS graph)
@@ -124,22 +125,22 @@ ros-px4-template/
 
 ## Everyday commands
 
-| Command | Purpose |
-|---------|---------|
-| `just` | List all 5 workflows |
-| `just setup` | One-time workspace setup (auto-detects PX4 version) |
-| `just check` | Complete quality gate (formats, lints, typechecks, builds, unit tests) |
-| `just sim` / `just sim headless` | Full simulation stack (auto-compiles and launches sim) |
-| `just test scenario --arg <name>` | Run a scenario (e.g. `01_arm_takeoff`) |
-| `just log summary` | Auto-merge and summarize log events/errors |
-| `just log status` / `just log topics` | Show system JSON status or audit live topic graph |
+```bash
+just                              # list all 5 workflows
+just setup                        # one-time setup (px4_msgs, uv, rosdep, build)
+just check                        # format, lint, typecheck, build, unit tests
+just sim                          # full sim stack (auto-builds first)
+just sim headless                 # same, no Gazebo GUI
+just sim headless --speed <int>   # headless with sim speed multiplier
+just test scenario --arg <name>   # live scenario (e.g. 01_arm_takeoff)
+just log summary                  # merge logs and summarize events/errors
+just log status                   # JSON status snapshot of running sim
+just log topics                   # audit live topics vs docs/TOPICS.md
+```
 
 ## Docs
-
-| Doc | Contents |
-|-----|----------|
-| [AGENTS.md](AGENTS.md) | Agent workflows, invariants, troubleshooting, logs |
-| [docs/FRAMES.md](docs/FRAMES.md) | ENU / NED / body frames |
-| [docs/TOPICS.md](docs/TOPICS.md) | Topic owners and types |
-| [docs/MCP.md](docs/MCP.md) | rosbridge and ros-mcp-server |
-| [docs/MISSIONS.md](docs/MISSIONS.md) | Mission phases and YAML schema |
+- [Agent workflows, invariants, troubleshooting](AGENTS.md)
+- [ENU / NED / body frames](docs/FRAMES.md) 
+- [Topic owners and types](docs/TOPICS.md)
+- [rosbridge and ros-mcp-server](docs/MCP.md)
+- [Mission phases and YAML schema](docs/MISSIONS.md)

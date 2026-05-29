@@ -6,7 +6,7 @@ ROS 2 Interface
 
 Subscriptions:
     /drone/controller_status  [px4_ros_msgs/ControllerStatus]
-    /fmu/out/vehicle_local_position  [px4_msgs/VehicleLocalPosition]
+    /drone/pose_enu  [geometry_msgs/PoseStamped]
     /vision/marker_pose  [geometry_msgs/PoseStamped]
 
 Publishers:
@@ -23,16 +23,15 @@ from pathlib import Path
 
 import rclpy
 from geometry_msgs.msg import PoseStamped
-from px4_msgs.msg import VehicleLocalPosition
 from px4_ros_msgs.msg import ControllerStatus, MissionStatus
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from visualization_msgs.msg import Marker, MarkerArray
 
-from ros_px4_template_core.lib.frame_transforms import ned_to_enu
+from ros_px4_template_core.lib.mission_profile import MissionProfileParams, build_mission_profile
 from ros_px4_template_core.lib.mission_runtime import MissionContext, TickInputs, tick
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
-from ros_px4_template_core.lib.waypoint_mission import WaypointMission, load_mission_yaml
+from ros_px4_template_core.lib.waypoint_mission import WaypointMission, load_path_yaml
 
 _PX4_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -47,8 +46,12 @@ _RELIABLE_QOS = QoSProfile(
 )
 
 
-def _default_mission_path() -> Path:
-    return Path(__file__).resolve().parents[4] / "config" / "missions" / "inspect_aruco.yaml"
+def _default_path_file() -> Path:
+    return Path(__file__).resolve().parents[4] / "config" / "paths" / "demo.yaml"
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[4]
 
 
 class MissionManager(Node):
@@ -57,26 +60,41 @@ class MissionManager(Node):
     def __init__(self) -> None:
         super().__init__("mission_manager")
         self.declare_parameter("log_dir", "./logs")
-        self.declare_parameter("mission_file", str(_default_mission_path()))
+        self.declare_parameter("path_file", str(_default_path_file()))
+        self.declare_parameter("enable_marker_hover", False)
         self.declare_parameter("tick_rate_hz", 10.0)
         self.declare_parameter("takeoff_altitude_m", 2.5)
+        self.declare_parameter("tolerance_m", 0.4)
+        self.declare_parameter("hold_s", 2.0)
+        self.declare_parameter("marker_hold_offset_z", 1.5)
+        self.declare_parameter("marker_hold_duration_s", 30.0)
+        self.declare_parameter("marker_lost_timeout_s", 1.0)
+        self.declare_parameter("marker_acquire_frames", 5)
 
         log_dir = str(self.get_parameter("log_dir").value)
-        mission_path = str(self.get_parameter("mission_file").value).strip()
+        path_file = str(self.get_parameter("path_file").value).strip()
         self._takeoff_alt = float(self.get_parameter("takeoff_altitude_m").value)
 
         self.slog = StructuredLogger(self, log_dir=log_dir)
-        # Empty mission_file means hover-only (no waypoints). Only load a mission
-        # when a path is explicitly provided. Relative paths are resolved against
-        # the project root (4 levels up from this node file).
-        if mission_path:
-            p = Path(mission_path)
+        profile = MissionProfileParams(
+            tolerance_m=float(self.get_parameter("tolerance_m").value),
+            hold_s=float(self.get_parameter("hold_s").value),
+            enable_marker_hover=bool(self.get_parameter("enable_marker_hover").value),
+            marker_hold_offset_z=float(self.get_parameter("marker_hold_offset_z").value),
+            marker_hold_duration_s=float(self.get_parameter("marker_hold_duration_s").value),
+            marker_lost_timeout_s=float(self.get_parameter("marker_lost_timeout_s").value),
+            marker_acquire_frames=int(self.get_parameter("marker_acquire_frames").value),
+        )
+        # Empty path_file means hover-only (no waypoints).
+        if path_file:
+            p = Path(path_file)
             if not p.is_absolute():
-                p = Path(__file__).resolve().parents[4] / p
-            self._mission: WaypointMission | None = load_mission_yaml(p)
+                p = _project_root() / p
+            waypoints = load_path_yaml(p)
+            self._mission: WaypointMission | None = build_mission_profile(waypoints, profile)
         else:
             self._mission = None
-            self.get_logger().info("No mission_file set — hover-only mode (no waypoints).")
+            self.get_logger().info("No path_file set — hover-only mode (no waypoints).")
         self._ctx = MissionContext()
         self._pos_enu = (0.0, 0.0, 0.0)
         self._controller_armed = False
@@ -91,9 +109,9 @@ class MissionManager(Node):
             _RELIABLE_QOS,
         )
         self.create_subscription(
-            VehicleLocalPosition,
-            "/fmu/out/vehicle_local_position",
-            self._position_cb,
+            PoseStamped,
+            "/drone/pose_enu",
+            self._pose_enu_cb,
             _PX4_QOS,
         )
         self.create_subscription(
@@ -115,15 +133,20 @@ class MissionManager(Node):
         self.create_timer(1.0 / rate, self._tick)
         self.slog.info(
             "MissionManager ready",
-            mission=mission_path or "(hover-only)",
+            path=path_file or "(hover-only)",
+            marker_hover=profile.enable_marker_hover,
             waypoints=len(self._mission.waypoints) if self._mission else 0,
         )
 
     def _controller_cb(self, msg: ControllerStatus) -> None:
         self._controller_armed = msg.armed
 
-    def _position_cb(self, msg: VehicleLocalPosition) -> None:
-        self._pos_enu = ned_to_enu(msg.x, msg.y, msg.z)
+    def _pose_enu_cb(self, msg: PoseStamped) -> None:
+        self._pos_enu = (
+            msg.pose.position.x,
+            msg.pose.position.y,
+            msg.pose.position.z,
+        )
 
     def _marker_cb(self, msg: PoseStamped) -> None:
         self._marker_valid = True

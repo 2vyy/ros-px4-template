@@ -1,4 +1,4 @@
-"""Load and evaluate waypoint missions (ENU, x/y/z only)."""
+"""Load ENU path geometry and evaluate waypoint reachability."""
 
 from __future__ import annotations
 
@@ -43,42 +43,22 @@ def _point_from_dict(d: dict[str, Any]) -> EnuPoint:
     return EnuPoint(float(d["x"]), float(d["y"]), float(d["z"]))
 
 
-def load_mission_yaml(path: str | Path) -> WaypointMission:
-    """Load a mission YAML file."""
-    data = yaml.safe_load(Path(path).read_text())
-    if not isinstance(data, dict):
-        msg = "mission file must be a mapping"
-        raise ValueError(msg)
-
-    defaults_raw = data.get("defaults", {})
-    defaults = MissionDefaults(
-        tolerance_m=float(defaults_raw.get("tolerance_m", 0.4)),
-        hold_s=float(defaults_raw.get("hold_s", 2.0)),
-    )
-
-    wps_raw = data.get("waypoints")
+def _waypoints_from_raw(wps_raw: list[Any]) -> tuple[EnuPoint, ...]:
     if not wps_raw:
-        msg = "mission must contain waypoints"
+        msg = "path must contain at least one waypoint"
         raise ValueError(msg)
-    waypoints = tuple(_point_from_dict(wp) for wp in wps_raw)
+    return tuple(_point_from_dict(wp) for wp in wps_raw)
 
-    marker = None
-    if "marker" in data:
-        m = data["marker"]
-        off = m.get("hold_offset_enu", {"x": 0.0, "y": 0.0, "z": 1.5})
-        marker = MarkerConfig(
-            hold_offset_enu=_point_from_dict(off),
-            hold_duration_s=float(m.get("hold_duration_s", 30.0)),
-            lost_timeout_s=float(m.get("lost_timeout_s", 1.0)),
-            acquire_frames=int(m.get("acquire_frames", 5)),
-        )
 
-    return WaypointMission(
-        frame_id=str(data.get("frame_id", "map")),
-        defaults=defaults,
-        waypoints=waypoints,
-        marker=marker,
-    )
+def load_path_yaml(path: str | Path) -> tuple[EnuPoint, ...]:
+    """Load ENU waypoints from a path file (YAML list or waypoints: mapping)."""
+    data = yaml.safe_load(Path(path).read_text())
+    if isinstance(data, list):
+        return _waypoints_from_raw(data)
+    if isinstance(data, dict) and data.get("waypoints"):
+        return _waypoints_from_raw(data["waypoints"])
+    msg = f"path file must be a waypoint list or contain waypoints: {path}"
+    raise ValueError(msg)
 
 
 def reached(

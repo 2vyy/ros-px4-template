@@ -27,14 +27,19 @@ def _launch_setup(context, *args, **kwargs):
     common_file = project_root / "config" / "params" / "common.yaml"
     params_file = project_root / "config" / "params" / f"{config_name}.yaml"
 
-    base_params = [
-        str(common_file),
-        str(params_file),
-        {"log_dir": log_dir, "use_sim_time": use_sim_time},
-    ]
+    overlay_name = LaunchConfiguration("param_overlay").perform(context).strip()
+    params_files = [str(common_file), str(params_file)]
+    if overlay_name:
+        overlay_path = project_root / "config" / "params" / "overlays" / f"{overlay_name}.yaml"
+        if not overlay_path.is_file():
+            msg = f"param overlay not found: {overlay_path}"
+            raise RuntimeError(msg)
+        params_files.append(str(overlay_path))
+
+    base_params = [*params_files, {"log_dir": log_dir, "use_sim_time": use_sim_time}]
 
     nodes = [_rosbridge()]
-    executables = ("px4_topic_relay", "offboard_controller", "mission_manager", "state_estimator")
+    executables = ("px4_topic_relay", "offboard_controller", "mission_manager")
     nodes.extend(
         [
             Node(
@@ -47,6 +52,17 @@ def _launch_setup(context, *args, **kwargs):
             for exe in executables
         ]
     )
+    # Sim and hardware both publish /drone/pose_enu from PX4 (Gazebo ground-truth
+    # bridge is unreliable on warm restarts until the model pose topic is live).
+    nodes.append(
+        Node(
+            package="ros_px4_template_core",
+            executable="px4_pose_adapter",
+            name="px4_pose_adapter",
+            output="screen",
+            parameters=base_params,
+        )
+    )
     return nodes
 
 
@@ -58,6 +74,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("use_sim_time", default_value="false"),
             DeclareLaunchArgument("serial_port", default_value="/dev/ttyUSB0"),
             DeclareLaunchArgument("baudrate", default_value="921600"),
+            DeclareLaunchArgument("param_overlay", default_value=""),
             OpaqueFunction(function=_launch_setup),
         ]
     )

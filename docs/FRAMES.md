@@ -43,8 +43,12 @@ When you add body-frame velocity or attitude:
 
 ENU altitude grows with +Z. NED altitude grows as `z_ned` becomes more negative. A hover at 3 m AGL is roughly `z_enu = 3`, `z_ned = -3`.
 
+## Mission pose
+
+`mission_manager` uses `/drone/pose_enu` (`geometry_msgs/PoseStamped`, frame `map`). Sim: `sim_pose_adapter` (Gazebo model pose). Hardware: `px4_pose_adapter` (PX4 NED converted to ENU). Do not feed mission logic raw `/fmu/out/vehicle_local_position`.
+
 ## Quick checks
 
-- Mission waypoints `(x, y, z)` in YAML are ENU meters.
+- Path files under `config/paths/` use ENU meters.
 - Comparing to `/fmu/out/vehicle_local_position` without `ned_to_enu` looks mirrored or swapped.
 - Body-frame bugs show up as wrong lateral direction or inverted climb once yaw or velocity setpoints are non-NaN.

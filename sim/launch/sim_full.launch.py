@@ -85,14 +85,21 @@ def _set_gz_physics(world: str, speed: float) -> None:
     if speed == 1.0:
         return
     import subprocess as _subprocess
+
     update_rate = int(speed * 250)
     try:
         _subprocess.run(
             [
-                "gz", "service", "-s", f"/world/{world}/set_physics",
-                "--reqtype", "gz.msgs.Physics",
-                "--reptype", "gz.msgs.Boolean",
-                "--timeout", "3000",
+                "gz",
+                "service",
+                "-s",
+                f"/world/{world}/set_physics",
+                "--reqtype",
+                "gz.msgs.Physics",
+                "--reptype",
+                "gz.msgs.Boolean",
+                "--timeout",
+                "3000",
                 "--req",
                 f"real_time_factor: {speed}, real_time_update_rate: {update_rate}, max_step_size: 0.004",
             ],
@@ -101,7 +108,10 @@ def _set_gz_physics(world: str, speed: float) -> None:
         )
         print(f"[sim_full] Physics speed set to {speed}×", flush=True)
     except Exception:
-        print(f"[sim_full] WARNING: failed to set physics speed={speed}; running at default", flush=True)
+        print(
+            f"[sim_full] WARNING: failed to set physics speed={speed}; running at default",
+            flush=True,
+        )
 
 
 def _vision_setup(context, *args, **kwargs):
@@ -263,24 +273,29 @@ def generate_launch_description() -> LaunchDescription:
     px4_dir = _require_px4_dir()
     gz_paths = _gz_paths(project_root, px4_dir)
 
-    agent_alive = _xrce_agent_running()
-    if agent_alive:
-        print("[sim_full] MicroXRCEAgent already running — reusing existing agent", flush=True)
+    # Warm `just sim stop` leaves MicroXRCEAgent running, but each launch rotates
+    # UXRCE_DDS_KEY — reusing a stale agent breaks uxr_create_session and DDS topics.
+    if _xrce_agent_running():
+        print(
+            "[sim_full] Stopping stale MicroXRCEAgent (session key rotates each launch)",
+            flush=True,
+        )
     else:
-        print("[sim_full] MicroXRCEAgent not running — starting fresh agent", flush=True)
+        print("[sim_full] Starting MicroXRCEAgent", flush=True)
 
-    agent_action = (
-        []
-        if agent_alive
-        else [
-            ExecuteProcess(
-                # setsid detaches agent from the launch process group so it survives sim stop
-                cmd=["setsid", "MicroXRCEAgent", "udp4", "-p", "8888"],
-                name="micro_xrce_agent",
-                output="screen",
-            )
-        ]
-    )
+    agent_action = [
+        ExecuteProcess(
+            cmd=[
+                "bash",
+                "-c",
+                "pkill -x MicroXRCEAgent 2>/dev/null || true; "
+                "sleep 0.2; "
+                "exec setsid MicroXRCEAgent udp4 -p 8888",
+            ],
+            name="micro_xrce_agent",
+            output="screen",
+        )
+    ]
 
     hardware_launch = PythonLaunchDescriptionSource(
         str(project_root / "hardware" / "launch" / "hardware.launch.py")
@@ -294,12 +309,18 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_vision", default_value="false"),
             DeclareLaunchArgument("headless", default_value="false"),
             DeclareLaunchArgument("speed", default_value="1.0"),
+            DeclareLaunchArgument("param_overlay", default_value=""),
             SetEnvironmentVariable(name="GZ_IP", value="127.0.0.1"),
             SetEnvironmentVariable(name="GZ_SIM_RESOURCE_PATH", value=gz_paths),
             *agent_action,
             OpaqueFunction(function=_gz_px4_stack),
             ExecuteProcess(
-                cmd=["python3", str(project_root / "tools" / "gcs_heartbeat.py")],
+                # System python3 lacks pymavlink; project deps live in the uv venv.
+                cmd=[
+                    "bash",
+                    "-lc",
+                    f"cd '{project_root}' && exec uv run python tools/gcs_heartbeat.py",
+                ],
                 name="gcs_heartbeat",
                 output="screen",
             ),
@@ -311,6 +332,7 @@ def generate_launch_description() -> LaunchDescription:
                     "use_sim_time": "true",
                     "config": "sim",
                     "log_dir": LaunchConfiguration("log_dir"),
+                    "param_overlay": LaunchConfiguration("param_overlay"),
                 }.items(),
             ),
         ]

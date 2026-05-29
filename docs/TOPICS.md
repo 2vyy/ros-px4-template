@@ -21,6 +21,7 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 | `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | pub | `offboard_controller` |
 | `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | pub | `offboard_controller` |
 | `/fmu/in/vehicle_command` | `px4_msgs/msg/VehicleCommand` | pub | `offboard_controller` |
+| `/drone/pose_enu` | `geometry_msgs/msg/PoseStamped` | pub | `px4_pose_adapter` |
 | `/drone/target_pose` | `geometry_msgs/msg/PoseStamped` | pub | `mission_manager` |
 | `/drone/controller_status` | `px4_ros_msgs/msg/ControllerStatus` | pub | `offboard_controller` |
 | `/drone/mission_status` | `px4_ros_msgs/msg/MissionStatus` | pub | `mission_manager` |
@@ -31,7 +32,8 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 
 | Topic | Subscribers |
 |-------|-------------|
-| `/fmu/out/vehicle_local_position` | `offboard_controller`, `mission_manager`, `state_estimator` (subscriber; no publish) |
+| `/fmu/out/vehicle_local_position` | `offboard_controller`, `px4_pose_adapter` |
+| `/drone/pose_enu` | `mission_manager` |
 | `/fmu/out/vehicle_status` | `offboard_controller` |
 | `/drone/target_pose` | `offboard_controller` |
 | `/drone/controller_status` | `mission_manager` |

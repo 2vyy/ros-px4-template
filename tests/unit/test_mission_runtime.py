@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ros_px4_template_core.lib.mission_profile import MissionProfileParams, build_mission_profile
 from ros_px4_template_core.lib.mission_runtime import (
     PHASE_DONE,
     PHASE_FOLLOW_PATH,
@@ -12,13 +13,20 @@ from ros_px4_template_core.lib.mission_runtime import (
     TickInputs,
     tick,
 )
-from ros_px4_template_core.lib.waypoint_mission import load_mission_yaml
+from ros_px4_template_core.lib.waypoint_mission import load_path_yaml
 
-MISSION = Path(__file__).resolve().parents[2] / "config/missions/inspect_aruco.yaml"
+DEMO_PATH = Path(__file__).resolve().parents[2] / "config/paths/demo.yaml"
+
+
+def _inspect_mission():
+    return build_mission_profile(
+        load_path_yaml(DEMO_PATH),
+        MissionProfileParams(enable_marker_hover=True),
+    )
 
 
 def test_wait_to_follow_path() -> None:
-    mission = load_mission_yaml(MISSION)
+    mission = _inspect_mission()
     ctx = MissionContext()
     out = tick(
         ctx,
@@ -36,7 +44,7 @@ def test_wait_to_follow_path() -> None:
 
 
 def test_marker_triggers_hover() -> None:
-    mission = load_mission_yaml(MISSION)
+    mission = _inspect_mission()
     ctx = MissionContext(phase=PHASE_FOLLOW_PATH, waypoint_index=2)
     for i in range(5):
         tick(
@@ -55,7 +63,7 @@ def test_marker_triggers_hover() -> None:
 
 
 def test_done_after_hold() -> None:
-    mission = load_mission_yaml(MISSION)
+    mission = _inspect_mission()
     ctx = MissionContext(phase=PHASE_HOVER_MARKER, hover_start=0.0)
     ctx.target = mission.waypoints[-1]
     out = tick(

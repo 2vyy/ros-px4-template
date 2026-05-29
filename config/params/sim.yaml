@@ -7,7 +7,13 @@ offboard_controller:
 
 mission_manager:
   ros__parameters:
-    # Use the inspect_aruco waypoint mission for sim. Set to "" for hover-only mode.
-    mission_file: "config/missions/inspect_aruco.yaml"
+    path_file: "config/paths/demo.yaml"
+    enable_marker_hover: false
     tick_rate_hz: 10.0
     takeoff_altitude_m: 3.0
+    tolerance_m: 0.4
+    hold_s: 2.0
+    marker_hold_offset_z: 1.5
+    marker_hold_duration_s: 30.0
+    marker_lost_timeout_s: 1.0
+    marker_acquire_frames: 5

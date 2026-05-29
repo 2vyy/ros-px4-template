@@ -14,6 +14,7 @@ Exit 0 if all pass, 1 on any failure.
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import socket
 import subprocess
@@ -132,7 +133,46 @@ def main() -> None:
             )
         )
 
-    results.append(_check("uv on PATH", shutil.which("uv") is not None))
+    uv_ok = shutil.which("uv") is not None
+    results.append(_check("uv on PATH", uv_ok))
+
+    pymavlink_ok = False
+    if uv_ok:
+        r = subprocess.run(
+            ["uv", "run", "python", "-c", "import pymavlink"],
+            cwd=ROOT,
+            capture_output=True,
+            timeout=30,
+        )
+        pymavlink_ok = r.returncode == 0
+    results.append(
+        _check(
+            "pymavlink importable (uv venv)",
+            pymavlink_ok,
+            "run: uv sync" if not pymavlink_ok else "",
+        )
+    )
+
+    rosbridge_py_ok = False
+    if ros_setup and Path(ros_setup).exists() and args.mode not in ("px4", "edit"):
+        r = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                f"source {shlex.quote(ros_setup)} && "
+                "env -u PYTHONPATH -u VIRTUAL_ENV /usr/bin/python3 -c 'import tornado, numpy'",
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+        rosbridge_py_ok = r.returncode == 0
+        results.append(
+            _check(
+                "rosbridge Python deps (tornado, numpy via apt)",
+                rosbridge_py_ok,
+                "run: sudo apt install ros-jazzy-rosbridge-suite",
+            )
+        )
 
     ws_install = ROOT / "install" / "setup.bash"
     results.append(

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -69,16 +70,64 @@ _source_workspace_env()
 
 
 def _get_clean_env() -> dict[str, str]:
+    """Strip uv/venv from PATH so ROS nodes using ``/usr/bin/env python3`` get system Python."""
     env = dict(os.environ)
-    env.pop("VIRTUAL_ENV", None)
+    venv = env.pop("VIRTUAL_ENV", None)
     path_dirs = env.get("PATH", "").split(os.pathsep)
-    cleaned_dirs = []
+    cleaned_dirs: list[str] = []
     for d in path_dirs:
+        if not d:
+            continue
         if ".cache/uv" in d or ".venv" in d:
+            continue
+        if venv and (d == venv or d.startswith(f"{venv}/")):
             continue
         cleaned_dirs.append(d)
     env["PATH"] = os.pathsep.join(cleaned_dirs)
     return env
+
+
+def _ros_setup_path() -> str:
+    return os.environ.get("ROS_SETUP", "/opt/ros/jazzy/setup.bash")
+
+
+def _ros_launch_env(**extra: str) -> dict[str, str]:
+    """Env for ``ros2 launch`` children.
+
+    Drop inherited ``PYTHONPATH`` so the launch shell can re-source ROS + workspace.
+    Prepend system + ROS ``bin`` dirs so ``#!/usr/bin/env python3`` (rosbridge) is not
+    the uv project venv.
+    """
+    env = _get_clean_env()
+    env.pop("PYTHONPATH", None)
+    ros_setup = _ros_setup_path()
+    ros_bin = str(Path(ros_setup).resolve().parent / "bin")
+    system_bins = ("/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin")
+    tail = [p for p in env.get("PATH", "").split(os.pathsep) if p]
+    ordered: list[str] = []
+    for p in (*system_bins, ros_bin, *tail):
+        if p and p not in ordered:
+            ordered.append(p)
+    env["PATH"] = os.pathsep.join(ordered)
+    env.update(extra)
+    return env
+
+
+def _ros2_launch_bash_argv(launch_args: list[str], *, cwd: Path = ROOT) -> list[str]:
+    """``bash -lc`` that sources ROS + workspace, then ``exec ros2 launch ...``."""
+    ros_setup = _ros_setup_path()
+    ws_setup = cwd / "install" / "setup.bash"
+    sources = [f"source {shlex.quote(ros_setup)}"]
+    if ws_setup.exists():
+        sources.append(f"source {shlex.quote(str(ws_setup))}")
+    inner = " && ".join(
+        [
+            *sources,
+            f"cd {shlex.quote(str(cwd))}",
+            "exec ros2 launch " + " ".join(shlex.quote(a) for a in launch_args),
+        ]
+    )
+    return ["bash", "-lc", inner]
 
 
 # Ensure tools/ is on path to import sub-apps
@@ -175,12 +224,17 @@ def setup():
     else:
         console.print("src/px4_msgs already exists, skipping clone.")
 
-    console.print("Syncing Python dependencies with uv...")
+    console.print("Syncing Python dev tools with uv (not pip)...")
     try:
         subprocess.run(["uv", "sync", "--group", "dev"], check=True, cwd=str(ROOT))
     except subprocess.CalledProcessError:
         console.print("[bold red]Failed to sync Python dependencies.[/bold red]")
         raise typer.Exit(1) from None
+
+    console.print(
+        "[cyan]ROS bridge (port 9090): install via apt, e.g. "
+        "`sudo apt install ros-jazzy-rosbridge-suite` inside your ROS environment.[/cyan]"
+    )
 
     console.print("Installing rosdep dependencies...")
     try:
@@ -277,6 +331,12 @@ def _preemptive_world_reset(world: str) -> None:
                 console.print(f"[green]World '{world}' reset preemptively.[/green]")
     except Exception:
         pass  # non-fatal — launch will reset on its own if flag absent
+
+
+def _sim_launch_overlay_args(mode: str) -> list[str]:
+    if mode == "inspect":
+        return ["param_overlay:=inspect"]
+    return []
 
 
 @app.command()
@@ -469,25 +529,26 @@ def sim(
         )
 
         gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
-        env = _get_clean_env()
-        env["GZ_IP"] = "127.0.0.1"
-        env["GZ_SIM_RESOURCE_PATH"] = f"{gz_resource}:{env.get('GZ_SIM_RESOURCE_PATH', '')}"
-        env["HEADLESS"] = "1"
+        launch_args = [
+            str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
+            f"world:={world}",
+            f"model:={model}",
+            f"enable_vision:={vision}",
+            "headless:=true",
+            f"log_dir:={LOG_DIR}",
+            f"speed:={speed}",
+            *_sim_launch_overlay_args(mode),
+        ]
+        env = _ros_launch_env(
+            GZ_IP="127.0.0.1",
+            GZ_SIM_RESOURCE_PATH=f"{gz_resource}:{os.environ.get('GZ_SIM_RESOURCE_PATH', '')}",
+            HEADLESS="1",
+        )
 
         try:
             with Path(log_file).open("w", encoding="utf-8") as out:
                 proc = subprocess.Popen(
-                    [
-                        "ros2",
-                        "launch",
-                        str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
-                        f"world:={world}",
-                        f"model:={model}",
-                        f"enable_vision:={vision}",
-                        "headless:=true",
-                        f"log_dir:={LOG_DIR}",
-                        f"speed:={speed}",
-                    ],
+                    _ros2_launch_bash_argv(launch_args),
                     env=env,
                     stdout=out,
                     stderr=subprocess.STDOUT,
@@ -529,28 +590,28 @@ def sim(
     )
 
     gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
-    env = _get_clean_env()
-    env["GZ_IP"] = "127.0.0.1"
-    env["GZ_SIM_RESOURCE_PATH"] = f"{gz_resource}:{env.get('GZ_SIM_RESOURCE_PATH', '')}"
-    if headless_val == "true":
-        env["HEADLESS"] = "1"
+    launch_args = [
+        str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
+        f"world:={world_val}",
+        f"model:={model}",
+        f"enable_vision:={vision_val}",
+        f"headless:={headless_val}",
+        f"log_dir:={LOG_DIR}",
+        f"speed:={speed}",
+        *_sim_launch_overlay_args(mode),
+    ]
+    env = _ros_launch_env(
+        GZ_IP="127.0.0.1",
+        GZ_SIM_RESOURCE_PATH=f"{gz_resource}:{os.environ.get('GZ_SIM_RESOURCE_PATH', '')}",
+        **({"HEADLESS": "1"} if headless_val == "true" else {}),
+    )
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_file = LOG_DIR / f"sim_{datetime.now().strftime('%Y%m%dT%H%M%S')}.log"
 
     try:
-        cmd = [
-            "ros2",
-            "launch",
-            str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
-            f"world:={world_val}",
-            f"model:={model}",
-            f"enable_vision:={vision_val}",
-            f"headless:={headless_val}",
-            f"log_dir:={LOG_DIR}",
-            f"speed:={speed}",
-        ]
-        shell_cmd = " ".join(cmd) + f" 2>&1 | tee {log_file}"
+        argv = _ros2_launch_bash_argv(launch_args)
+        shell_cmd = " ".join(shlex.quote(a) for a in argv) + f" 2>&1 | tee {shlex.quote(str(log_file))}"
         subprocess.run(shell_cmd, shell=True, env=env, cwd=str(ROOT), check=True)
     except KeyboardInterrupt:
         console.print("[yellow]Simulation stopped by user.[/yellow]")
@@ -611,22 +672,22 @@ def test(
         console.print("Starting background headless simulation...")
 
         gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
-        env = _get_clean_env()
-        env["GZ_IP"] = "127.0.0.1"
-        env["GZ_SIM_RESOURCE_PATH"] = f"{gz_resource}:{env.get('GZ_SIM_RESOURCE_PATH', '')}"
-        env["HEADLESS"] = "1"
+        launch_args = [
+            str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
+            "world:=default",
+            "model:=x500",
+            "enable_vision:=false",
+            "headless:=true",
+            f"log_dir:={LOG_DIR}",
+        ]
+        env = _ros_launch_env(
+            GZ_IP="127.0.0.1",
+            GZ_SIM_RESOURCE_PATH=f"{gz_resource}:{os.environ.get('GZ_SIM_RESOURCE_PATH', '')}",
+            HEADLESS="1",
+        )
 
         proc = subprocess.Popen(
-            [
-                "ros2",
-                "launch",
-                str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
-                "world:=default",
-                "model:=x500",
-                "enable_vision:=false",
-                "headless:=true",
-                f"log_dir:={LOG_DIR}",
-            ],
+            _ros2_launch_bash_argv(launch_args),
             env=env,
             stdout=Path(log_file).open("w", encoding="utf-8"),
             stderr=subprocess.STDOUT,

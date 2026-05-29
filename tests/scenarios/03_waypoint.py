@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Scenario 03 — All waypoints in the default mission are traversed.
+"""Scenario 03 — All waypoints in paths/demo.yaml are traversed.
 
-Pass: waypoint_index reaches _WAYPOINT_COUNT within _TIMEOUT_S.
-Note: the default inspect_aruco mission has a marker phase after the path.
-This scenario validates path completion only — not the full mission (use
-sim-inspect + inspect_aruco.py for end-to-end marker testing).
+Pass: waypoint_index reaches _WAYPOINT_COUNT or phase is done within _TIMEOUT_S.
+Default sim loads paths/demo.yaml (no marker phase). Full ArUco flow: just sim inspect
+then tests/scenarios/inspect_aruco.py.
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ from rich.console import Console
 
 console = Console()
 _TIMEOUT_S = 300.0
-# Matches waypoints count in config/missions/inspect_aruco.yaml
+# Matches waypoints count in config/paths/demo.yaml
 _WAYPOINT_COUNT = 3
 
 
@@ -46,7 +45,7 @@ class WaypointScenario(Scenario):
         return self._node
 
     def done(self) -> bool:
-        return self._node.waypoint_index >= _WAYPOINT_COUNT
+        return self._node.waypoint_index >= _WAYPOINT_COUNT or self._node.phase == "done"
 
     def report_detail(self) -> dict:
         return {"waypoints_done": self._node.waypoint_index, "phase": self._node.phase}

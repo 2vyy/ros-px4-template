@@ -63,14 +63,14 @@ distrobox enter ubuntu -- bash -lc "cd ~/Projects/ros-px4-template && just <reci
 sim/launch/sim_full.launch.py        # launches everything: Gazebo, PX4 SITL, XRCE, ROS nodes, rosbridge
 hardware/launch/hardware.launch.py   # included by sim launch; also standalone for real FC
 src/core/ros_px4_template_core/
-  nodes/          # mission_manager, offboard_controller, px4_topic_relay, state_estimator
+  nodes/          # mission_manager, offboard_controller, px4_topic_relay, px4_pose_adapter
   lib/            # frame_transforms, mission_runtime, waypoint_mission, marker_target, StructuredLogger
   bridges/        # PX4 DDS communication glue
 src/px4_ros_msgs/ # custom msgs: ControllerStatus, MissionStatus
 src/px4_ros_sim/  # sim-only helpers (never imported from src/core)
 src/px4_msgs/     # upstream PX4 micro XRCE defs — pinned to release/1.17, never edited
 config/params/    # common.yaml, sim.yaml, hardware.yaml overlays
-config/missions/  # YAML mission definitions (ENU meters)
+config/paths/     # ENU waypoint lists; mission profiles in config/params/
 tests/
   unit/           # pure Python, no ROS graph
   scenarios/      # live acceptance scripts run via `just test scenario <name>`
@@ -130,7 +130,7 @@ After a run: `just log summary` (auto-merges). The merge step compresses telemet
 | `just sim` hangs at Gazebo | Check `.env` has correct `PX4_DIR`; try `just sim headless` |
 | No `/fmu/out/*` topics | XRCE not running; check `ss -ulnp \| grep 8888`; check `logs/sim_*.log` for XRCE handshake |
 | Topics appear as `*_v1` only | `px4_topic_relay` not running; relaunch with `just sim` |
-| Scenario arm fail | `gcs_heartbeat` starts at +12s; tweak `arm_delay_s` in `config/params/sim.yaml` |
+| Scenario arm fail | `gcs_heartbeat` uses `uv run` (needs pymavlink); stale MicroXRCEAgent after warm stop breaks XRCE (restarted each launch); tweak `arm_delay_s` in `config/params/sim.yaml` |
 | `colcon` errors after node move | `just clean && just check` (stale symlink-install entry points) |
 | MCP not connecting | Confirm port 9090 open; `which uvx` path in `.cursor/mcp.json` must be absolute |
 | Stale daemon between runs | Run `just sim stop` before relaunching |

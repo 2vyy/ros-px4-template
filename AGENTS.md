@@ -118,7 +118,7 @@ high-frequency telemetry into `logs/merged.log` (human-readable) and `logs/run_s
 | `just sim` hangs at Gazebo | `.env` has correct `PX4_DIR`; `${PX4_DIR}/build/px4_sitl_default/bin/px4` exists; on WSL confirm WSLg for GUI; try `just sim headless` |
 | No `/fmu/out/*` topics | PX4 SITL is running and MicroXRCEAgent is on UDP 8888 (`ss -ulnp | grep 8888`); check `logs/sim_*.log` for XRCE handshake |
 | `/fmu/out/vehicle_local_position` exists as `_v1` only | `px4_topic_relay` is not running; relaunch with `just sim` (it includes the hardware launch which spawns the relay) |
-| Scenario arm fail | `gcs_heartbeat` starts at t=0 and sets `COM_ARM_WO_GPS=1` immediately; `arm_delay_s` in `config/params/sim.yaml` only needs to cover XRCE handshake time (default 5s); increase it if PX4 boot is slow |
+| Scenario arm fail | `gcs_heartbeat` runs via `uv run` (needs pymavlink); each launch restarts MicroXRCEAgent (stale agent + rotated `UXRCE_DDS_KEY` breaks DDS); `arm_delay_s` in `config/params/sim.yaml` covers XRCE handshake (default 3s) |
 | Mission stuck in `wait_arm_altitude` | `takeoff_altitude_m` exceeds achievable climb in time; ensure `controller_status.armed` is `true` and ENU z is at or above `takeoff_altitude_m` |
 | Mission never enters `hover_marker` | `enable_vision:=true` needed; `/vision/marker_pose` valid; `marker.acquire_frames` consecutive frames must be hit |
 | `just log topics` reports missing | Topic backticked in `docs/TOPICS.md` but never published; either fix the node or remove from the manifest |
