@@ -486,6 +486,7 @@ def sim(
                         f"enable_vision:={vision}",
                         "headless:=true",
                         f"log_dir:={LOG_DIR}",
+                        f"speed:={speed}",
                     ],
                     env=env,
                     stdout=out,
@@ -547,6 +548,7 @@ def sim(
             f"enable_vision:={vision_val}",
             f"headless:={headless_val}",
             f"log_dir:={LOG_DIR}",
+            f"speed:={speed}",
         ]
         shell_cmd = " ".join(cmd) + f" 2>&1 | tee {log_file}"
         subprocess.run(shell_cmd, shell=True, env=env, cwd=str(ROOT), check=True)

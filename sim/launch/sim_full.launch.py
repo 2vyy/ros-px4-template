@@ -80,6 +80,30 @@ def _xrce_agent_running() -> bool:
         return False
 
 
+def _set_gz_physics(world: str, speed: float) -> None:
+    """Set Gazebo physics real-time factor. No-op at 1.0. Non-fatal on failure."""
+    if speed == 1.0:
+        return
+    import subprocess as _subprocess
+    update_rate = int(speed * 250)
+    try:
+        _subprocess.run(
+            [
+                "gz", "service", "-s", f"/world/{world}/set_physics",
+                "--reqtype", "gz.msgs.Physics",
+                "--reptype", "gz.msgs.Boolean",
+                "--timeout", "3000",
+                "--req",
+                f"real_time_factor: {speed}, real_time_update_rate: {update_rate}, max_step_size: 0.004",
+            ],
+            capture_output=True,
+            timeout=5,
+        )
+        print(f"[sim_full] Physics speed set to {speed}×", flush=True)
+    except Exception:
+        print(f"[sim_full] WARNING: failed to set physics speed={speed}; running at default", flush=True)
+
+
 def _vision_setup(context, *args, **kwargs):
     world = LaunchConfiguration("world").perform(context)
     model = LaunchConfiguration("model").perform(context)
@@ -144,6 +168,7 @@ def _gz_px4_stack(context, *args, **kwargs):
     world = LaunchConfiguration("world").perform(context)
     model = LaunchConfiguration("model").perform(context)
     headless = LaunchConfiguration("headless").perform(context).lower() == "true"
+    speed = float(LaunchConfiguration("speed").perform(context))
 
     project_root = Path(__file__).resolve().parents[2]
     px4_dir = _require_px4_dir()
@@ -203,6 +228,7 @@ def _gz_px4_stack(context, *args, **kwargs):
                     flush=True,
                 )
         # The world reset deletes the dynamically spawned model, so we let PX4 spawn a new one.
+        _set_gz_physics(world, speed)
         px4_warm_launch = (
             "export PX4_GZ_STANDALONE=1; "
             f'cd "{build}"; '
@@ -224,6 +250,7 @@ def _gz_px4_stack(context, *args, **kwargs):
             "  sleep 0.1; "
             "done; "
             f'echo "{world}" > "{world_file}"; '
+            f'gz service -s /world/{world}/set_physics --reqtype gz.msgs.Physics --reptype gz.msgs.Boolean --timeout 3000 --req "real_time_factor: {speed}, real_time_update_rate: {int(speed * 250)}, max_step_size: 0.004" 2>/dev/null || true; '
             f"{headless_export}" + px4_launch + "; "
             "PX4_EXIT=$?; kill $GZPID 2>/dev/null || true; exit $PX4_EXIT"
         )
@@ -266,6 +293,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("log_dir", default_value=str(project_root / "logs")),
             DeclareLaunchArgument("enable_vision", default_value="false"),
             DeclareLaunchArgument("headless", default_value="false"),
+            DeclareLaunchArgument("speed", default_value="1.0"),
             SetEnvironmentVariable(name="GZ_IP", value="127.0.0.1"),
             SetEnvironmentVariable(name="GZ_SIM_RESOURCE_PATH", value=gz_paths),
             *agent_action,
