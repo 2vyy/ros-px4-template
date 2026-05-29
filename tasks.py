@@ -700,22 +700,6 @@ def test(
 
 
 @app.command()
-def bench(
-    fast_ekf2: bool = typer.Option(
-        False, "--fast-ekf2", help="5× pre-arm physics (disclosed in output)"
-    ),
-):
-    """Honest warm-relaunch benchmark: stop → relaunch → stack ready (1× physics, no cheating)."""
-    cmd = ["uv", "run", "python", "tools/bench_relaunch.py"]
-    if fast_ekf2:
-        cmd.append("--fast-ekf2")
-    try:
-        subprocess.run(cmd, check=True, cwd=str(ROOT))
-    except subprocess.CalledProcessError:
-        raise typer.Exit(1) from None
-
-
-@app.command()
 def rviz(config: str = typer.Option("default", "--config", help="RViz config: default, inspect")):
     """Open RViz with the selected configuration profile."""
     cfg = "default.rviz"
