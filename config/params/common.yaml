@@ -4,3 +4,4 @@
     target_altitude_m: 3.0
     position_tolerance_m: 0.3
     setpoint_rate_hz: 20.0
+    target_pose_timeout_s: 2.0

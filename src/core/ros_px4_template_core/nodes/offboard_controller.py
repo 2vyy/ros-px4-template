@@ -25,6 +25,7 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 
 from ros_px4_template_core.lib import events
 from ros_px4_template_core.lib.frame_transforms import enu_to_ned, ned_to_enu
+from ros_px4_template_core.lib.setpoint_hold import effective_target_setpoint
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 
 _PX4_QOS = QoSProfile(
@@ -65,6 +66,7 @@ class OffboardController(Node):
         self.declare_parameter("auto_arm", True)
         self.declare_parameter("arm_delay_s", 15.0)
         self.declare_parameter("offboard_prestream_s", 1.0)
+        self.declare_parameter("target_pose_timeout_s", 2.0)
 
         log_dir = str(self.get_parameter("log_dir").value)
         self._target_alt = float(self.get_parameter("target_altitude_m").value)
@@ -72,6 +74,7 @@ class OffboardController(Node):
         self._auto_arm = bool(self.get_parameter("auto_arm").value)
         self._arm_delay_s = float(self.get_parameter("arm_delay_s").value)
         self._prestream_s = float(self.get_parameter("offboard_prestream_s").value)
+        self._target_pose_timeout_s = float(self.get_parameter("target_pose_timeout_s").value)
 
         self.slog = StructuredLogger(self, log_dir=log_dir)
         self._state = "IDLE"
@@ -89,6 +92,8 @@ class OffboardController(Node):
         # Wall-clock time when first VehicleLocalPosition arrived (XRCE connected + PX4 alive).
         # Used as the real arm-readiness signal instead of a fixed delay from node start.
         self._xrce_connect_time: float | None = None
+        self._last_target_pose_time: float | None = None
+        self._target_pose_stale = False
 
         self.create_subscription(
             PoseStamped, "/drone/target_pose", self._target_pose_cb, _RELIABLE_QOS
@@ -132,6 +137,28 @@ class OffboardController(Node):
             msg.pose.position.y,
             msg.pose.position.z,
         )
+        self._last_target_pose_time = time.monotonic()
+        if self._target_pose_stale:
+            self._target_pose_stale = False
+            self.slog.event(events.TARGET_POSE_STALE, active=False)
+
+    def _active_setpoint_enu(self) -> tuple[float, float, float]:
+        now = time.monotonic()
+        active = effective_target_setpoint(
+            self._setpoint_enu,
+            self._current_pos_enu,
+            self._last_target_pose_time,
+            now,
+            self._target_pose_timeout_s,
+        )
+        stale = active != self._setpoint_enu
+        if stale and not self._target_pose_stale:
+            self._target_pose_stale = True
+            self.slog.event(events.TARGET_POSE_STALE, active=True)
+        elif not stale and self._target_pose_stale:
+            self._target_pose_stale = False
+            self.slog.event(events.TARGET_POSE_STALE, active=False)
+        return active
 
     def _position_cb(self, msg: VehicleLocalPosition) -> None:
         self._current_pos_enu = ned_to_enu(msg.x, msg.y, msg.z)
@@ -216,17 +243,18 @@ class OffboardController(Node):
             self._state = "ARMING"
 
     def _control_loop(self) -> None:
+        active = self._active_setpoint_enu()
         self._publish_offboard_mode()
-        self._publish_setpoint()
+        self._publish_setpoint(active)
         self._setpoints_sent += 1
         self._update_state_machine()
 
         status = ControllerStatus()
         status.header.stamp = self.get_clock().now().to_msg()
-        status.state = self._state
+        status.state = "TARGET_STALE" if self._target_pose_stale else self._state
         status.armed = self._armed
         status.altitude_enu_m = float(self._current_pos_enu[2])
-        err = math.dist(self._current_pos_enu, self._setpoint_enu)
+        err = math.dist(self._current_pos_enu, active)
         status.position_error_m = float(err)
         self._pub_status.publish(status)
 
@@ -236,8 +264,8 @@ class OffboardController(Node):
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self._pub_offboard_mode.publish(msg)
 
-    def _publish_setpoint(self) -> None:
-        ned = enu_to_ned(*self._setpoint_enu)
+    def _publish_setpoint(self, setpoint_enu: tuple[float, float, float]) -> None:
+        ned = enu_to_ned(*setpoint_enu)
         msg = TrajectorySetpoint()
         msg.position = [float(ned[0]), float(ned[1]), float(ned[2])]
         msg.yaw = float("nan")

@@ -59,6 +59,20 @@ def _set_phase(ctx: MissionContext, new_phase: str) -> None:
         ctx.phase = new_phase
 
 
+def _enter_hover_marker(
+    ctx: MissionContext,
+    mission: WaypointMission,
+    marker_position: tuple[float, float, float],
+) -> None:
+    cfg = mission.marker
+    if cfg is None:
+        return
+    _set_phase(ctx, PHASE_HOVER_MARKER)
+    m = pose_to_enu(marker_position)
+    ctx.target = marker_hover_target(m, cfg)
+    _emit(ctx, events.MARKER_ACQUIRED, marker_id=0)
+
+
 def _advance_waypoint(ctx: MissionContext, mission: WaypointMission, now: float) -> None:
     idx = ctx.waypoint_index
     wp = current_waypoint(mission, idx)
@@ -101,9 +115,16 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
     elif ctx.phase == PHASE_FOLLOW_PATH:
         wp = current_waypoint(mission, ctx.waypoint_index)
         if wp is None:
+            # Path finished — marker missions wait here until the marker gate passes.
             if mission.marker is None:
                 _set_phase(ctx, PHASE_DONE)
                 _emit(ctx, events.MISSION_DONE)
+            elif (
+                inputs.marker_valid
+                and inputs.marker_position is not None
+                and ctx.marker_tracker.acquired(mission.marker)
+            ):
+                _enter_hover_marker(ctx, mission, inputs.marker_position)
         else:
             ctx.target = wp
             if reached(pos, wp, tol):
@@ -112,22 +133,27 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
                 elif inputs.now - ctx.waypoint_hold_start >= hold_s:
                     _advance_waypoint(ctx, mission, inputs.now)
                     if current_waypoint(mission, ctx.waypoint_index) is None:
-                        if mission.marker and inputs.marker_valid:
-                            _set_phase(ctx, PHASE_HOVER_MARKER)
-                            _emit(ctx, events.MARKER_ACQUIRED, marker_id=0)
+                        if mission.marker is None:
+                            _set_phase(ctx, PHASE_DONE)
+                            _emit(ctx, events.MISSION_DONE)
+                        elif (
+                            inputs.marker_valid
+                            and inputs.marker_position is not None
+                            and ctx.marker_tracker.acquired(mission.marker)
+                        ):
+                            _enter_hover_marker(ctx, mission, inputs.marker_position)
             else:
                 ctx.waypoint_hold_start = None
 
-        if (
-            mission.marker is not None
-            and inputs.marker_valid
-            and inputs.marker_position is not None
-            and ctx.marker_tracker.acquired(mission.marker)
-        ):
-            _set_phase(ctx, PHASE_HOVER_MARKER)
-            m = pose_to_enu(inputs.marker_position)
-            ctx.target = marker_hover_target(m, mission.marker)
-            _emit(ctx, events.MARKER_ACQUIRED, marker_id=0)
+            # Early marker intercept only while waypoints remain (avoids duplicate
+            # MARKER_ACQUIRED when wp is already None — B14).
+            if (
+                mission.marker is not None
+                and inputs.marker_valid
+                and inputs.marker_position is not None
+                and ctx.marker_tracker.acquired(mission.marker)
+            ):
+                _enter_hover_marker(ctx, mission, inputs.marker_position)
 
     elif ctx.phase == PHASE_HOVER_MARKER:
         cfg = mission.marker

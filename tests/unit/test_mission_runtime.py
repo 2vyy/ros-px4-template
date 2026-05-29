@@ -13,7 +13,7 @@ from ros_px4_template_core.lib.mission_runtime import (
     TickInputs,
     tick,
 )
-from ros_px4_template_core.lib.waypoint_mission import load_path_yaml
+from ros_px4_template_core.lib.waypoint_mission import EnuPoint, load_path_yaml
 
 DEMO_PATH = Path(__file__).resolve().parents[2] / "config/paths/demo.yaml"
 
@@ -57,6 +57,44 @@ def test_marker_triggers_hover() -> None:
                 altitude_ok=True,
                 marker_valid=True,
                 marker_position=(8.0, 0.0, 0.0),
+            ),
+        )
+    assert ctx.phase == PHASE_HOVER_MARKER
+
+
+def test_path_complete_then_marker_next_tick() -> None:
+    """B14: after last waypoint, marker on a later tick still enters hover_marker."""
+    mission = build_mission_profile(
+        [EnuPoint(1.0, 0.0, 3.0)],
+        MissionProfileParams(enable_marker_hover=True, hold_s=0.0, marker_acquire_frames=3),
+    )
+    ctx = MissionContext(phase=PHASE_FOLLOW_PATH, waypoint_index=0)
+    for t in (0.0, 0.1):
+        tick(
+            ctx,
+            mission,
+            TickInputs(
+                now=t,
+                pos_enu=(1.0, 0.0, 3.0),
+                controller_armed=True,
+                altitude_ok=True,
+                marker_valid=False,
+                marker_position=None,
+            ),
+        )
+    assert ctx.waypoint_index == 1
+    assert ctx.phase == PHASE_FOLLOW_PATH
+    for i in range(3):
+        tick(
+            ctx,
+            mission,
+            TickInputs(
+                now=float(i + 1),
+                pos_enu=(1.0, 0.0, 3.0),
+                controller_armed=True,
+                altitude_ok=True,
+                marker_valid=True,
+                marker_position=(1.0, 0.0, 0.0),
             ),
         )
     assert ctx.phase == PHASE_HOVER_MARKER
