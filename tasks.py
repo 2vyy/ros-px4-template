@@ -290,12 +290,20 @@ def sim(
     port: str = typer.Option("/dev/ttyUSB0", "--port", help="Serial port for hardware"),
     baud: int = typer.Option(921600, "--baud", help="Baudrate for hardware serial"),
     build: bool = typer.Option(True, "--build/--no-build", help="Build workspace before running"),
+    speed: float = typer.Option(1.0, "--speed", help="Gazebo physics speed multiplier (headless/bg only). 1.0 = real time."),
 ):
     """Simulation & hardware runner. Modes: gui, headless, bg, px4, edit, hardware, stop, kill.
 
     stop: kill PX4/ROS/XRCE but keep Gazebo warm for fast subsequent launches.
     kill: full teardown including Gazebo (use before changing worlds or for clean reboot).
     """
+    if speed <= 0 or speed > 20:
+        console.print(f"[bold red]--speed must be between 0 (exclusive) and 20 (inclusive), got {speed}[/bold red]")
+        raise typer.Exit(1) from None
+    if mode in ("gui", "hardware", "inspect") and speed != 1.0:
+        console.print(f"[yellow]--speed {speed} ignored for '{mode}' mode (only applies to headless/bg)[/yellow]")
+        speed = 1.0
+
     if mode == "stop":
         console.print("[cyan]Stopping sim (Gazebo stays warm for next launch)...[/cyan]")
         subprocess.run(["uv", "run", "python", "tools/sim_cleanup.py"], cwd=str(ROOT))
