@@ -182,7 +182,10 @@ class MissionManager(Node):
             if age > (self._mission.marker.lost_timeout_s if self._mission.marker else 1.0):
                 marker_valid = False
 
-        altitude_ok = self._pos_enu[2] >= self._takeoff_alt
+        takeoff_z = self._takeoff_alt
+        if self._mission.waypoints:
+            takeoff_z = max(takeoff_z, float(self._mission.waypoints[0].z))
+        altitude_ok = self._pos_enu[2] >= takeoff_z
         out = tick(
             self._ctx,
             self._mission,

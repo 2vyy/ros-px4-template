@@ -52,17 +52,17 @@ def _launch_setup(context, *args, **kwargs):
             for exe in executables
         ]
     )
-    # Sim and hardware both publish /drone/pose_enu from PX4 (Gazebo ground-truth
-    # bridge is unreliable on warm restarts until the model pose topic is live).
-    nodes.append(
-        Node(
-            package="ros_px4_template_core",
-            executable="px4_pose_adapter",
-            name="px4_pose_adapter",
-            output="screen",
-            parameters=base_params,
+    # Sim: sim_full launches sim_pose_adapter (Gazebo ground truth). Hardware: PX4 pose.
+    if not use_sim_time:
+        nodes.append(
+            Node(
+                package="ros_px4_template_core",
+                executable="px4_pose_adapter",
+                name="px4_pose_adapter",
+                output="screen",
+                parameters=base_params,
+            )
         )
-    )
     return nodes
 
 

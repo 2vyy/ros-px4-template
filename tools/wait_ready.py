@@ -13,6 +13,7 @@ Exit 0 on ready, 1 on timeout.
 
 from __future__ import annotations
 
+import json
 import socket
 import subprocess
 import sys
@@ -34,6 +35,25 @@ def _port_open(port: int) -> bool:
         with socket.create_connection(("127.0.0.1", port), timeout=1.0):
             return True
     except OSError:
+        return False
+
+
+def _rosbridge_ws_ok(port: int = _ROSBRIDGE_PORT) -> bool:
+    """True if rosbridge accepts a WebSocket and answers an op:topics request."""
+    if not _port_open(port):
+        return False
+    try:
+        import websocket  # type: ignore[import-untyped]
+    except ImportError:
+        return False
+    try:
+        ws = websocket.create_connection(f"ws://127.0.0.1:{port}", timeout=3)
+        ws.send(json.dumps({"op": "topics"}))
+        raw = ws.recv()
+        ws.close()
+        data = json.loads(raw)
+        return isinstance(data, dict) and ("topics" in data or data.get("op") == "topics")
+    except Exception:
         return False
 
 
@@ -76,9 +96,9 @@ def main(timeout: int = typer.Option(180, "--timeout", help="Seconds before givi
                 typer.echo(f"  [OK] {_REQUIRED_TOPIC} live")
 
         if not rosbridge_ok:
-            rosbridge_ok = _port_open(_ROSBRIDGE_PORT)
+            rosbridge_ok = _rosbridge_ws_ok(_ROSBRIDGE_PORT)
             if rosbridge_ok:
-                typer.echo("  [OK] rosbridge :9090 open")
+                typer.echo("  [OK] rosbridge :9090 WebSocket responding")
 
         if not standby_ok:
             standby_ok = _px4_standby()

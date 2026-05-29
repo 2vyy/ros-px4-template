@@ -64,22 +64,6 @@ def _px4_build(px4_dir: str) -> str:
     return str(Path(px4_dir) / "build" / "px4_sitl_default")
 
 
-def _xrce_agent_running() -> bool:
-    """Return True if MicroXRCEAgent is already running (pgrep check)."""
-    import subprocess as _subprocess
-
-    try:
-        result = _subprocess.run(
-            ["pgrep", "-x", "MicroXRCEAgent"],
-            capture_output=True,
-            text=True,
-            timeout=1,
-        )
-        return bool(result.stdout.strip())
-    except Exception:
-        return False
-
-
 def _set_gz_physics(world: str, speed: float) -> None:
     """Set Gazebo physics real-time factor. No-op at 1.0. Non-fatal on failure."""
     if speed == 1.0:
@@ -112,6 +96,35 @@ def _set_gz_physics(world: str, speed: float) -> None:
             f"[sim_full] WARNING: failed to set physics speed={speed}; running at default",
             flush=True,
         )
+
+
+def _pose_setup(context, *args, **kwargs):
+    """Gazebo model pose bridge + sim_pose_adapter after the model topic exists."""
+    world = LaunchConfiguration("world").perform(context)
+    model = LaunchConfiguration("model").perform(context)
+    gz_pose = f"/world/{world}/model/{model}_0/pose"
+    wait_and_bridge = (
+        f'for _ in $(seq 1 120); do '
+        f'if gz topic -i -t "{gz_pose}" 2>/dev/null | grep -qi "Publisher"; then break; fi; '
+        f"sleep 0.5; "
+        f"done; "
+        f"exec ros2 run ros_gz_bridge parameter_bridge "
+        f"{gz_pose}@geometry_msgs/msg/PoseStamped[gz.msgs.Pose"
+    )
+    return [
+        ExecuteProcess(
+            cmd=["bash", "-c", wait_and_bridge],
+            name="gz_pose_bridge",
+            output="screen",
+        ),
+        Node(
+            package="px4_ros_sim",
+            executable="sim_pose_adapter",
+            name="sim_pose_adapter",
+            output="screen",
+            parameters=[{"input_topic": gz_pose, "frame_id": "map"}],
+        ),
+    ]
 
 
 def _vision_setup(context, *args, **kwargs):
@@ -273,16 +286,8 @@ def generate_launch_description() -> LaunchDescription:
     px4_dir = _require_px4_dir()
     gz_paths = _gz_paths(project_root, px4_dir)
 
-    # Warm `just sim stop` leaves MicroXRCEAgent running, but each launch rotates
-    # UXRCE_DDS_KEY — reusing a stale agent breaks uxr_create_session and DDS topics.
-    if _xrce_agent_running():
-        print(
-            "[sim_full] Stopping stale MicroXRCEAgent (session key rotates each launch)",
-            flush=True,
-        )
-    else:
-        print("[sim_full] Starting MicroXRCEAgent", flush=True)
-
+    # sim stop kills any prior agent; pkill here covers orphaned agents after manual kills.
+    print("[sim_full] Starting MicroXRCEAgent", flush=True)
     agent_action = [
         ExecuteProcess(
             cmd=[
@@ -325,6 +330,7 @@ def generate_launch_description() -> LaunchDescription:
                 output="screen",
             ),
             OpaqueFunction(function=_clock_bridge),
+            OpaqueFunction(function=_pose_setup),
             OpaqueFunction(function=_vision_setup),
             IncludeLaunchDescription(
                 hardware_launch,

@@ -12,6 +12,7 @@ dependencies = [
     "tomli-w>=1.0",
     "pymavlink>=2.4",
     "lark>=1.1.9",
+    "websocket-client>=1.6",
 ]
 
 [dependency-groups]

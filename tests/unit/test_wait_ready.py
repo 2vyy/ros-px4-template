@@ -16,7 +16,7 @@ def test_ready_requires_standby_gate():
     runner = CliRunner()
     with (
         patch("wait_ready._topic_live", return_value=True),
-        patch("wait_ready._port_open", return_value=True),
+        patch("wait_ready._rosbridge_ws_ok", return_value=True),
         patch("wait_ready._px4_standby", return_value=True),
     ):
         result = runner.invoke(app, ["--timeout", "5"])
@@ -37,7 +37,7 @@ def test_ready_blocks_until_standby():
 
     with (
         patch("wait_ready._topic_live", return_value=True),
-        patch("wait_ready._port_open", return_value=True),
+        patch("wait_ready._rosbridge_ws_ok", return_value=True),
         patch("wait_ready._px4_standby", fake_standby),
     ):
         result = runner.invoke(app, ["--timeout", "5"])
@@ -51,7 +51,7 @@ def test_timeout_reports_standby_state():
     runner = CliRunner()
     with (
         patch("wait_ready._topic_live", return_value=True),
-        patch("wait_ready._port_open", return_value=True),
+        patch("wait_ready._rosbridge_ws_ok", return_value=True),
         patch("wait_ready._px4_standby", return_value=False),
     ):
         result = runner.invoke(app, ["--timeout", "1"])

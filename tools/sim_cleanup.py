@@ -34,6 +34,7 @@ _PATTERNS = [
     r"gz_px4_stack",
     r"/bin/px4$",
     r"parameter_bridge",
+    r"MicroXRCEAgent",
     r"rosbridge_websocket",
     r"gcs_heartbeat",
     r"wait_ready",
