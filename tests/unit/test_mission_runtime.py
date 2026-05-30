@@ -117,3 +117,42 @@ def test_done_after_hold() -> None:
         ),
     )
     assert out.phase == PHASE_DONE
+
+
+def test_no_duplicate_marker_acquired_on_last_waypoint() -> None:
+    """Advancing past the last waypoint while marker is already acquired must
+    emit MARKER_ACQUIRED exactly once, not twice (B21)."""
+    from ros_px4_template_core.lib import events as ev
+
+    mission = build_mission_profile(
+        [EnuPoint(0.0, 0.0, 2.0)],
+        MissionProfileParams(
+            enable_marker_hover=True,
+            hold_s=0.0,
+            marker_acquire_frames=3,
+        ),
+    )
+    ctx = MissionContext(
+        phase=PHASE_FOLLOW_PATH,
+        waypoint_index=0,
+        waypoint_hold_start=0.0,  # hold started at t=0; hold_s=0.0 so it's already elapsed
+    )
+    # Pre-seed the tracker as acquired
+    ctx.marker_tracker.consecutive_valid = 3
+
+    out = tick(
+        ctx,
+        mission,
+        TickInputs(
+            now=1.0,                       # 1.0 - 0.0 >= hold_s=0.0 → hold elapsed
+            pos_enu=(0.0, 0.0, 2.0),       # exactly at waypoint → reached()=True
+            controller_armed=True,
+            altitude_ok=True,
+            marker_valid=True,
+            marker_position=(0.0, 0.0, 0.0),
+        ),
+    )
+
+    acquired = [e for e in ctx.events if e.get("event") == ev.MARKER_ACQUIRED]
+    assert len(acquired) == 1, f"Expected 1 MARKER_ACQUIRED, got {len(acquired)}: {acquired}"
+    assert out.phase == PHASE_HOVER_MARKER
