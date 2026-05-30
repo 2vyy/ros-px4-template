@@ -36,19 +36,20 @@ def test_flaky_detector_eventually_debounces() -> None:
         acquire_frames=3,
         lost_timeout_s=1.0,
     )
-    tracker = MarkerTracker()
+    tr = MarkerTracker()
 
     # Seed as acquired
     for _ in range(3):
-        tracker.note_valid(0.0)
+        tr.note_valid(0.0)
 
     # First invalid frame starts the debounce clock
-    tracker.note_invalid(1.0)  # lost_since = 1.0
+    tr.note_invalid(1.0)  # lost_since = 1.0
 
     # Alternating valid/invalid frames — should NOT reset the clock
     for i in range(10):
-        tracker.note_valid(1.0 + i * 0.05)
-        tracker.note_invalid(1.0 + i * 0.05 + 0.025)
+        tr.note_valid(1.0 + i * 0.05)
+        tr.note_invalid(1.0 + i * 0.05 + 0.025)
 
-    # After 1.1 s from lost_since=1.0, debounce must have fired
-    assert tracker.lost_debounced(cfg, 2.1)
+    # With bug: lost_since resets to last note_invalid at ~1.475; (2.1-1.475)=0.625 < 1.0 → False → fails ✓
+    # With fix: lost_since anchored at 1.0; (2.1-1.0)=1.1 >= 1.0 → True → passes ✓
+    assert tr.lost_debounced(cfg, 2.1)
