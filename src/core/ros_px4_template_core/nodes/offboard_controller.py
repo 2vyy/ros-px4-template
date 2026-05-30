@@ -94,6 +94,9 @@ class OffboardController(Node):
         self._xrce_connect_time: float | None = None
         self._last_target_pose_time: float | None = None
         self._target_pose_stale = False
+        self._latest_px4_timestamp: int | None = None
+        self._latest_px4_timestamp_time: float | None = None
+        self._px4_time_offset: int | None = None
 
         self.create_subscription(
             PoseStamped, "/drone/target_pose", self._target_pose_cb, _RELIABLE_QOS
@@ -161,7 +164,13 @@ class OffboardController(Node):
         return active
 
     def _position_cb(self, msg: VehicleLocalPosition) -> None:
+        if not (msg.xy_valid and msg.z_valid):
+            return
         self._current_pos_enu = ned_to_enu(msg.x, msg.y, msg.z)
+        self._latest_px4_timestamp = int(msg.timestamp)
+        self._latest_px4_timestamp_time = time.monotonic()
+        ros_time_us = int(self.get_clock().now().nanoseconds / 1000)
+        self._px4_time_offset = int(msg.timestamp) - ros_time_us
         if self._xrce_connect_time is None:
             self._xrce_connect_time = time.monotonic()
             self.slog.event("XRCE_CONNECTED", wall_elapsed_s=round(self._elapsed(), 2))
@@ -258,23 +267,37 @@ class OffboardController(Node):
         status.position_error_m = float(err)
         self._pub_status.publish(status)
 
+    def _get_px4_timestamp(self) -> int:
+        ros_time_us = int(self.get_clock().now().nanoseconds / 1000)
+        if self._px4_time_offset is not None:
+            return ros_time_us + self._px4_time_offset
+        if self._latest_px4_timestamp is not None and self._latest_px4_timestamp_time is not None:
+            elapsed_us = int((time.monotonic() - self._latest_px4_timestamp_time) * 1e6)
+            return self._latest_px4_timestamp + elapsed_us
+        return ros_time_us
+
     def _publish_offboard_mode(self) -> None:
         msg = OffboardControlMode()
         msg.position = True
-        msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        msg.timestamp = self._get_px4_timestamp()
         self._pub_offboard_mode.publish(msg)
 
     def _publish_setpoint(self, setpoint_enu: tuple[float, float, float]) -> None:
         ned = enu_to_ned(*setpoint_enu)
         msg = TrajectorySetpoint()
         msg.position = [float(ned[0]), float(ned[1]), float(ned[2])]
+        msg.velocity = [float("nan"), float("nan"), float("nan")]
+        msg.acceleration = [float("nan"), float("nan"), float("nan")]
         msg.yaw = float("nan")
-        msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        # yawspeed must also be NaN: a finite 0.0 default tells PX4 to command
+        # zero yaw rate, fighting heading hold. NaN defers to PX4's internal lock.
+        msg.yawspeed = float("nan")
+        msg.timestamp = self._get_px4_timestamp()
         self._pub_setpoint.publish(msg)
 
     def _vehicle_command(self, command: int, **params: float) -> None:
         msg = VehicleCommand()
-        msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        msg.timestamp = self._get_px4_timestamp()
         msg.command = command
         msg.param1 = float(params.get("param1", 0.0))
         msg.param2 = float(params.get("param2", 0.0))
