@@ -19,15 +19,15 @@ app = typer.Typer()
 REGISTRY = Path("tests/capabilities.toml")
 
 
-def _load() -> dict:
-    if not REGISTRY.exists():
+def _load(registry: Path = REGISTRY) -> dict:
+    if not registry.exists():
         return {"capabilities": {}}
-    return tomllib.loads(REGISTRY.read_text(encoding="utf-8"))
+    return tomllib.loads(registry.read_text(encoding="utf-8"))
 
 
-def _save(data: dict) -> None:
-    REGISTRY.parent.mkdir(parents=True, exist_ok=True)
-    REGISTRY.write_text(tomli_w.dumps(data), encoding="utf-8")
+def _save(data: dict, registry: Path = REGISTRY) -> None:
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text(tomli_w.dumps(data), encoding="utf-8")
 
 
 @app.command()
@@ -51,6 +51,16 @@ def mark(capability: str, platform: str) -> None:
     entry["last_verified"] = date.today().isoformat()
     _save(data)
     typer.echo(f"Marked {capability} verified on {platform}")
+
+
+def scenarios_for_platform(platform: str = "sim", registry: Path = REGISTRY) -> list[str]:
+    """Return scenario names (without .py) for the given platform, in TOML order."""
+    data = _load(registry)
+    result = []
+    for cap in data.get("capabilities", {}).values():
+        if platform in cap.get("platforms", []) and cap.get("scenario_file"):
+            result.append(cap["scenario_file"].removesuffix(".py"))
+    return result
 
 
 if __name__ == "__main__":

@@ -132,7 +132,7 @@ def _ros2_launch_bash_argv(launch_args: list[str], *, cwd: Path = ROOT) -> list[
 
 # Ensure tools/ is on path to import sub-apps
 sys.path.append(str(ROOT / "tools"))
-from capabilities import app as cap_app
+from capabilities import app as cap_app, scenarios_for_platform
 from log_query import app as log_app
 
 # Register sub-apps
@@ -342,17 +342,15 @@ def _sim_launch_overlay_args(mode: str) -> list[str]:
 @app.command()
 def sim(
     mode: str = typer.Argument(
-        "gui", help="Mode: gui, headless, bg, px4, edit, hardware, stop, kill"
+        "gui", help="Mode: gui, headless, bg, edit, stop, kill"
     ),
     world: str = typer.Option("default", "--world", help="World file name"),
     model: str = typer.Option("x500", "--model", help="Airframe model"),
     vision: str = typer.Option("false", "--vision", help="Enable vision/aruco detection"),
-    port: str = typer.Option("/dev/ttyUSB0", "--port", help="Serial port for hardware"),
-    baud: int = typer.Option(921600, "--baud", help="Baudrate for hardware serial"),
     build: bool = typer.Option(True, "--build/--no-build", help="Build workspace before running"),
     speed: float = typer.Option(1.0, "--speed", help="Gazebo physics speed multiplier (headless/bg only). 1.0 = real time."),
 ):
-    """Simulation & hardware runner. Modes: gui, headless, bg, px4, edit, hardware, stop, kill.
+    """Simulation runner. Modes: gui, headless, bg, edit, stop, kill.
 
     stop: kill PX4/ROS/XRCE but keep Gazebo warm for fast subsequent launches.
     kill: full teardown including Gazebo (use before changing worlds or for clean reboot).
@@ -360,7 +358,7 @@ def sim(
     if speed <= 0 or speed > 20:
         console.print(f"[bold red]--speed must be between 0 (exclusive) and 20 (inclusive), got {speed}[/bold red]")
         raise typer.Exit(1) from None
-    if mode in ("gui", "hardware", "inspect") and speed != 1.0:
+    if mode in ("gui", "inspect") and speed != 1.0:
         console.print(f"[yellow]--speed {speed} ignored for '{mode}' mode (only applies to headless/bg)[/yellow]")
         speed = 1.0
 
@@ -375,31 +373,6 @@ def sim(
             "[cyan]Full teardown — killing Gazebo too (next launch will be cold)...[/cyan]"
         )
         subprocess.run(["uv", "run", "python", "tools/sim_cleanup.py", "--full"], cwd=str(ROOT))
-        return
-
-    if mode == "hardware":
-        if build:
-            _build_workspace()
-        console.print(f"[cyan]Connecting to hardware on port {port} at {baud} baud...[/cyan]")
-        try:
-            subprocess.run(
-                [
-                    "ros2",
-                    "launch",
-                    str(ROOT / "hardware" / "launch" / "hardware.launch.py"),
-                    f"serial_port:={port}",
-                    f"baudrate:={baud}",
-                    "use_sim_time:=false",
-                    "config:=hardware",
-                    f"log_dir:={LOG_DIR}",
-                ],
-                check=True,
-                cwd=str(ROOT),
-            )
-        except KeyboardInterrupt:
-            console.print("[yellow]Connection stopped by user.[/yellow]")
-        except subprocess.CalledProcessError:
-            console.print("[bold red]Hardware connection closed with error.[/bold red]")
         return
 
     # Check preflight first for all active sim modes
@@ -443,69 +416,6 @@ def sim(
             console.print("[yellow]Editor closed.[/yellow]")
         return
 
-    if mode == "px4":
-        px4_dir = os.environ.get("PX4_DIR", "").strip()
-        if not px4_dir or not Path(px4_dir).is_dir():
-            console.print(
-                "[bold red]PX4_DIR is not set or not a directory. Create .env with PX4_DIR=/path/to/PX4-Autopilot[/bold red]"
-            )
-            raise typer.Exit(1) from None
-
-        console.print(
-            f"[cyan]Starting standalone PX4 SITL (world: {world}, model: {model})...[/cyan]"
-        )
-        gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models:{px4_dir}/Tools/simulation/gz/worlds:{px4_dir}/Tools/simulation/gz/models"
-
-        env = _get_clean_env()
-        env["GZ_IP"] = "127.0.0.1"
-        env["GZ_SIM_RESOURCE_PATH"] = f"{gz_resource}:{env.get('GZ_SIM_RESOURCE_PATH', '')}"
-        env["PX4_GZ_WORLDS"] = f"{px4_dir}/Tools/simulation/gz/worlds"
-        env["PX4_GZ_MODELS"] = f"{px4_dir}/Tools/simulation/gz/models"
-        env["PX4_GZ_PLUGINS"] = (
-            f"{px4_dir}/build/px4_sitl_default/src/modules/simulation/gz_plugins"
-        )
-        env["PX4_GZ_SERVER_CONFIG"] = f"{px4_dir}/src/modules/simulation/gz_bridge/server.config"
-        env["GZ_SIM_SYSTEM_PLUGIN_PATH"] = env["PX4_GZ_PLUGINS"]
-        env["GZ_SIM_SERVER_CONFIG_PATH"] = env["PX4_GZ_SERVER_CONFIG"]
-        env["LD_LIBRARY_PATH"] = f"{env['PX4_GZ_PLUGINS']}:{env.get('LD_LIBRARY_PATH', '')}"
-
-        cwd = Path(px4_dir) / "build" / "px4_sitl_default"
-
-        sys.path.insert(0, str(ROOT / "tools"))
-        from gz_lifecycle import gazebo_matches, is_model_present
-
-        px4_env = {
-            **env,
-            "PX4_GZ_WORLD": world,
-            "PX4_SIM_MODEL": f"gz_{model}",
-            "PX4_GZ_STANDALONE": "1",
-            "PX4_PARAM_COM_ARM_WO_GPS": "1",
-            "PX4_PARAM_CBRK_SUPPLY_CHK": "894281",
-            "PX4_PARAM_COM_SPOOLUP_TIME": "0.0",
-            "PX4_PARAM_EKF2_GPS_CHECK": "0",
-            "PX4_PARAM_EKF2_GPS_CTRL": "7",
-        }
-        if gazebo_matches(world) and is_model_present(world, f"{model}_0"):
-            console.print(
-                f"[cyan]Gazebo warm for world '{world}' — attaching to existing '{model}_0' model...[/cyan]"
-            )
-            px4_env["PX4_GZ_MODEL_NAME"] = f"{model}_0"
-        else:
-            console.print(
-                f"[cyan]Gazebo cold or model missing for world '{world}' — PX4 will spawn a new model...[/cyan]"
-            )
-
-        try:
-            subprocess.run(
-                ["./bin/px4"],
-                env=px4_env,
-                cwd=str(cwd),
-                check=True,
-            )
-        except KeyboardInterrupt:
-            console.print("[yellow]PX4 SITL stopped by user.[/yellow]")
-        return
-
     if mode == "bg":
         pidfile = LOG_DIR / "sim.pid"
         if pidfile.exists():
@@ -513,9 +423,9 @@ def sim(
                 pid = int(pidfile.read_text().strip())
                 os.kill(pid, 0)
                 console.print(
-                    f"[yellow]Simulation already running with PID {pid}. Run 'just sim stop' first.[/yellow]"
+                    f"[yellow]Simulation already running (PID {pid}). Stopping it first for idempotency...[/yellow]"
                 )
-                raise typer.Exit(1) from None
+                subprocess.run(["uv", "run", "python", "tools/sim_cleanup.py"], cwd=str(ROOT))
             except (ProcessLookupError, ValueError):
                 pass
 
@@ -620,6 +530,106 @@ def sim(
 
 
 @app.command()
+def hw(
+    port: str = typer.Option("/dev/ttyUSB0", "--port", help="Serial port for hardware"),
+    baud: int = typer.Option(921600, "--baud", help="Baudrate for hardware serial"),
+    build: bool = typer.Option(True, "--build/--no-build", help="Build workspace before running"),
+):
+    """Connect to serial hardware flight controller."""
+    if build:
+        _build_workspace()
+    console.print(f"[cyan]Connecting to hardware on port {port} at {baud} baud...[/cyan]")
+    try:
+        subprocess.run(
+            [
+                "ros2",
+                "launch",
+                str(ROOT / "hardware" / "launch" / "hardware.launch.py"),
+                f"serial_port:={port}",
+                f"baudrate:={baud}",
+                "use_sim_time:=false",
+                "config:=hardware",
+                f"log_dir:={LOG_DIR}",
+            ],
+            check=True,
+            env=_ros_launch_env(),
+            cwd=str(ROOT),
+        )
+    except KeyboardInterrupt:
+        console.print("[yellow]Connection stopped by user.[/yellow]")
+    except subprocess.CalledProcessError:
+        console.print("[bold red]Hardware connection closed with error.[/bold red]")
+
+
+@app.command()
+def px4(
+    world: str = typer.Option("default", "--world", help="World file name"),
+    model: str = typer.Option("x500", "--model", help="Airframe model"),
+):
+    """Run PX4 SITL standalone (no ROS)."""
+    px4_dir = os.environ.get("PX4_DIR", "").strip()
+    if not px4_dir or not Path(px4_dir).is_dir():
+        console.print(
+            "[bold red]PX4_DIR is not set or not a directory. Create .env with PX4_DIR=/path/to/PX4-Autopilot[/bold red]"
+        )
+        raise typer.Exit(1) from None
+
+    console.print(
+        f"[cyan]Starting standalone PX4 SITL (world: {world}, model: {model})...[/cyan]"
+    )
+    gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models:{px4_dir}/Tools/simulation/gz/worlds:{px4_dir}/Tools/simulation/gz/models"
+
+    env = _get_clean_env()
+    env["GZ_IP"] = "127.0.0.1"
+    env["GZ_SIM_RESOURCE_PATH"] = f"{gz_resource}:{env.get('GZ_SIM_RESOURCE_PATH', '')}"
+    env["PX4_GZ_WORLDS"] = f"{px4_dir}/Tools/simulation/gz/worlds"
+    env["PX4_GZ_MODELS"] = f"{px4_dir}/Tools/simulation/gz/models"
+    env["PX4_GZ_PLUGINS"] = (
+        f"{px4_dir}/build/px4_sitl_default/src/modules/simulation/gz_plugins"
+    )
+    env["PX4_GZ_SERVER_CONFIG"] = f"{px4_dir}/src/modules/simulation/gz_bridge/server.config"
+    env["GZ_SIM_SYSTEM_PLUGIN_PATH"] = env["PX4_GZ_PLUGINS"]
+    env["GZ_SIM_SERVER_CONFIG_PATH"] = env["PX4_GZ_SERVER_CONFIG"]
+    env["LD_LIBRARY_PATH"] = f"{env['PX4_GZ_PLUGINS']}:{env.get('LD_LIBRARY_PATH', '')}"
+
+    cwd = Path(px4_dir) / "build" / "px4_sitl_default"
+
+    sys.path.insert(0, str(ROOT / "tools"))
+    from gz_lifecycle import gazebo_matches, is_model_present
+
+    px4_env = {
+        **env,
+        "PX4_GZ_WORLD": world,
+        "PX4_SIM_MODEL": f"gz_{model}",
+        "PX4_GZ_STANDALONE": "1",
+        "PX4_PARAM_COM_ARM_WO_GPS": "1",
+        "PX4_PARAM_CBRK_SUPPLY_CHK": "894281",
+        "PX4_PARAM_COM_SPOOLUP_TIME": "0.0",
+        "PX4_PARAM_EKF2_GPS_CHECK": "0",
+        "PX4_PARAM_EKF2_GPS_CTRL": "7",
+    }
+    if gazebo_matches(world) and is_model_present(world, f"{model}_0"):
+        console.print(
+            f"[cyan]Gazebo warm for world '{world}' — attaching to existing '{model}_0' model...[/cyan]"
+        )
+        px4_env["PX4_GZ_MODEL_NAME"] = f"{model}_0"
+    else:
+        console.print(
+            f"[cyan]Gazebo cold or model missing for world '{world}' — PX4 will spawn a new model...[/cyan]"
+        )
+
+    try:
+        subprocess.run(
+            ["./bin/px4"],
+            env=px4_env,
+            cwd=str(cwd),
+            check=True,
+        )
+    except KeyboardInterrupt:
+        console.print("[yellow]PX4 SITL stopped by user.[/yellow]")
+
+
+@app.command()
 def test(
     type: str = typer.Argument("unit", help="Test type: unit, scenario, e2e"),
     arg: str = typer.Option("", "--arg", help="Scenario name (required for scenario test)"),
@@ -713,7 +723,9 @@ def test(
             )
 
             fails = 0
-            scenarios = ["01_arm_takeoff", "03_waypoint", "02_hover_hold"]
+            scenarios = scenarios_for_platform("sim")
+            if not scenarios:
+                console.print("[yellow]Warning: no sim scenarios found in capabilities.toml[/yellow]")
             for s in scenarios:
                 console.print(f"Running scenario {s}...")
                 res_s = subprocess.run(
@@ -771,6 +783,21 @@ def test(
 
 
 @app.command()
+def scenario(
+    name: str = typer.Argument(..., help="Scenario name (e.g. 01_arm_takeoff)"),
+):
+    """Run a live scenario test directly by name."""
+    _build_workspace()
+    console.print(f"[cyan]Running scenario test: {name}...[/cyan]")
+    try:
+        subprocess.run(
+            ["uv", "run", "python", f"tests/scenarios/{name}.py"], check=True, cwd=str(ROOT)
+        )
+    except subprocess.CalledProcessError:
+        raise typer.Exit(1) from None
+
+
+@app.command()
 def rviz(config: str = typer.Option("default", "--config", help="RViz config: default, inspect")):
     """Open RViz with the selected configuration profile."""
     cfg = "default.rviz"
@@ -792,8 +819,7 @@ def rviz(config: str = typer.Option("default", "--config", help="RViz config: de
         console.print("[bold red]Failed to launch RViz.[/bold red]")
 
 
-# Extend the log sub-app with status and topics commands
-@log_app.command()
+@app.command()
 def status():
     """View JSON workspace status snapshot (nodes, live status, capabilities)."""
     subprocess.run(["uv", "run", "python", "tools/status.py"], cwd=str(ROOT))
