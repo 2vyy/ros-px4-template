@@ -132,7 +132,7 @@ def _ros2_launch_bash_argv(launch_args: list[str], *, cwd: Path = ROOT) -> list[
 
 # Ensure tools/ is on path to import sub-apps
 sys.path.append(str(ROOT / "tools"))
-from capabilities import app as cap_app, scenarios_for_platform, update_from_scenario
+from capabilities import app as cap_app, scenarios_for_platform
 from log_merger import run_merge
 from log_query import app as log_app
 
@@ -152,14 +152,6 @@ def _merge_logs_silent() -> None:
         )
     except Exception as e:
         console.print(f"[yellow]Warning: log merge skipped: {e}[/yellow]")
-
-
-def _update_capability_registry(scenario_name: str, *, passed: bool) -> None:
-    """Record scenario outcome in capabilities.toml; non-fatal on any error."""
-    try:
-        update_from_scenario(scenario_name, "sim", passed)
-    except Exception as e:
-        console.print(f"[yellow]Warning: capability registry update skipped: {e}[/yellow]")
 
 
 def _build_workspace() -> None:
@@ -819,7 +811,6 @@ def scenario(
         passed = result.returncode == 0
     finally:
         _merge_logs_silent()
-        _update_capability_registry(name, passed=passed)
     if not passed:
         raise typer.Exit(1)
 

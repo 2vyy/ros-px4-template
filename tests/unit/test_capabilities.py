@@ -6,7 +6,7 @@ from pathlib import Path
 
 import tomli_w
 
-from capabilities import scenarios_for_platform, update_from_scenario
+from capabilities import scenarios_for_platform
 
 
 def _write_registry(path: Path, caps: dict) -> None:
@@ -78,86 +78,3 @@ def _load_from(path: Path) -> dict:
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
-def test_update_from_scenario_pass_increments_counts(tmp_path: Path) -> None:
-    reg = tmp_path / "capabilities.toml"
-    _write_registry(
-        reg,
-        {
-            "arm_takeoff": {
-                "description": "Arms and takes off",
-                "scenario_file": "01_arm_takeoff.py",
-                "platforms": ["sim"],
-                "status": "verified",
-            },
-        },
-    )
-    found = update_from_scenario("01_arm_takeoff", "sim", passed=True, registry=reg)
-    assert found is True
-    data = _load_from(reg)
-    cap = data["capabilities"]["arm_takeoff"]
-    assert cap["run_count"] == 1
-    assert cap["pass_count"] == 1
-    assert cap["status"] == "verified"
-    assert "last_verified" in cap
-
-
-def test_update_from_scenario_fail_increments_run_count_only(tmp_path: Path) -> None:
-    reg = tmp_path / "capabilities.toml"
-    _write_registry(
-        reg,
-        {
-            "arm_takeoff": {
-                "description": "Arms and takes off",
-                "scenario_file": "01_arm_takeoff.py",
-                "platforms": ["sim"],
-                "status": "verified",
-                "run_count": 5,
-                "pass_count": 5,
-            },
-        },
-    )
-    found = update_from_scenario("01_arm_takeoff", "sim", passed=False, registry=reg)
-    assert found is True
-    data = _load_from(reg)
-    cap = data["capabilities"]["arm_takeoff"]
-    assert cap["run_count"] == 6
-    assert cap["pass_count"] == 5
-
-
-def test_update_from_scenario_no_match_returns_false(tmp_path: Path) -> None:
-    reg = tmp_path / "capabilities.toml"
-    _write_registry(
-        reg,
-        {
-            "arm_takeoff": {
-                "description": "Arms",
-                "scenario_file": "01_arm_takeoff.py",
-                "platforms": ["sim"],
-                "status": "verified",
-            },
-        },
-    )
-    found = update_from_scenario("99_unknown", "sim", passed=True, registry=reg)
-    assert found is False
-
-
-def test_update_from_scenario_accumulates_across_calls(tmp_path: Path) -> None:
-    reg = tmp_path / "capabilities.toml"
-    _write_registry(
-        reg,
-        {
-            "hover_hold": {
-                "description": "Hover",
-                "scenario_file": "02_hover_hold.py",
-                "platforms": ["sim"],
-                "status": "verified",
-            },
-        },
-    )
-    update_from_scenario("02_hover_hold", "sim", passed=True, registry=reg)
-    update_from_scenario("02_hover_hold", "sim", passed=False, registry=reg)
-    update_from_scenario("02_hover_hold", "sim", passed=True, registry=reg)
-    data = _load_from(reg)
-    cap = data["capabilities"]["hover_hold"]
-    assert cap["run_count"] == 3
-    assert cap["pass_count"] == 2
