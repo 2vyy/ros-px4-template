@@ -24,6 +24,8 @@ from pathlib import Path
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from px4_ros_msgs.msg import ControllerStatus, MissionStatus
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from visualization_msgs.msg import Marker, MarkerArray
@@ -53,6 +55,8 @@ class MissionManager(Node):
 
     def __init__(self) -> None:
         super().__init__("mission_manager")
+        self._tick_group = MutuallyExclusiveCallbackGroup()
+        self._sub_group = ReentrantCallbackGroup()
         self.declare_parameter("log_dir", "./logs")
         self.declare_parameter("path_file", str(_default_path_file()))
         self.declare_parameter("enable_marker_hover", False)
@@ -105,18 +109,21 @@ class MissionManager(Node):
             "/drone/controller_status",
             self._controller_cb,
             _RELIABLE_QOS,
+            callback_group=self._sub_group,
         )
         self.create_subscription(
             PoseStamped,
             "/drone/pose_enu",
             self._pose_enu_cb,
             _RELIABLE_QOS,
+            callback_group=self._sub_group,
         )
         self.create_subscription(
             PoseStamped,
             "/vision/marker_pose",
             self._marker_cb,
             _RELIABLE_QOS,
+            callback_group=self._sub_group,
         )
 
         self._pub_target = self.create_publisher(PoseStamped, "/drone/target_pose", _RELIABLE_QOS)
@@ -128,7 +135,7 @@ class MissionManager(Node):
         )
 
         rate = float(self.get_parameter("tick_rate_hz").value)
-        self.create_timer(1.0 / rate, self._tick)
+        self.create_timer(1.0 / rate, self._tick, callback_group=self._tick_group)
         self.slog.info(
             "MissionManager ready",
             path=path_file or "(hover-only)",
@@ -337,8 +344,10 @@ class MissionManager(Node):
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
     node = MissionManager()
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
