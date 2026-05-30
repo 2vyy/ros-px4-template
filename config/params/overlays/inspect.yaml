@@ -1,3 +1,0 @@
-mission_manager:
-  ros__parameters:
-    enable_marker_hover: true

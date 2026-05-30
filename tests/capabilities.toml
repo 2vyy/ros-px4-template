@@ -24,9 +24,3 @@ platforms = [
 ]
 scenario_file = "03_waypoint.py"
 last_verified = "2026-05-27"
-
-[capabilities.inspect_path_aruco]
-description = "Takeoff, follow path, hover over ArUco when seen"
-status = "not_started"
-platforms = []
-scenario_file = "inspect_aruco.py"
