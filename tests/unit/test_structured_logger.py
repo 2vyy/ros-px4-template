@@ -19,17 +19,6 @@ def _mock_node(name: str = "test_node") -> MagicMock:
     return node
 
 
-def test_info_throttled_writes_once() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        slog = StructuredLogger(_mock_node(), log_dir=tmp)
-        slog.info_throttled("waiting", key="wait", interval_s=10.0)
-        slog.info_throttled("waiting", key="wait", interval_s=10.0)
-        slog.close()
-        lines = Path(tmp, "test_node.jsonl").read_text().strip().splitlines()
-        assert len(lines) == 1
-        assert json.loads(lines[0])["msg"] == "waiting"
-
-
 def test_event_jsonl_only() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         node = _mock_node()

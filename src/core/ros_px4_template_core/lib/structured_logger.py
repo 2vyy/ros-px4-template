@@ -27,7 +27,6 @@ class StructuredLogger:
         self._log_dir.mkdir(parents=True, exist_ok=True)
         log_path = self._log_dir / f"{node.get_name()}.jsonl"
         self._file = log_path.open("a", encoding="utf-8", buffering=1)
-        self._throttle_state: dict[str, float] = {}
 
     def _emit(self, level: str, msg: str, **fields: Any) -> None:
         record = {
@@ -51,22 +50,6 @@ class StructuredLogger:
     def error(self, msg: str, **fields: Any) -> None:
         self._node.get_logger().error(msg)
         self._emit("ERROR", msg, **fields)
-
-    def info_throttled(self, msg: str, key: str, interval_s: float = 1.0, **fields: Any) -> None:
-        """Like info() but suppresses repeats within interval_s (use in tight loops)."""
-        now = time.time()
-        last = self._throttle_state.get(key, 0.0)
-        if now - last >= interval_s:
-            self._throttle_state[key] = now
-            self.info(msg, **fields)
-
-    def warn_throttled(self, msg: str, key: str, interval_s: float = 1.0, **fields: Any) -> None:
-        """Like warn() but suppresses repeats within interval_s."""
-        now = time.time()
-        last = self._throttle_state.get(key, 0.0)
-        if now - last >= interval_s:
-            self._throttle_state[key] = now
-            self.warn(msg, **fields)
 
     def event(self, event: str, **fields: Any) -> None:
         """Named moment for agents — JSONL only, no ROS logger line."""
