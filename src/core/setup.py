@@ -9,7 +9,6 @@ setup(
         package_name,
         f"{package_name}.lib",
         f"{package_name}.nodes",
-        f"{package_name}.bridges",
     ],
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
