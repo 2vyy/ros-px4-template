@@ -127,45 +127,6 @@ def _pose_setup(context, *args, **kwargs):
     ]
 
 
-def _vision_setup(context, *args, **kwargs):
-    world = LaunchConfiguration("world").perform(context)
-    model = LaunchConfiguration("model").perform(context)
-    enable = LaunchConfiguration("enable_vision").perform(context).lower() == "true"
-    if not enable:
-        return []
-
-    camera_topic = f"/world/{world}/model/{model}_0/link/camera_link/sensor/camera/image"
-    return [
-        ExecuteProcess(
-            cmd=[
-                "ros2",
-                "run",
-                "ros_gz_bridge",
-                "parameter_bridge",
-                f"{camera_topic}@sensor_msgs/msg/Image[gz.msgs.Image",
-            ],
-            name="camera_bridge",
-            output="screen",
-        ),
-        Node(
-            package="px4_ros_sim",
-            executable="aruco_detector",
-            name="aruco_detector",
-            output="screen",
-            parameters=[
-                {
-                    "camera_topic": camera_topic,
-                    "marker_id": 0,
-                    "marker_world_x": 8.0,
-                    "marker_world_y": 0.0,
-                    "marker_world_z": 0.0,
-                    "frame_id": "map",
-                }
-            ],
-        ),
-    ]
-
-
 def _clock_bridge(context, *args, **kwargs):
     world = LaunchConfiguration("world").perform(context)
     return [
@@ -311,7 +272,6 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("world", default_value="default"),
             DeclareLaunchArgument("model", default_value="x500"),
             DeclareLaunchArgument("log_dir", default_value=str(project_root / "logs")),
-            DeclareLaunchArgument("enable_vision", default_value="false"),
             DeclareLaunchArgument("headless", default_value="false"),
             DeclareLaunchArgument("speed", default_value="1.0"),
             DeclareLaunchArgument("param_overlay", default_value=""),
@@ -332,7 +292,6 @@ def generate_launch_description() -> LaunchDescription:
             OpaqueFunction(function=_clock_bridge),
             # Gazebo pose bridge optional — enable when gz model pose is verified live.
             # OpaqueFunction(function=_pose_setup),
-            OpaqueFunction(function=_vision_setup),
             IncludeLaunchDescription(
                 hardware_launch,
                 launch_arguments={

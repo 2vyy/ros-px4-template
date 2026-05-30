@@ -18,7 +18,6 @@ setup(
     license="BSD-3-Clause",
     entry_points={
         "console_scripts": [
-            "aruco_detector = px4_ros_sim.aruco_detector:main",
             "sim_pose_adapter = px4_ros_sim.sim_pose_adapter:main",
         ],
     },

@@ -10,8 +10,6 @@ from __future__ import annotations
 PHASE_CHANGE = "PHASE_CHANGE"
 WAYPOINT_REACHED = "WAYPOINT_REACHED"
 MISSION_DONE = "MISSION_DONE"
-MARKER_ACQUIRED = "MARKER_ACQUIRED"
-MARKER_LOST = "MARKER_LOST"
 TARGET_POSE_STALE = "TARGET_POSE_STALE"
 
 # Arming / mode handshake (emitted by offboard_controller).
