@@ -75,7 +75,7 @@ def update_from_scenario(
     data = _load(registry)
     caps = data.get("capabilities", {})
     for cap in caps.values():
-        if cap.get("scenario_file") == f"{scenario_name}.py":
+        if cap.get("scenario_file") == f"{scenario_name}.py" and platform in cap.get("platforms", []):
             cap["run_count"] = cap.get("run_count", 0) + 1
             if passed:
                 cap["pass_count"] = cap.get("pass_count", 0) + 1
