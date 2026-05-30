@@ -146,9 +146,11 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
                 ctx.waypoint_hold_start = None
 
             # Early marker intercept only while waypoints remain (avoids duplicate
-            # MARKER_ACQUIRED when wp is already None — B14).
+            # MARKER_ACQUIRED when wp is already None — B14) and only if we haven't
+            # already entered hover_marker this tick (avoids duplicate — B21).
             if (
-                mission.marker is not None
+                ctx.phase != PHASE_HOVER_MARKER
+                and mission.marker is not None
                 and inputs.marker_valid
                 and inputs.marker_position is not None
                 and ctx.marker_tracker.acquired(mission.marker)
