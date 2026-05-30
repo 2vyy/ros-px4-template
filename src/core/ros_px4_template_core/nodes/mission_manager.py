@@ -11,7 +11,7 @@ Subscriptions:
 Publishers:
     /drone/target_pose  [geometry_msgs/PoseStamped]
     /drone/mission_status  [px4_ros_msgs/MissionStatus]
-    /drone/mission_markers  [visualization_msgs/MarkerArray]
+    /drone/mission_markers  [visualization_msgs/MarkerArray]  — RViz visualization (waypoints, path, target)
 =============================================================================
 """
 

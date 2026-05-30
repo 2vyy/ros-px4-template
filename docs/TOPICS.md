@@ -25,6 +25,7 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 | `/drone/target_pose` | `geometry_msgs/msg/PoseStamped` | pub | `mission_manager` |
 | `/drone/controller_status` | `px4_ros_msgs/msg/ControllerStatus` | pub | `offboard_controller` |
 | `/drone/mission_status` | `px4_ros_msgs/msg/MissionStatus` | pub | `mission_manager` |
+| `/drone/mission_markers` | `visualization_msgs/msg/MarkerArray` | pub | `mission_manager` (RViz waypoint visualization) |
 
 ### Subscriptions
 
