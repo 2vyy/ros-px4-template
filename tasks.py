@@ -132,12 +132,34 @@ def _ros2_launch_bash_argv(launch_args: list[str], *, cwd: Path = ROOT) -> list[
 
 # Ensure tools/ is on path to import sub-apps
 sys.path.append(str(ROOT / "tools"))
-from capabilities import app as cap_app, scenarios_for_platform
+from capabilities import app as cap_app, scenarios_for_platform, update_from_scenario
+from log_merger import run_merge
 from log_query import app as log_app
 
 # Register sub-apps
 app.add_typer(log_app, name="log", help="Query, merge, tail, or view logs/status/topics.")
 app.add_typer(cap_app, name="cap", help="Manage verified capabilities registry.")
+
+
+def _merge_logs_silent() -> None:
+    """Merge per-node JSONL logs after a run; non-fatal if log dir is empty or missing."""
+    try:
+        run_merge(
+            log_dir=LOG_DIR,
+            output_log=LOG_DIR / "merged.log",
+            output_jsonl=LOG_DIR / "merged.jsonl",
+            summary=LOG_DIR / "run_summary.json",
+        )
+    except Exception as e:
+        console.print(f"[yellow]Warning: log merge skipped: {e}[/yellow]")
+
+
+def _update_capability_registry(scenario_name: str, *, passed: bool) -> None:
+    """Record scenario outcome in capabilities.toml; non-fatal on any error."""
+    try:
+        update_from_scenario(scenario_name, "sim", passed)
+    except Exception as e:
+        console.print(f"[yellow]Warning: capability registry update skipped: {e}[/yellow]")
 
 
 def _build_workspace() -> None:
@@ -785,16 +807,21 @@ def test(
 @app.command()
 def scenario(
     name: str = typer.Argument(..., help="Scenario name (e.g. 01_arm_takeoff)"),
-):
+) -> None:
     """Run a live scenario test directly by name."""
     _build_workspace()
     console.print(f"[cyan]Running scenario test: {name}...[/cyan]")
+    passed = False
     try:
-        subprocess.run(
-            ["uv", "run", "python", f"tests/scenarios/{name}.py"], check=True, cwd=str(ROOT)
+        result = subprocess.run(
+            ["uv", "run", "python", f"tests/scenarios/{name}.py"], cwd=str(ROOT)
         )
-    except subprocess.CalledProcessError:
-        raise typer.Exit(1) from None
+        passed = result.returncode == 0
+    finally:
+        _merge_logs_silent()
+        _update_capability_registry(name, passed=passed)
+    if not passed:
+        raise typer.Exit(1)
 
 
 @app.command()
