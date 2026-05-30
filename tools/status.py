@@ -24,7 +24,33 @@ def _port_open(port: int) -> bool:
         return False
 
 
+def _get_nodes_via_ws(port: int = 9090, timeout: float = 1.0) -> list[str] | None:
+    try:
+        import time
+
+        import websocket  # type: ignore[import-untyped]
+
+        ws = websocket.create_connection(f"ws://127.0.0.1:{port}", timeout=timeout)
+        req = {"op": "call_service", "service": "/rosapi/nodes", "id": "status_nodes"}
+        ws.send(json.dumps(req))
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            msg = json.loads(ws.recv())
+            if msg.get("op") == "service_response" and msg.get("service") == "/rosapi/nodes":
+                ws.close()
+                return msg.get("values", {}).get("nodes", [])
+        ws.close()
+    except Exception:
+        pass
+    return None
+
+
 def _ros_nodes() -> list[str] | None:
+    # Try WebSocket query first to avoid expensive subprocess and host-side ROS sourcing requirements
+    ws_nodes = _get_nodes_via_ws()
+    if ws_nodes is not None:
+        return sorted(ws_nodes)
+
     try:
         r = subprocess.run(
             ["ros2", "node", "list"],

@@ -22,7 +22,6 @@ missions/
 
 | Context | Publisher of `/drone/pose_enu` |
 |---------|--------------------------------|
-| `just sim` | `sim_pose_adapter` (Gazebo model pose, after spawn) |
-| `just sim hardware` / FC | `px4_pose_adapter` (PX4 local position) |
+| `just sim` / hardware | `px4_pose_adapter` (PX4 local position → ENU) |
 
 See [docs/MISSIONS.md](../docs/MISSIONS.md).

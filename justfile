@@ -4,11 +4,15 @@ set dotenv-load := true
 ROS_SETUP := env_var_or_default("ROS_SETUP", "/opt/ros/jazzy/setup.bash")
 WS_INSTALL := justfile_directory() / "install/setup.bash"
 
-# Sourced environment executor
+# Sourced environment executor (auto-delegates to Distrobox if ROS is missing on host)
 _run *args:
-    source {{ROS_SETUP}} && \
-    (source {{WS_INSTALL}} 2>/dev/null || true) && \
-    uv run tasks.py {{args}}
+    @if [ ! -f "{{ROS_SETUP}}" ] && command -v distrobox >/dev/null 2>&1; then \
+        distrobox enter ubuntu -- bash -lc "cd {{justfile_directory()}} && just _run {{args}}"; \
+    else \
+        source {{ROS_SETUP}} && \
+        (source {{WS_INSTALL}} 2>/dev/null || true) && \
+        uv run tasks.py {{args}}; \
+    fi
 
 # One-time workspace setup (auto-detects PX4 version, runs uv sync and rosdep)
 setup:
@@ -18,14 +22,34 @@ setup:
 check:
     @just _run check
 
-# Simulation & hardware runner (gui, headless, bg, px4 standalone, edit, hardware connections, or stop processes)
+# Run the simulation in foreground (gui/headless) or background (bg), or stop/kill processes
 sim *args:
     @just _run sim {{args}}
+
+# Standalone PX4 SITL runner (bypasses ROS nodes entirely)
+px4 *args:
+    @just _run px4 {{args}}
+
+# Connect to serial hardware flight controller
+hw *args:
+    @just _run hw {{args}}
 
 # Verification suite (unit tests, live scenario <name>, or e2e headless cycles)
 test *args:
     @just _run test {{args}}
 
-# Observability hub (summary, window, grep, errors, tail, merge, events, status, topics, and capabilities)
+# Run a specific scenario test directly by name (e.g. just scenario 01_arm_takeoff)
+scenario name:
+    @just _run scenario {{name}}
+
+# View JSON workspace status snapshot (nodes, live status, capabilities)
+status:
+    @just _run status
+
+# Manage verified capabilities registry (show, mark)
+cap *args:
+    @just _run cap {{args}}
+
+# Observability hub (merge logs, watch/tail logs, or validate live topic graph)
 log *args:
     @just _run log {{args}}

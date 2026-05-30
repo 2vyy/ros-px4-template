@@ -68,6 +68,7 @@ Hover-only: set `path_file: ""` (see `config/params/mission.yaml`).
 | `path_file` | Path to `config/paths/*.yaml`; empty = hover at `takeoff_altitude_m` |
 | `enable_marker_hover` | After path (or early acquire), run `hover_marker` using `/vision/marker_pose` |
 | `takeoff_altitude_m` | Gate before `follow_path` |
+| `takeoff_altitude_tolerance_m` | Allow clearing takeoff when within this margin below target (default 0.1 m) |
 | `tolerance_m`, `hold_s` | Waypoint reach criteria |
 | `marker_*` | Debounce and hold when marker hover is enabled |
 
@@ -75,7 +76,7 @@ Hover-only: set `path_file: ""` (see `config/params/mission.yaml`).
 
 | Phase | Meaning |
 |-------|---------|
-| `wait_arm_altitude` | Hold until armed and at/above `takeoff_altitude_m` |
+| `wait_arm_altitude` | Hold until armed and effective ENU z >= `takeoff_altitude_m - takeoff_altitude_tolerance_m` (uses max of pose and controller altitude) |
 | `follow_path` | Visit each path point (tolerance + hold time) |
 | `hover_marker` | Track marker + offset (only if `enable_marker_hover`) |
 | `done` | Complete |
@@ -108,8 +109,8 @@ Mission logic reads **one** canonical topic. Launch picks the backend:
 
 | Context | Node | Source |
 |---------|------|--------|
-| `just sim` | `sim_pose_adapter` | Gazebo `/world/<w>/model/<model>_0/pose` → ENU |
-| Hardware / `just sim hardware` | `px4_pose_adapter` | PX4 `/fmu/out/vehicle_local_position` → ENU |
+| `just sim` / hardware | `px4_pose_adapter` | PX4 `/fmu/out/vehicle_local_position` → ENU |
+| Optional (launch comment) | `sim_pose_adapter` | Gazebo model pose when bridge is enabled |
 
 `offboard_controller` still uses PX4 directly for closed-loop control. Future ZED/lidar missions publish `/drone/pose_enu` from an external node (see `missions/README.md`).
 

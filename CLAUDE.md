@@ -7,36 +7,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working in this
 All tasks are orchestrated by a unified Python runner `tasks.py` and wrapped by `just` to ensure proper ROS environment sourcing.
 
 ```bash
-just                        # list the 5 workflows
+just                        # list all workflows
 just setup                  # one-time: auto-clones px4_msgs + uv sync + rosdep
 just check                  # lint + format + invariants + typecheck + build + unit tests
 
 just sim                    # simulation with Gazebo GUI (automatically compiles first)
 just sim headless           # same, no Gazebo GUI window
-just sim bg                 # run headless simulation in the background
-just sim px4                # run PX4 SITL standalone (no ROS)
+just sim bg                 # run headless simulation in the background (idempotent)
+just px4                    # run PX4 SITL standalone (no ROS)
 just sim edit               # open Gazebo Harmonic world editor
-just sim hardware           # connect to serial hardware flight controller
-just sim stop               # kill all simulation, Gazebo, ROS, and PX4 processes
+just hw                     # connect to serial hardware flight controller
+just sim stop               # kill ROS and PX4 processes (keeps Gazebo warm)
+just sim kill               # full teardown (kills everything including Gazebo)
 
 just test                   # run pytest unit tests (automatically compiles first)
-just test scenario <name>   # run a live scenario (e.g. just test scenario --arg 01_arm_takeoff)
+just scenario <name>        # run a live scenario directly (e.g. just scenario 01_arm_takeoff)
 just test e2e               # run full E2E headless verification cycle
 
-just log status             # show JSON status snapshot of running simulation
-just log topics             # audit live topics vs docs/TOPICS.md
-just log summary            # show collapsed event timeline and errors (auto-merges first)
-just log tail               # stream/watch structured logs live
-just log window --t <ts>    # extract logs ±5s around a relative timestamp
-just log node <name>        # tail last 50 lines of a specific node's raw JSONL
+just status                 # show JSON status snapshot of running simulation
+just cap show               # show capability registry status
+just cap mark <c> <p>       # mark capability as verified (e.g. just cap mark arm_takeoff sim)
 
-just log cap show           # show capability registry status
-just log cap mark <c> <p>   # mark capability as verified
+just log tail               # stream/watch structured logs live
+just log merge              # manually trigger merge of structured logs
+just log topics             # audit live topics vs docs/TOPICS.md
 
 # After merge, search logs directly — merged.log is small and already deduped:
 rg PHASE_CHANGE logs/merged.log
 rg ERROR logs/merged.log
-rg -C 3 <pattern> logs/merged.log
+rg -C 10 "\[\s*42\." logs/merged.log   # query logs around relative time t=42
 ```
 
 ## Environment
@@ -51,7 +50,7 @@ PX4_VERSION=v1.17.0
 
 `justfile` sources `.env` automatically. Never run `just build` or `just sim` from PowerShell — Gazebo/PX4/ROS require a Linux shell.
 
-On CachyOS (this machine): ROS Jazzy lives inside a distrobox container named `ubuntu`. All `just` recipes that need ROS must run inside it:
+On CachyOS (this machine): ROS Jazzy lives inside a distrobox container named `ubuntu`. `just` automatically delegates to distrobox if `ROS_SETUP` is missing on the host, but you can also run commands inside it manually:
 ```bash
 distrobox enter ubuntu -- bash -lc "cd ~/Projects/ros-px4-template && just <recipe>"
 ```
@@ -73,7 +72,7 @@ config/params/    # common.yaml, sim.yaml, hardware.yaml overlays
 config/paths/     # ENU waypoint lists; mission profiles in config/params/
 tests/
   unit/           # pure Python, no ROS graph
-  scenarios/      # live acceptance scripts run via `just test scenario <name>`
+  scenarios/      # live acceptance scripts run via `just scenario <name>`
   capabilities.toml  # verified capability registry
 tools/            # log_merger, check_topics, check_invariants, capabilities CLI
 docs/             # FRAMES.md, TOPICS.md, MCP.md, MISSIONS.md, BACKLOG.md
@@ -93,7 +92,7 @@ docs/             # FRAMES.md, TOPICS.md, MCP.md, MISSIONS.md, BACKLOG.md
 
 ## Live testing with MCP / rosbridge
 
-Rosbridge WebSocket runs on port **9090** (started by `hardware.launch.py`, included in both `just sim` and `just sim hardware`). `ros-mcp-server` connects to this port — MCP tools are available when a sim session is running.
+Rosbridge WebSocket runs on port **9090** (started by `hardware.launch.py`, included in both `just sim` and `just hw`). `ros-mcp-server` connects to this port — MCP tools are available when a sim session is running.
 
 Check port: `nc -z 127.0.0.1 9090`
 
@@ -101,18 +100,16 @@ MCP config lives in `.cursor/mcp.json` (not repo root). Set `command` to the lit
 
 ## Scenario test pattern
 
-Scenarios in `tests/scenarios/` are standalone async scripts (not pytest). They use `_common.spin_until` + `PX4_QOS` and `sys.exit(0/1)`. Run via `just test scenario --arg <name>` (no `.py` suffix). After a scenario passes, record it: `just log cap mark <id> sim`.
+Scenarios in `tests/scenarios/` are standalone async scripts (not pytest). They use `_common.spin_until` + `PX4_QOS` and `sys.exit(0/1)`. Run via `just scenario <name>` (no `.py` suffix). After a scenario passes, record it: `just cap mark <id> sim`.
 
 ## Logs
 
 Each node writes `logs/<node>.jsonl` via `StructuredLogger`. `just sim` tees stdout to `logs/sim_<timestamp>.log`.
 
-After a run: `just log summary` (auto-merges). The merge step compresses telemetry noise —
-`logs/merged.log` is small and safe to search directly with `rg`.
-- `just log summary` — collapsed event timeline + error fingerprints
+After a run, the merge step (`just log merge`) compresses telemetry noise — `logs/merged.log` is small and safe to search directly with `rg`.
 - `rg ERROR logs/merged.log` — errors
+- `rg -C 10 "\[\s*42\." logs/merged.log` — search around relative time t=42
 - `rg -C 3 <pattern> logs/merged.log` — search with context
-- `just log window --t <ts>` — ±5s slice when you have a specific timestamp
 
 ## Code conventions
 

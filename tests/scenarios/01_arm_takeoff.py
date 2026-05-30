@@ -74,6 +74,19 @@ async def run(timeout_s: float = _TIMEOUT_S) -> bool:
             return True
         return False
 
+    # Wait briefly for first pose message to check initial state
+    await spin_until(node, lambda: node.z_enu != 0.0 or (time.monotonic() - started) > 5.0)
+    if node.z_enu >= _TARGET_Z_M - _TOLERANCE_M:
+        console.print("[red]✗ FAIL — warm-start detected (drone already in the air)[/red]")
+        elapsed = time.monotonic() - started
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+        write_report(
+            "01_arm_takeoff", False, elapsed, {"reason": "warm_start", "z_enu": node.z_enu}
+        )
+        return False
+
     console.print("[cyan]Waiting for 3.0 m altitude (±0.3 m)...[/cyan]")
     try:
         await asyncio.wait_for(spin_until(node, done), timeout=timeout_s)

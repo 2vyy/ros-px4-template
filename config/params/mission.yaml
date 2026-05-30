@@ -4,3 +4,4 @@ mission_manager:
     enable_marker_hover: false
     tick_rate_hz: 10.0
     takeoff_altitude_m: 2.5
+    takeoff_altitude_tolerance_m: 0.1

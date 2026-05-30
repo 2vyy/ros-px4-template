@@ -52,17 +52,17 @@ def _launch_setup(context, *args, **kwargs):
             for exe in executables
         ]
     )
-    # Sim: sim_full launches sim_pose_adapter (Gazebo ground truth). Hardware: PX4 pose.
-    if not use_sim_time:
-        nodes.append(
-            Node(
-                package="ros_px4_template_core",
-                executable="px4_pose_adapter",
-                name="px4_pose_adapter",
-                output="screen",
-                parameters=base_params,
-            )
+    # PX4 pose for mission_manager (reliable on warm Gazebo). sim_pose_adapter in sim_full
+    # is optional debug when the gz model pose topic is live.
+    nodes.append(
+        Node(
+            package="ros_px4_template_core",
+            executable="px4_pose_adapter",
+            name="px4_pose_adapter",
+            output="screen",
+            parameters=base_params,
         )
+    )
     return nodes
 
 

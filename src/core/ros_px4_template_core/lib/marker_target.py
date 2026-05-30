@@ -16,7 +16,8 @@ class MarkerTracker:
 
     def note_valid(self, now: float) -> None:
         self.consecutive_valid += 1
-        self.lost_since = None
+        # Do NOT reset lost_since here: once the loss clock starts, interleaved
+        # valid frames from a flaky detector must not restart the debounce timer.
 
     def note_invalid(self, now: float) -> None:
         self.consecutive_valid = 0

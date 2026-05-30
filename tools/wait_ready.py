@@ -14,6 +14,8 @@ Exit 0 on ready, 1 on timeout.
 from __future__ import annotations
 
 import json
+import os
+import shlex
 import socket
 import subprocess
 import sys
@@ -28,6 +30,7 @@ _ROSBRIDGE_PORT = 9090
 _REQUIRED_TOPIC = "/fmu/out/vehicle_local_position"
 _POLL_INTERVAL_S = 0.2
 _GCS_PARAMS_FLAG = Path("/tmp/gcs_params_flag")
+_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _port_open(port: int) -> bool:
@@ -39,31 +42,64 @@ def _port_open(port: int) -> bool:
 
 
 def _rosbridge_ws_ok(port: int = _ROSBRIDGE_PORT) -> bool:
-    """True if rosbridge accepts a WebSocket and answers an op:topics request."""
+    """True if rosbridge accepts a WebSocket connection (Jazzy has no op:topics)."""
     if not _port_open(port):
         return False
     try:
         import websocket  # type: ignore[import-untyped]
     except ImportError:
-        return False
+        return _port_open(port)
     try:
         ws = websocket.create_connection(f"ws://127.0.0.1:{port}", timeout=3)
-        ws.send(json.dumps({"op": "topics"}))
-        raw = ws.recv()
         ws.close()
-        data = json.loads(raw)
-        return isinstance(data, dict) and ("topics" in data or data.get("op") == "topics")
+        return True
     except Exception:
         return False
 
 
+def _ros2_topic_list_argv() -> list[str]:
+    """``bash -lc`` that sources ROS + workspace, then ``ros2 topic list``."""
+    ros_setup = os.environ.get("ROS_SETUP", "/opt/ros/jazzy/setup.bash")
+    ws_setup = _ROOT / "install" / "setup.bash"
+    sources = [f"source {shlex.quote(ros_setup)}"]
+    if ws_setup.exists():
+        sources.append(f"source {shlex.quote(str(ws_setup))}")
+    inner = " && ".join([*sources, "ros2 topic list"])
+    return ["bash", "-lc", inner]
+
+
+def _get_topics_via_ws(port: int = _ROSBRIDGE_PORT, timeout: float = 1.0) -> list[str] | None:
+    try:
+        import websocket  # type: ignore[import-untyped]
+
+        ws = websocket.create_connection(f"ws://127.0.0.1:{port}", timeout=timeout)
+        req = {"op": "call_service", "service": "/rosapi/topics", "id": "wait_ready_topics"}
+        ws.send(json.dumps(req))
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            msg = json.loads(ws.recv())
+            if msg.get("op") == "service_response" and msg.get("service") == "/rosapi/topics":
+                ws.close()
+                return msg.get("values", {}).get("topics", [])
+        ws.close()
+    except Exception:
+        pass
+    return None
+
+
 def _topic_live(topic: str) -> bool:
+    # Try WebSocket query first to avoid expensive subprocess and host-side ROS sourcing requirements
+    ws_topics = _get_topics_via_ws()
+    if ws_topics is not None:
+        return topic in ws_topics
+
     try:
         result = subprocess.run(
-            ["ros2", "topic", "list"],
+            _ros2_topic_list_argv(),
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=15,
+            cwd=str(_ROOT),
         )
         return topic in result.stdout.splitlines()
     except (subprocess.TimeoutExpired, FileNotFoundError):

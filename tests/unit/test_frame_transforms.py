@@ -86,9 +86,7 @@ def test_quaternion_ned_to_enu_east() -> None:
     q = quaternion_ned_to_enu(_SQRT2_2, 0.0, 0.0, _SQRT2_2)
     q_back = quaternion_enu_to_ned(*q)
     expected = (_SQRT2_2, 0.0, 0.0, _SQRT2_2)
-    assert all(
-        math.isclose(a, b, abs_tol=1e-9) for a, b in zip(q_back, expected, strict=True)
-    )
+    assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(q_back, expected, strict=True))
 
 
 def test_quaternion_round_trip() -> None:

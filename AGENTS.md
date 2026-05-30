@@ -33,11 +33,14 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | Layer | Tool | Notes |
 |-------|------|-------|
 | Workspace Setup | `uv run tasks.py setup` | `just setup` clones dependencies, runs uv sync and rosdep |
-| Tasks | `just` | `just --list` is canonical. Wraps `tasks.py` which exposes 5 workflows. |
+| Tasks | `just` | `just --list` is canonical. Wraps `tasks.py` |
 | Quality gateway | `just check` | Automatically formats, lint-fixes, typechecks, builds workspace, and runs unit tests |
-| Simulation & Run | `just sim [mode]` | Automatically builds workspace first. Modes: `gui`, `headless`, `bg`, `px4`, `edit`, `hardware`, `stop` |
-| Verification suite | `just test [type]` | Automatically builds workspace first. Types: `unit`, `scenario <name>`, `e2e` |
-| Forensic toolkit | `just log [subcmd]` | Merges/queries logs, checks status/topics, manages capabilities |
+| Simulation & Run | `just sim [mode]` | Automatically builds workspace first. Modes: `gui`, `headless`, `bg`, `edit`, `stop`, `kill` |
+| Standalone SITL | `just px4` | Standalone PX4 SITL runner (no ROS nodes spawned) |
+| Real Hardware | `just hw` | Connects to hardware serial flight controller |
+| Verification suite | `just test [type]` / `just scenario <name>` | Automatically builds workspace first. Types: `unit`, `e2e` |
+| Forensic toolkit | `just log [subcmd]` | Observability helper: `merge`, `tail`, `topics` |
+| Capabilities | `just cap [subcmd]` | Exposes verified capabilities: `show`, `mark` |
 
 `just check` runs lint, invariants, typecheck, and unit tests in that order. Run this before every commit.
 
@@ -49,20 +52,21 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | Quality checks + Build | `just check` |
 | Clean build/logs | `just clean` |
 | Full sim with GUI | `just sim` (or `just sim headless` / `just sim bg`) |
-| PX4 SITL standalone (no ROS) | `just sim px4` |
-| Edit a Gazebo world | `just sim edit world=<name>` |
-| Connect to Serial Hardware FC | `just sim hardware port=/dev/ttyUSB0 baud=921600` |
-| Stop everything | `just sim stop` (kills Gazebo, PX4, and ROS nodes) |
-| Run unit tests | `just test` (or `just test unit`) |
-| Run a live scenario | `just test scenario --arg <name>` (e.g. `01_arm_takeoff`) |
+| PX4 SITL standalone (no ROS) | `just px4` |
+| Edit a Gazebo world | `just sim edit --world <name>` |
+| Connect to Serial Hardware FC | `just hw --port /dev/ttyUSB0 --baud 921600` |
+| Stop everything | `just sim stop` (kills ROS/PX4, keeps Gazebo warm) |
+| Full teardown (cold start) | `just sim kill` (kills everything including Gazebo) |
+| Run unit tests | `just test` |
+| Run a live scenario | `just scenario <name>` (e.g. `just scenario 01_arm_takeoff`) |
 | Run headless E2E cycle | `just test e2e` |
 | Tail structured logs live | `just log tail` |
-| View live workspace status | `just log status` |
+| View live workspace status | `just status` |
 | Validate live topic graph | `just log topics` |
-| Show capability registry | `just log cap show` |
-| Record verified capability | `just log cap mark <id> sim` |
+| Show capability registry | `just cap show` |
+| Record verified capability | `just cap mark <id> sim` |
 
-Sim positional args: `just sim [mode] [world] [model] [vision]`. Defaults: `gui`, `default`, `x500`, `false`. Modes: `gui`, `headless`, `bg`, `px4`, `inspect`.
+Sim arguments: `just sim [mode] [--world <world>] [--model <model>] [--vision <vision>]`. Defaults: `gui`, `default`, `x500`, `false`. Modes: `gui`, `headless`, `bg`, `inspect`.
 
 ## Verify (use in this order when something changed)
 
@@ -70,13 +74,13 @@ Sim positional args: `just sim [mode] [world] [model] [vision]`. Defaults: `gui`
 |------|---------|-------|
 | Fast | `just check` | Nothing running |
 | Graph | `just log topics` | `just sim` running |
-| Live | `just test scenario --arg 01_arm_takeoff` | Full sim |
+| Live | `just scenario 01_arm_takeoff` | Full sim |
 | All-in-one | `just test e2e` | `just setup` done, ports free |
-| Record | `just log cap mark <id> sim` | Scenario PASS |
+| Record | `just cap mark <id> sim` | Scenario PASS |
 
 `/clock` missing in a hardware-style launch is expected. Use `just sim` so the Gazebo clock bridge in `sim_full.launch.py` publishes `/clock`.
 
-Capability registry: `tests/capabilities.toml`. `just log cap show` shows status. After a scenario passes in sim, run `just log cap mark <id> sim` to update `status` and `last_verified`.
+Capability registry: `tests/capabilities.toml`. `just cap show` shows status. After a scenario passes in sim, run `just cap mark <id> sim` to update `status` and `last_verified`.
 
 ## Reference
 
@@ -92,16 +96,11 @@ Capability registry: `tests/capabilities.toml`. `just log cap show` shows status
 
 ## Logs (Agent Query Workflow)
 
-Each node writes structured JSONL to `logs/<node>.jsonl`. After a run, the merge step compresses
-high-frequency telemetry into `logs/merged.log` (human-readable) and `logs/run_summary.json`
-(pre-digested digest). Both are small enough to read directly.
+Each node writes structured JSONL to `logs/<node>.jsonl`. After a run, the merge step (`just log merge`) compresses high-frequency telemetry into `logs/merged.log` (human-readable with relative timestamps) and `logs/run_summary.json` (machine-readable summary JSON). Both are small enough to read directly.
 
-1. **Start here**: `just log summary` — error count, collapsed event timeline, error fingerprints.
-2. **Search**: `rg PHASE_CHANGE logs/merged.log`, `rg ERROR logs/merged.log`, etc. The merge step
-   already removed telemetry noise — `rg` on the merged log is the right tool.
-3. **Time window**: `just log window --t <timestamp>` — slice ±5s around a specific event time.
-4. **Per-node raw data**: `just log node <name>` — last 50 lines from one node's unmerged JSONL.
-5. **Live tail**: `just log tail` — stream new records during a running sim.
+1. **Search**: Run `rg PHASE_CHANGE logs/merged.log`, `rg ERROR logs/merged.log`, or `rg -C 10 "\[\s*42\." logs/merged.log` to search around relative time t=42. The merge step already removed telemetry noise.
+2. **Node Raw Data**: Use standard Unix tools: `tail -n 50 logs/mission_manager.jsonl | jq -c 'del(.ros_ts)'`.
+3. **Live tail**: Run `just log tail` to watch structured logs live.
 
 ## MCP / rosbridge
 
@@ -114,12 +113,12 @@ high-frequency telemetry into `logs/merged.log` (human-readable) and `logs/run_s
 
 | X | Check |
 |---|-------|
-| `just check` | `log/latest_build/`; confirm `src/px4_msgs` is on `release/1.17` (`just check`); confirm `source /opt/ros/jazzy/setup.bash` happened |
+| `just check` | `log/latest_build/`; confirm `src/px4_msgs` is on `release/1.17` (`just check`); ensure ROS is sourced or distrobox is available (handled automatically by `justfile` now) |
 | `just sim` hangs at Gazebo | `.env` has correct `PX4_DIR`; `${PX4_DIR}/build/px4_sitl_default/bin/px4` exists; on WSL confirm WSLg for GUI; try `just sim headless` |
 | No `/fmu/out/*` topics | PX4 SITL is running and MicroXRCEAgent is on UDP 8888 (`ss -ulnp | grep 8888`); check `logs/sim_*.log` for XRCE handshake |
-| `/fmu/out/vehicle_local_position` exists as `_v1` only | `px4_topic_relay` is not running; relaunch with `just sim` (it includes the hardware launch which spawns the relay) |
+| `/fmu/out/vehicle_local_position` exists as `_v1` only | `px4_topic_relay` is not running; relaunch with `just sim bg` (it includes the hardware launch which spawns the relay) |
 | Scenario arm fail | `gcs_heartbeat` via `uv run`; `just sim stop` kills MicroXRCEAgent (session key rotates each launch); `arm_delay_s` in `config/params/sim.yaml` (default 3s) |
-| Mission stuck in `wait_arm_altitude` | `takeoff_altitude_m` exceeds achievable climb in time; ensure `controller_status.armed` is `true` and ENU z is at or above `takeoff_altitude_m` |
+| Mission stuck in `wait_arm_altitude` | Gate: effective ENU z (`max(pose, controller alt)`) >= `takeoff_altitude_m - takeoff_altitude_tolerance_m`. Check `px4_pose_adapter` for `First pose published` (`xy_valid` and `z_valid`). |
 | Mission never enters `hover_marker` | `enable_vision:=true` needed; `/vision/marker_pose` valid; `marker.acquire_frames` consecutive frames must be hit |
 | `just log topics` reports missing | Topic backticked in `docs/TOPICS.md` but never published; either fix the node or remove from the manifest |
 | MCP errors | See [docs/MCP.md](docs/MCP.md); confirm port 9090 open and `which uvx` path correct for the OS hosting rosbridge |
@@ -133,11 +132,11 @@ high-frequency telemetry into `logs/merged.log` (human-readable) and `logs/run_s
   1. Create it under `src/core/ros_px4_template_core/nodes/`.
   2. Add an entry to `entry_points["console_scripts"]` in `src/core/setup.py`.
   3. Add a `Node(...)` line in `hardware/launch/hardware.launch.py` so both sim and hardware launches pick it up.
-  4. `just check` then verify with `ros2 node list`.
+  4. `just check` then verify with `just status` or `ros2 node list`.
 - New libraries go in `src/core/ros_px4_template_core/lib/`. Add unit tests in `tests/unit/`. `lib/` must remain `rclpy` free where possible (see `StructuredLogger` Protocol pattern).
 - Always use `StructuredLogger` for agent-facing diagnostics. Call `self.slog.close()` from `destroy_node`.
 - New mission phases go in `lib/mission_runtime.py` (add a `PHASE_*` constant and a branch in `tick`). Do not embed phase logic in `nodes/mission_manager.py`.
-- New scenarios go in `tests/scenarios/<NN>_<name>.py` using `_common.spin_until` and `PX4_QOS`. Add a capability entry in `tests/capabilities.toml`.
+- New scenarios go in `tests/scenarios/<NN>_<name>.py` using `_common.spin_until` and `PX4_QOS`. Add a capability entry in `tests/capabilities.toml` and record via `just cap mark <id> sim` when passing.
 - Do not commit `.env`, `logs/`, `build/`, `install/`, or `log/`.
 
 ## House style

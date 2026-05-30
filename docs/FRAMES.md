@@ -45,7 +45,7 @@ ENU altitude grows with +Z. NED altitude grows as `z_ned` becomes more negative.
 
 ## Mission pose
 
-`mission_manager` uses `/drone/pose_enu` (`geometry_msgs/PoseStamped`, frame `map`). Sim: `sim_pose_adapter` (Gazebo model pose via `ros_gz_bridge`, started after the model topic is live). Hardware: `px4_pose_adapter` (PX4 NED converted to ENU). Do not feed mission logic raw `/fmu/out/vehicle_local_position`.
+`mission_manager` uses `/drone/pose_enu` (`geometry_msgs/PoseStamped`, frame `map`, `RELIABLE` QoS), published by `px4_pose_adapter` (PX4 NED to ENU). Optional `sim_pose_adapter` in `sim_full.launch.py` when the Gazebo model pose topic is live. Mission logic blends pose z with `controller_status.altitude_enu_m` until pose is live. Do not feed mission logic raw `/fmu/out/vehicle_local_position`.
 
 ## Quick checks
 

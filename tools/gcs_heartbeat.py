@@ -23,7 +23,7 @@ _PARAMS: tuple[tuple[str, float, str], ...] = (
     ("CBRK_SUPPLY_CHK", 894281.0, "INT32"),  # bypass battery supply check in SITL
     # In SITL there are no real motors, so the simulated spool-up ramp
     # (default 1 s) just adds dead time between arm and first movement.
-    ("COM_SPOOLUP_TIME", 0.0, "REAL32"),  # motor spool-up ramp: 1.0 → 0.0 s (SITL only)
+    ("COM_SPOOLUP_TIME", 1.0, "REAL32"),  # motor spool-up ramp: 1.0 s (smooths takeoff)
     (
         "EKF2_GPS_CHECK",
         0.0,
