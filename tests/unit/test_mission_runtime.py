@@ -65,7 +65,7 @@ def test_marker_triggers_hover() -> None:
 def test_path_complete_then_marker_next_tick() -> None:
     """B14: after last waypoint, marker on a later tick still enters hover_marker."""
     mission = build_mission_profile(
-        [EnuPoint(1.0, 0.0, 3.0)],
+        (EnuPoint(1.0, 0.0, 3.0),),
         MissionProfileParams(enable_marker_hover=True, hold_s=0.0, marker_acquire_frames=3),
     )
     ctx = MissionContext(phase=PHASE_FOLLOW_PATH, waypoint_index=0)
@@ -125,7 +125,7 @@ def test_no_duplicate_marker_acquired_on_last_waypoint() -> None:
     from ros_px4_template_core.lib import events as ev
 
     mission = build_mission_profile(
-        [EnuPoint(0.0, 0.0, 2.0)],
+        (EnuPoint(0.0, 0.0, 2.0),),
         MissionProfileParams(
             enable_marker_hover=True,
             hold_s=0.0,
@@ -144,8 +144,8 @@ def test_no_duplicate_marker_acquired_on_last_waypoint() -> None:
         ctx,
         mission,
         TickInputs(
-            now=1.0,                       # 1.0 - 0.0 >= hold_s=0.0 → hold elapsed
-            pos_enu=(0.0, 0.0, 2.0),       # exactly at waypoint → reached()=True
+            now=1.0,  # 1.0 - 0.0 >= hold_s=0.0 → hold elapsed
+            pos_enu=(0.0, 0.0, 2.0),  # exactly at waypoint → reached()=True
             controller_armed=True,
             altitude_ok=True,
             marker_valid=True,

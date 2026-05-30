@@ -50,6 +50,6 @@ def test_flaky_detector_eventually_debounces() -> None:
         tr.note_valid(1.0 + i * 0.05)
         tr.note_invalid(1.0 + i * 0.05 + 0.025)
 
-    # With bug: lost_since resets to last note_invalid at ~1.475; (2.1-1.475)=0.625 < 1.0 → False → fails ✓
-    # With fix: lost_since anchored at 1.0; (2.1-1.0)=1.1 >= 1.0 → True → passes ✓
+    # With bug: lost_since resets to ~1.475; (2.1-1.475)=0.625 < 1.0 → False → test fails ✓
+    # With fix: lost_since anchored at 1.0; (2.1-1.0)=1.1 >= 1.0 → True → test passes ✓
     assert tr.lost_debounced(cfg, 2.1)
