@@ -40,7 +40,10 @@ class WaypointMission:
 
 
 def _point_from_dict(d: dict[str, Any]) -> EnuPoint:
-    return EnuPoint(float(d["x"]), float(d["y"]), float(d["z"]))
+    x, y, z = float(d["x"]), float(d["y"]), float(d["z"])
+    if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
+        raise ValueError(f"waypoint coordinates must be finite: x={x}, y={y}, z={z}")
+    return EnuPoint(x, y, z)
 
 
 def _waypoints_from_raw(wps_raw: list[Any]) -> tuple[EnuPoint, ...]:

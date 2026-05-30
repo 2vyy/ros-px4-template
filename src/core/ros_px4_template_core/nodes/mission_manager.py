@@ -25,7 +25,7 @@ import rclpy
 from geometry_msgs.msg import PoseStamped
 from px4_ros_msgs.msg import ControllerStatus, MissionStatus
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from visualization_msgs.msg import Marker, MarkerArray
 
 from ros_px4_template_core.lib.mission_profile import MissionProfileParams, build_mission_profile
@@ -33,12 +33,6 @@ from ros_px4_template_core.lib.mission_runtime import MissionContext, TickInputs
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 from ros_px4_template_core.lib.waypoint_mission import WaypointMission, load_path_yaml
 
-_PX4_QOS = QoSProfile(
-    reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.VOLATILE,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=10,
-)
 _RELIABLE_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,
     history=HistoryPolicy.KEEP_LAST,
@@ -64,6 +58,7 @@ class MissionManager(Node):
         self.declare_parameter("enable_marker_hover", False)
         self.declare_parameter("tick_rate_hz", 10.0)
         self.declare_parameter("takeoff_altitude_m", 2.5)
+        self.declare_parameter("takeoff_altitude_tolerance_m", 0.1)
         self.declare_parameter("tolerance_m", 0.4)
         self.declare_parameter("hold_s", 2.0)
         self.declare_parameter("marker_hold_offset_z", 1.5)
@@ -74,6 +69,7 @@ class MissionManager(Node):
         log_dir = str(self.get_parameter("log_dir").value)
         path_file = str(self.get_parameter("path_file").value).strip()
         self._takeoff_alt = float(self.get_parameter("takeoff_altitude_m").value)
+        self._takeoff_alt_tol = float(self.get_parameter("takeoff_altitude_tolerance_m").value)
 
         self.slog = StructuredLogger(self, log_dir=log_dir)
         profile = MissionProfileParams(
@@ -97,7 +93,9 @@ class MissionManager(Node):
             self.get_logger().info("No path_file set — hover-only mode (no waypoints).")
         self._ctx = MissionContext()
         self._pos_enu = (0.0, 0.0, 0.0)
+        self._have_pose = False
         self._controller_armed = False
+        self._controller_alt_enu = 0.0
         self._marker_valid = False
         self._marker_pos: tuple[float, float, float] | None = None
         self._marker_stamp = None
@@ -112,7 +110,7 @@ class MissionManager(Node):
             PoseStamped,
             "/drone/pose_enu",
             self._pose_enu_cb,
-            _PX4_QOS,
+            _RELIABLE_QOS,
         )
         self.create_subscription(
             PoseStamped,
@@ -140,6 +138,7 @@ class MissionManager(Node):
 
     def _controller_cb(self, msg: ControllerStatus) -> None:
         self._controller_armed = msg.armed
+        self._controller_alt_enu = float(msg.altitude_enu_m)
 
     def _pose_enu_cb(self, msg: PoseStamped) -> None:
         self._pos_enu = (
@@ -147,6 +146,17 @@ class MissionManager(Node):
             msg.pose.position.y,
             msg.pose.position.z,
         )
+        self._have_pose = True
+
+    def _effective_pos_enu(self) -> tuple[float, float, float]:
+        """ENU position for mission logic and status.
+
+        Z uses the best of pose and controller altitude so takeoff gating and
+        position_error_m stay correct before the first pose sample arrives.
+        """
+        x, y, z = self._pos_enu
+        z_eff = max(z, self._controller_alt_enu)
+        return (x, y, z_eff)
 
     def _marker_cb(self, msg: PoseStamped) -> None:
         self._marker_valid = True
@@ -176,6 +186,9 @@ class MissionManager(Node):
             self._pub_markers.publish(MarkerArray())
             return
 
+        if not self._have_pose:
+            return
+
         marker_valid = self._marker_valid
         if self._marker_stamp is not None:
             age = (self.get_clock().now() - self._marker_stamp).nanoseconds / 1e9
@@ -185,13 +198,14 @@ class MissionManager(Node):
         takeoff_z = self._takeoff_alt
         if self._mission.waypoints:
             takeoff_z = max(takeoff_z, float(self._mission.waypoints[0].z))
-        altitude_ok = self._pos_enu[2] >= takeoff_z
+        pos = self._effective_pos_enu()
+        altitude_ok = pos[2] >= takeoff_z - self._takeoff_alt_tol
         out = tick(
             self._ctx,
             self._mission,
             TickInputs(
                 now=now,
-                pos_enu=self._pos_enu,
+                pos_enu=pos,
                 controller_armed=self._controller_armed,
                 altitude_ok=altitude_ok,
                 marker_valid=marker_valid,
@@ -221,7 +235,7 @@ class MissionManager(Node):
 
     def _publish_status(self, out, now: float) -> None:
         err = math.dist(
-            self._pos_enu,
+            self._effective_pos_enu(),
             (out.target.x, out.target.y, out.target.z),
         )
         msg = MissionStatus()
