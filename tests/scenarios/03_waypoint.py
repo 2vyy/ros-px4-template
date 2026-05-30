@@ -2,8 +2,6 @@
 """Scenario 03 — All waypoints in paths/demo.yaml are traversed.
 
 Pass: waypoint_index reaches _WAYPOINT_COUNT or phase is done within _TIMEOUT_S.
-Default sim loads paths/demo.yaml (no marker phase). Full ArUco flow: just sim inspect
-then tests/scenarios/inspect_aruco.py.
 """
 
 from __future__ import annotations

@@ -31,12 +31,6 @@ def test_scenarios_for_platform_sim(tmp_path: Path) -> None:
                 "platforms": ["sim"],
                 "status": "verified",
             },
-            "inspect_path_aruco": {
-                "description": "Inspect with ArUco",
-                "scenario_file": "inspect_aruco.py",
-                "platforms": [],
-                "status": "not_started",
-            },
         },
     )
     result = scenarios_for_platform("sim", registry=reg)

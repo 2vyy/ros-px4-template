@@ -360,7 +360,6 @@ def sim(
     ),
     world: str = typer.Option("default", "--world", help="World file name"),
     model: str = typer.Option("x500", "--model", help="Airframe model"),
-    vision: str = typer.Option("false", "--vision", help="Enable vision/aruco detection"),
     build: bool = typer.Option(True, "--build/--no-build", help="Build workspace before running"),
     speed: float = typer.Option(1.0, "--speed", help="Gazebo physics speed multiplier (headless/bg only). 1.0 = real time."),
 ):
@@ -457,7 +456,6 @@ def sim(
             str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
             f"world:={world}",
             f"model:={model}",
-            f"enable_vision:={vision}",
             "headless:=true",
             f"log_dir:={LOG_DIR}",
             f"speed:={speed}",
@@ -500,13 +498,9 @@ def sim(
         _build_workspace()
 
     world_val = world
-    vision_val = vision
     headless_val = "false"
 
-    if mode == "inspect":
-        world_val = "inspect_aruco"
-        vision_val = "true"
-    elif mode == "headless":
+    if mode == "headless":
         headless_val = "true"
 
     console.print(
@@ -518,7 +512,6 @@ def sim(
         str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
         f"world:={world_val}",
         f"model:={model}",
-        f"enable_vision:={vision_val}",
         f"headless:={headless_val}",
         f"log_dir:={LOG_DIR}",
         f"speed:={speed}",
@@ -700,7 +693,6 @@ def test(
             str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
             "world:=default",
             "model:=x500",
-            "enable_vision:=false",
             "headless:=true",
             f"log_dir:={LOG_DIR}",
         ]
