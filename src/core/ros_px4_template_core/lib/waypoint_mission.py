@@ -21,6 +21,7 @@ class EnuPoint:
 class MissionDefaults:
     tolerance_m: float = 0.4
     hold_s: float = 2.0
+    z_tolerance_m: float | None = None  # None → 3D distance fallback
 
 
 @dataclass(frozen=True)
@@ -68,12 +69,20 @@ def reached(
     current: tuple[float, float, float],
     target: EnuPoint,
     tolerance_m: float,
+    *,
+    z_tolerance_m: float | None = None,
 ) -> bool:
-    """True when horizontal+vertical distance is within tolerance."""
+    """True when position is within tolerance of target.
+
+    If z_tolerance_m is None, uses 3D Euclidean distance (backward-compatible).
+    If set, enforces separate horizontal (XY) and vertical (Z) tolerances.
+    """
     dx = current[0] - target.x
     dy = current[1] - target.y
     dz = current[2] - target.z
-    return math.sqrt(dx * dx + dy * dy + dz * dz) <= tolerance_m
+    if z_tolerance_m is None:
+        return math.sqrt(dx * dx + dy * dy + dz * dz) <= tolerance_m
+    return math.sqrt(dx * dx + dy * dy) <= tolerance_m and abs(dz) <= z_tolerance_m
 
 
 def current_waypoint(mission: WaypointMission, index: int) -> EnuPoint | None:

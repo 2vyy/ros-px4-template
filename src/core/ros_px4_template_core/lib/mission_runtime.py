@@ -127,7 +127,7 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
                 _enter_hover_marker(ctx, mission, inputs.marker_position)
         else:
             ctx.target = wp
-            if reached(pos, wp, tol):
+            if reached(pos, wp, tol, z_tolerance_m=mission.defaults.z_tolerance_m):
                 if ctx.waypoint_hold_start is None:
                     ctx.waypoint_hold_start = inputs.now
                 elif inputs.now - ctx.waypoint_hold_start >= hold_s:
@@ -173,7 +173,9 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
                     _emit(ctx, events.MARKER_LOST)
                     ctx.marker_seen = False
 
-            if ctx.hover_start is None and reached(pos, ctx.target, tol):
+            if ctx.hover_start is None and reached(
+                pos, ctx.target, tol, z_tolerance_m=mission.defaults.z_tolerance_m
+            ):
                 ctx.hover_start = inputs.now
             if ctx.hover_start is not None:
                 if inputs.now - ctx.hover_start >= cfg.hold_duration_s:

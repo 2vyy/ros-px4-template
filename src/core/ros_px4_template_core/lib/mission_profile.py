@@ -16,6 +16,7 @@ from ros_px4_template_core.lib.waypoint_mission import (
 class MissionProfileParams:
     tolerance_m: float = 0.4
     hold_s: float = 2.0
+    z_tolerance_m: float | None = None  # None → 3D distance mode
     enable_marker_hover: bool = False
     marker_hold_offset_z: float = 1.5
     marker_hold_duration_s: float = 30.0
@@ -40,7 +41,11 @@ def build_mission_profile(
         )
     return WaypointMission(
         frame_id=frame_id,
-        defaults=MissionDefaults(tolerance_m=params.tolerance_m, hold_s=params.hold_s),
+        defaults=MissionDefaults(
+            tolerance_m=params.tolerance_m,
+            hold_s=params.hold_s,
+            z_tolerance_m=params.z_tolerance_m,
+        ),
         waypoints=waypoints,
         marker=marker,
     )

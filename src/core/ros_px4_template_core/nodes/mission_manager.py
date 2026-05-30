@@ -64,6 +64,7 @@ class MissionManager(Node):
         self.declare_parameter("takeoff_altitude_m", 2.5)
         self.declare_parameter("takeoff_altitude_tolerance_m", 0.1)
         self.declare_parameter("tolerance_m", 0.4)
+        self.declare_parameter("z_tolerance_m", 0.0)
         self.declare_parameter("hold_s", 2.0)
         self.declare_parameter("marker_hold_offset_z", 1.5)
         self.declare_parameter("marker_hold_duration_s", 30.0)
@@ -76,9 +77,12 @@ class MissionManager(Node):
         self._takeoff_alt_tol = float(self.get_parameter("takeoff_altitude_tolerance_m").value)
 
         self.slog = StructuredLogger(self, log_dir=log_dir)
+        z_tol_raw = float(self.get_parameter("z_tolerance_m").value)
+        z_tolerance_m = z_tol_raw if z_tol_raw > 0.0 else None
         profile = MissionProfileParams(
             tolerance_m=float(self.get_parameter("tolerance_m").value),
             hold_s=float(self.get_parameter("hold_s").value),
+            z_tolerance_m=z_tolerance_m,
             enable_marker_hover=bool(self.get_parameter("enable_marker_hover").value),
             marker_hold_offset_z=float(self.get_parameter("marker_hold_offset_z").value),
             marker_hold_duration_s=float(self.get_parameter("marker_hold_duration_s").value),

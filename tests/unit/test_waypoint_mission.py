@@ -77,3 +77,29 @@ def test_current_waypoint_bounds() -> None:
     )
     assert current_waypoint(mission, 0) == mission.waypoints[0]
     assert current_waypoint(mission, 99) is None
+
+
+def test_reached_z_tolerance_separates_axes() -> None:
+    target = EnuPoint(0.0, 0.0, 3.0)
+    # 0.1 m XY from target, 0.5 m above — fails with strict z_tolerance_m=0.4
+    assert not reached((0.1, 0.0, 3.5), target, 0.4, z_tolerance_m=0.4)
+
+
+def test_reached_z_tolerance_allows_large_z() -> None:
+    target = EnuPoint(0.0, 0.0, 3.0)
+    # Same point passes when z_tolerance_m is large enough
+    assert reached((0.1, 0.0, 3.5), target, 0.4, z_tolerance_m=0.6)
+
+
+def test_reached_xy_miss_fails_with_z_tolerance() -> None:
+    target = EnuPoint(0.0, 0.0, 3.0)
+    # 0.5 m off in XY but z is perfect — fails on XY tolerance
+    assert not reached((0.5, 0.0, 3.0), target, 0.4, z_tolerance_m=0.4)
+
+
+def test_reached_none_z_tolerance_uses_3d() -> None:
+    target = EnuPoint(0.0, 0.0, 3.0)
+    # 0.35 m 3D distance — passes with default 3D mode (None)
+    assert reached((0.35, 0.0, 3.0), target, 0.4, z_tolerance_m=None)
+    # Same: no keyword at all
+    assert reached((0.35, 0.0, 3.0), target, 0.4)
