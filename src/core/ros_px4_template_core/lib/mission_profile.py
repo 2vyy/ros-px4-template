@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from ros_px4_template_core.lib.waypoint_mission import (
     EnuPoint,
-    MarkerConfig,
     MissionDefaults,
     WaypointMission,
 )
@@ -17,11 +16,6 @@ class MissionProfileParams:
     tolerance_m: float = 0.4
     hold_s: float = 2.0
     z_tolerance_m: float | None = None  # None → 3D distance mode
-    enable_marker_hover: bool = False
-    marker_hold_offset_z: float = 1.5
-    marker_hold_duration_s: float = 30.0
-    marker_lost_timeout_s: float = 1.0
-    marker_acquire_frames: int = 5
 
 
 def build_mission_profile(
@@ -31,14 +25,6 @@ def build_mission_profile(
     frame_id: str = "map",
 ) -> WaypointMission:
     """Build runtime mission state from loaded path points and profile flags."""
-    marker = None
-    if params.enable_marker_hover:
-        marker = MarkerConfig(
-            hold_offset_enu=EnuPoint(0.0, 0.0, params.marker_hold_offset_z),
-            hold_duration_s=params.marker_hold_duration_s,
-            lost_timeout_s=params.marker_lost_timeout_s,
-            acquire_frames=params.marker_acquire_frames,
-        )
     return WaypointMission(
         frame_id=frame_id,
         defaults=MissionDefaults(
@@ -47,5 +33,4 @@ def build_mission_profile(
             z_tolerance_m=params.z_tolerance_m,
         ),
         waypoints=waypoints,
-        marker=marker,
     )

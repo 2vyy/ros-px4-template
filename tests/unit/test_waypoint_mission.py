@@ -35,13 +35,10 @@ def test_load_path_empty_raises() -> None:
         bad.unlink(missing_ok=True)
 
 
-def test_profile_marker_matches_path_only() -> None:
+def test_profile_waypoints_match_input() -> None:
     wps = load_path_yaml(DEMO_PATH)
-    plain = build_mission_profile(wps, MissionProfileParams(enable_marker_hover=False))
-    inspect = build_mission_profile(wps, MissionProfileParams(enable_marker_hover=True))
-    assert plain.marker is None
-    assert inspect.marker is not None
-    assert plain.waypoints == inspect.waypoints
+    mission = build_mission_profile(wps, MissionProfileParams())
+    assert mission.waypoints == wps
 
 
 def test_reached_within_tolerance() -> None:

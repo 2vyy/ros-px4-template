@@ -25,19 +25,10 @@ class MissionDefaults:
 
 
 @dataclass(frozen=True)
-class MarkerConfig:
-    hold_offset_enu: EnuPoint
-    hold_duration_s: float = 30.0
-    lost_timeout_s: float = 1.0
-    acquire_frames: int = 5
-
-
-@dataclass(frozen=True)
 class WaypointMission:
     frame_id: str
     defaults: MissionDefaults
     waypoints: tuple[EnuPoint, ...]
-    marker: MarkerConfig | None = None
 
 
 def _point_from_dict(d: dict[str, Any]) -> EnuPoint:
