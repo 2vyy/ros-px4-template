@@ -1,6 +1,17 @@
 """Unit tests for frame_transforms (no ROS required)."""
 
-from ros_px4_template_core.lib.frame_transforms import enu_to_ned, ned_to_enu
+import math
+
+from ros_px4_template_core.lib.frame_transforms import (
+    enu_to_ned,
+    ned_to_enu,
+    quaternion_enu_to_ned,
+    quaternion_ned_to_enu,
+    velocity_enu_to_ned,
+    velocity_ned_to_enu,
+    yaw_enu_to_ned,
+    yaw_ned_to_enu,
+)
 
 
 def test_ned_to_enu_example() -> None:
@@ -15,17 +26,6 @@ def test_round_trip() -> None:
     original = (10.0, -5.0, 2.5)
     assert enu_to_ned(*ned_to_enu(*original)) == original
 
-
-import math
-
-from ros_px4_template_core.lib.frame_transforms import (
-    quaternion_enu_to_ned,
-    quaternion_ned_to_enu,
-    velocity_enu_to_ned,
-    velocity_ned_to_enu,
-    yaw_enu_to_ned,
-    yaw_ned_to_enu,
-)
 
 # --- velocity ---
 
@@ -78,14 +78,16 @@ _SQRT2_2 = math.sqrt(2.0) / 2.0
 
 def test_quaternion_identity_ned_facing_north() -> None:
     q = quaternion_ned_to_enu(1.0, 0.0, 0.0, 0.0)
-    assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(q, (0.0, _SQRT2_2, _SQRT2_2, 0.0)))
+    expected = (0.0, _SQRT2_2, _SQRT2_2, 0.0)
+    assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(q, expected, strict=True))
 
 
 def test_quaternion_ned_to_enu_east() -> None:
     q = quaternion_ned_to_enu(_SQRT2_2, 0.0, 0.0, _SQRT2_2)
     q_back = quaternion_enu_to_ned(*q)
+    expected = (_SQRT2_2, 0.0, 0.0, _SQRT2_2)
     assert all(
-        math.isclose(a, b, abs_tol=1e-9) for a, b in zip(q_back, (_SQRT2_2, 0.0, 0.0, _SQRT2_2))
+        math.isclose(a, b, abs_tol=1e-9) for a, b in zip(q_back, expected, strict=True)
     )
 
 
@@ -93,5 +95,13 @@ def test_quaternion_round_trip() -> None:
     q_ned = (_SQRT2_2, 0.0, 0.0, _SQRT2_2)
     assert all(
         math.isclose(a, b, abs_tol=1e-9)
-        for a, b in zip(quaternion_enu_to_ned(*quaternion_ned_to_enu(*q_ned)), q_ned)
+        for a, b in zip(quaternion_enu_to_ned(*quaternion_ned_to_enu(*q_ned)), q_ned, strict=True)
     )
+
+
+def test_quaternion_forward_known_value() -> None:
+    # NED roll 90° about x_body (North axis): q_ned = (√2/2, √2/2, 0, 0)
+    # Expected q_body_enu = Q_NED_TO_ENU ⊗ q_ned = (-0.5, 0.5, 0.5, -0.5)
+    q = quaternion_ned_to_enu(_SQRT2_2, _SQRT2_2, 0.0, 0.0)
+    expected = (-0.5, 0.5, 0.5, -0.5)
+    assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(q, expected, strict=True))
