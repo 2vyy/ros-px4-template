@@ -186,6 +186,16 @@ def main() -> None:
 
     remaining = _all_live_pids(patterns)
 
+    # Clean up bag recording process
+    bag_pidfile = Path("logs/bag.pid")
+    if bag_pidfile.exists():
+        try:
+            pid = int(bag_pidfile.read_text().strip())
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except (ProcessLookupError, ValueError, OSError):
+            pass
+        bag_pidfile.unlink(missing_ok=True)
+
     report = {
         "full": args.full,
         "stopped_via_pidfile": pgid_hit is not None,

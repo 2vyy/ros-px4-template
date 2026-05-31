@@ -29,3 +29,7 @@ test *args:
 # Observability hub (summary, window, grep, errors, tail, merge, events, status, topics, and capabilities)
 log *args:
     @just _run log {{args}}
+
+# Replay a recorded rosbag against the live ROS graph
+replay bag *args:
+    @just _run replay {{bag}} {{args}}

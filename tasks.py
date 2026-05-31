@@ -352,6 +352,7 @@ def sim(
     vehicle: str = typer.Option("", "--vehicle", help="Vehicle overlay name for hardware mode (e.g. x500)"),
     build: bool = typer.Option(True, "--build/--no-build", help="Build workspace before running"),
     speed: float = typer.Option(1.0, "--speed", help="Gazebo physics speed multiplier (headless/bg only). 1.0 = real time."),
+    bag: bool = typer.Option(True, "--bag/--no-bag", help="Auto-record rosbag (bg mode only)"),
 ):
     """Simulation & hardware runner. Modes: gui, headless, bg, px4, edit, hardware, stop, kill.
 
@@ -570,6 +571,43 @@ def sim(
                     cwd=str(ROOT),
                 )
             pidfile.write_text(str(proc.pid))
+            if bag:
+                bag_ts = datetime.now().strftime("%Y%m%dT%H%M%S")
+                bag_dir = LOG_DIR / "bags" / f"run_{bag_ts}"
+                bag_dir.parent.mkdir(parents=True, exist_ok=True)
+                _ros_topics = [
+                    "/drone/target_pose",
+                    "/drone/pose_enu",
+                    "/drone/controller_status",
+                    "/drone/mission_status",
+                    "/fmu/out/vehicle_local_position",
+                    "/fmu/out/vehicle_status",
+                ]
+                ros_setup = _ros_setup_path()
+                ws_setup = ROOT / "install" / "setup.bash"
+                sources = [f"source {shlex.quote(ros_setup)}"]
+                if ws_setup.exists():
+                    sources.append(f"source {shlex.quote(str(ws_setup))}")
+                bag_cmd = " && ".join([
+                    *sources,
+                    "exec ros2 bag record -o "
+                    + shlex.quote(str(bag_dir))
+                    + " "
+                    + " ".join(shlex.quote(t) for t in _ros_topics),
+                ])
+                bag_log = LOG_DIR / f"bag_{bag_ts}.log"
+                with bag_log.open("w") as bag_out:
+                    bag_proc = subprocess.Popen(
+                        ["bash", "-lc", bag_cmd],
+                        env=env,
+                        stdout=bag_out,
+                        stderr=subprocess.STDOUT,
+                        preexec_fn=os.setsid,
+                        cwd=str(ROOT),
+                    )
+                bag_pidfile = LOG_DIR / "bag.pid"
+                bag_pidfile.write_text(str(bag_proc.pid))
+                console.print(f"[green]Rosbag recording to {bag_dir}[/green]")
             console.print(
                 json.dumps(
                     {
@@ -600,7 +638,7 @@ def sim(
         headless_val = "true"
 
     console.print(
-        f"[cyan]Starting simulation (mode: {mode}, world: {world_val}, model: {model}, vision: {vision_val})...[/cyan]"
+        f"[cyan]Starting simulation (mode: {mode}, world: {world_val}, model: {model})...[/cyan]"
     )
 
     gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
@@ -820,6 +858,34 @@ def topics():
         ["uv", "run", "python", "tools/check_topics.py", "--manifest", "docs/TOPICS.md"],
         cwd=str(ROOT),
     )
+
+
+@app.command()
+def replay(
+    bag: str = typer.Argument(..., help="Path to rosbag directory (e.g. logs/bags/run_20260530T120000)"),
+    speed: float = typer.Option(1.0, "--speed", help="Playback speed multiplier"),
+) -> None:
+    """Replay a recorded rosbag against the live ROS graph.
+
+    Requires a running sim (just sim bg) to receive the replayed topics.
+    Clock is published from the bag so nodes use bag time.
+    """
+    bag_path = Path(bag)
+    if not bag_path.exists():
+        console.print(f"[bold red]Bag not found: {bag_path}[/bold red]")
+        raise typer.Exit(1) from None
+    console.print(f"[cyan]Replaying bag: {bag_path} at {speed}x...[/cyan]")
+    try:
+        subprocess.run(
+            ["ros2", "bag", "play", str(bag_path), "--rate", str(speed), "--clock"],
+            env=_ros_launch_env(),
+            check=True,
+            cwd=str(ROOT),
+        )
+    except KeyboardInterrupt:
+        console.print("[yellow]Replay stopped.[/yellow]")
+    except subprocess.CalledProcessError:
+        console.print("[bold red]Replay ended with error.[/bold red]")
 
 
 if __name__ == "__main__":
