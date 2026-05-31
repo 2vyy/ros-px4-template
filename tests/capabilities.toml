@@ -30,3 +30,10 @@ description = "Takeoff, follow path, hover over ArUco when seen"
 status = "not_started"
 platforms = []
 scenario_file = "inspect_aruco.py"
+
+[capabilities.aruco_hover]
+description = "Vehicle detects ArUco marker and enters marker_hover phase"
+status = "idea"
+platforms = ["sim"]
+scenario_file = "05_aruco_hover.py"
+last_verified = ""

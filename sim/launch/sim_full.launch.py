@@ -104,7 +104,7 @@ def _pose_setup(context, *args, **kwargs):
     model = LaunchConfiguration("model").perform(context)
     gz_pose = f"/world/{world}/model/{model}_0/pose"
     wait_and_bridge = (
-        f'for _ in $(seq 1 120); do '
+        f"for _ in $(seq 1 120); do "
         f'if gz topic -i -t "{gz_pose}" 2>/dev/null | grep -qi "Publisher"; then break; fi; '
         f"sleep 0.5; "
         f"done; "

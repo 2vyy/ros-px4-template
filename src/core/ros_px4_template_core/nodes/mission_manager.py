@@ -5,13 +5,13 @@ ROS 2 Interface
 =============================================================================
 
 Subscriptions:
-    /drone/controller_status  [px4_ros_msgs/ControllerStatus]
-    /drone/pose_enu  [geometry_msgs/PoseStamped]
-    /vision/marker_pose  [geometry_msgs/PoseStamped]
+    /drone/controller_status    [px4_ros_msgs/ControllerStatus]
+    /drone/pose_enu             [geometry_msgs/PoseStamped]
+    /drone/marker_offset_enu    [geometry_msgs/Vector3Stamped]
 
 Publishers:
-    /drone/target_pose  [geometry_msgs/PoseStamped]
-    /drone/mission_status  [px4_ros_msgs/MissionStatus]
+    /drone/target_pose      [geometry_msgs/PoseStamped]
+    /drone/mission_status   [px4_ros_msgs/MissionStatus]
     /drone/mission_markers  [visualization_msgs/MarkerArray]
 =============================================================================
 """
@@ -22,7 +22,7 @@ import math
 from pathlib import Path
 
 import rclpy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Vector3Stamped
 from px4_ros_msgs.msg import ControllerStatus, MissionStatus
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -59,22 +59,19 @@ class MissionManager(Node):
         self._sub_group = ReentrantCallbackGroup()
         self.declare_parameter("log_dir", "./logs")
         self.declare_parameter("path_file", str(_default_path_file()))
-        self.declare_parameter("enable_marker_hover", False)
         self.declare_parameter("tick_rate_hz", 10.0)
         self.declare_parameter("takeoff_altitude_m", 2.5)
         self.declare_parameter("takeoff_altitude_tolerance_m", 0.1)
         self.declare_parameter("tolerance_m", 0.4)
         self.declare_parameter("z_tolerance_m", 0.0)
         self.declare_parameter("hold_s", 2.0)
-        self.declare_parameter("marker_hold_offset_z", 1.5)
-        self.declare_parameter("marker_hold_duration_s", 30.0)
-        self.declare_parameter("marker_lost_timeout_s", 1.0)
-        self.declare_parameter("marker_acquire_frames", 5)
+        self.declare_parameter("marker_hold_s", 10.0)
 
         log_dir = str(self.get_parameter("log_dir").value)
         path_file = str(self.get_parameter("path_file").value).strip()
         self._takeoff_alt = float(self.get_parameter("takeoff_altitude_m").value)
         self._takeoff_alt_tol = float(self.get_parameter("takeoff_altitude_tolerance_m").value)
+        self._marker_hold_s = float(self.get_parameter("marker_hold_s").value)
 
         self.slog = StructuredLogger(self, log_dir=log_dir)
         z_tol_raw = float(self.get_parameter("z_tolerance_m").value)
@@ -83,11 +80,6 @@ class MissionManager(Node):
             tolerance_m=float(self.get_parameter("tolerance_m").value),
             hold_s=float(self.get_parameter("hold_s").value),
             z_tolerance_m=z_tolerance_m,
-            enable_marker_hover=bool(self.get_parameter("enable_marker_hover").value),
-            marker_hold_offset_z=float(self.get_parameter("marker_hold_offset_z").value),
-            marker_hold_duration_s=float(self.get_parameter("marker_hold_duration_s").value),
-            marker_lost_timeout_s=float(self.get_parameter("marker_lost_timeout_s").value),
-            marker_acquire_frames=int(self.get_parameter("marker_acquire_frames").value),
         )
         # Empty path_file means hover-only (no waypoints).
         if path_file:
@@ -104,9 +96,7 @@ class MissionManager(Node):
         self._have_pose = False
         self._controller_armed = False
         self._controller_alt_enu = 0.0
-        self._marker_valid = False
-        self._marker_pos: tuple[float, float, float] | None = None
-        self._marker_stamp = None
+        self._marker_offset_enu: tuple[float, float] | None = None
 
         self.create_subscription(
             ControllerStatus,
@@ -123,9 +113,9 @@ class MissionManager(Node):
             callback_group=self._sub_group,
         )
         self.create_subscription(
-            PoseStamped,
-            "/vision/marker_pose",
-            self._marker_cb,
+            Vector3Stamped,
+            "/drone/marker_offset_enu",
+            self._marker_offset_cb,
             _RELIABLE_QOS,
             callback_group=self._sub_group,
         )
@@ -143,7 +133,6 @@ class MissionManager(Node):
         self.slog.info(
             "MissionManager ready",
             path=path_file or "(hover-only)",
-            marker_hover=profile.enable_marker_hover,
             waypoints=len(self._mission.waypoints) if self._mission else 0,
         )
 
@@ -169,14 +158,8 @@ class MissionManager(Node):
         z_eff = max(z, self._controller_alt_enu)
         return (x, y, z_eff)
 
-    def _marker_cb(self, msg: PoseStamped) -> None:
-        self._marker_valid = True
-        self._marker_pos = (
-            msg.pose.position.x,
-            msg.pose.position.y,
-            msg.pose.position.z,
-        )
-        self._marker_stamp = self.get_clock().now()
+    def _marker_offset_cb(self, msg: Vector3Stamped) -> None:
+        self._marker_offset_enu = (float(msg.vector.x), float(msg.vector.y))
 
     def _tick(self) -> None:
         now = self.get_clock().now().nanoseconds / 1e9
@@ -200,12 +183,6 @@ class MissionManager(Node):
         if not self._have_pose:
             return
 
-        marker_valid = self._marker_valid
-        if self._marker_stamp is not None:
-            age = (self.get_clock().now() - self._marker_stamp).nanoseconds / 1e9
-            if age > (self._mission.marker.lost_timeout_s if self._mission.marker else 1.0):
-                marker_valid = False
-
         takeoff_z = self._takeoff_alt
         if self._mission.waypoints:
             takeoff_z = max(takeoff_z, float(self._mission.waypoints[0].z))
@@ -219,8 +196,8 @@ class MissionManager(Node):
                 pos_enu=pos,
                 controller_armed=self._controller_armed,
                 altitude_ok=altitude_ok,
-                marker_valid=marker_valid,
-                marker_position=self._marker_pos if marker_valid else None,
+                marker_offset_enu=self._marker_offset_enu,
+                marker_hold_s=self._marker_hold_s,
             ),
         )
 
@@ -253,7 +230,7 @@ class MissionManager(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.phase = out.phase
         msg.waypoint_index = out.waypoint_index
-        msg.marker_seen = out.marker_seen
+        msg.marker_seen = self._marker_offset_enu is not None
         msg.position_error_m = float(err)
         self._pub_status.publish(msg)
 
@@ -318,25 +295,6 @@ class MissionManager(Node):
         tgt.color.r = tgt.color.g = 1.0
         tgt.color.a = 0.9
         arr.markers.append(tgt)
-
-        if self._marker_valid and self._marker_pos is not None:
-            mk = Marker()
-            mk.header.stamp = stamp
-            mk.header.frame_id = fid
-            mk.ns = "marker"
-            mk.id = 0
-            mk.type = Marker.CUBE
-            mk.action = Marker.ADD
-            mk.pose.position.x = self._marker_pos[0]
-            mk.pose.position.y = self._marker_pos[1]
-            mk.pose.position.z = self._marker_pos[2]
-            mk.pose.orientation.w = 1.0
-            mk.scale.x = mk.scale.y = 0.5
-            mk.scale.z = 0.02
-            mk.color.r = 1.0
-            mk.color.g = 0.5
-            mk.color.a = 0.9
-            arr.markers.append(mk)
 
         self._pub_markers.publish(arr)
 

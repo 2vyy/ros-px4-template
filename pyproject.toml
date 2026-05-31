@@ -21,6 +21,7 @@ dev = [
     "ruff>=0.4",
     "ty>=0.0.1a8",
     "tomli>=2.0",
+    "opencv-python>=4.7.0",
 ]
 
 [tool.ruff]

@@ -87,6 +87,18 @@ def _launch_setup(context, *args, **kwargs):
                 parameters=base_params,
             )
         )
+
+    vision = LaunchConfiguration("vision").perform(context)
+    if vision == "aruco":
+        nodes.append(
+            Node(
+                package="ros_px4_template_core",
+                executable="aruco_pose_publisher",
+                name="aruco_pose_publisher",
+                output="screen",
+                parameters=base_params,
+            )
+        )
     return nodes
 
 
@@ -103,6 +115,9 @@ def generate_launch_description() -> LaunchDescription:
                 "vehicle",
                 default_value="",
                 description="Vehicle overlay name (e.g. x500). Must match vehicles/<name>.yaml",
+            ),
+            DeclareLaunchArgument(
+                "vision", default_value="none", description="Vision mode: none, aruco"
             ),
             OpaqueFunction(function=_launch_setup),
         ]
