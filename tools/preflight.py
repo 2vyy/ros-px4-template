@@ -137,9 +137,7 @@ def main() -> None:
     results.append(_check("uv on PATH", uv_ok))
 
     if args.mode == "hw":
-        import shutil as _shutil
-
-        microxrce_ok = _shutil.which("MicroXRCEAgent") is not None
+        microxrce_ok = shutil.which("MicroXRCEAgent") is not None
         results.append(
             _check(
                 "MicroXRCEAgent binary on PATH",

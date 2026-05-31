@@ -386,6 +386,11 @@ def sim(
         if res.returncode != 0:
             console.print("[bold red]Preflight check failed. Aborting hardware launch.[/bold red]")
             raise typer.Exit(1) from None
+        if vehicle:
+            vehicle_path = ROOT / "vehicles" / f"{vehicle}.yaml"
+            if not vehicle_path.is_file():
+                console.print(f"[bold red]Vehicle overlay not found: {vehicle_path}[/bold red]")
+                raise typer.Exit(1) from None
         if build:
             _build_workspace()
         console.print(f"[cyan]Connecting to hardware on port {port} at {baud} baud...[/cyan]")
