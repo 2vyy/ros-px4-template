@@ -608,16 +608,16 @@ def sim(
                 bag_pidfile = LOG_DIR / "bag.pid"
                 bag_pidfile.write_text(str(bag_proc.pid))
                 console.print(f"[green]Rosbag recording to {bag_dir}[/green]")
-            console.print(
-                json.dumps(
-                    {
-                        "started": True,
-                        "pid": proc.pid,
-                        "log": str(log_file),
-                        "pidfile": str(pidfile),
-                    }
-                )
-            )
+            status = {
+                "started": True,
+                "pid": proc.pid,
+                "log": str(log_file),
+                "pidfile": str(pidfile),
+            }
+            if bag:
+                status["bag_pid"] = bag_proc.pid
+                status["bag_pidfile"] = str(bag_pidfile)
+            console.print(json.dumps(status))
         except Exception as e:
             console.print(f"[bold red]Failed to start background simulation: {e}[/bold red]")
             raise typer.Exit(1) from None
@@ -870,7 +870,10 @@ def replay(
     Requires a running sim (just sim bg) to receive the replayed topics.
     Clock is published from the bag so nodes use bag time.
     """
-    bag_path = Path(bag)
+    if speed <= 0 or speed > 20:
+        console.print(f"[bold red]--speed must be between 0 (exclusive) and 20 (inclusive), got {speed}[/bold red]")
+        raise typer.Exit(1) from None
+    bag_path = Path(bag) if Path(bag).is_absolute() else (ROOT / bag)
     if not bag_path.exists():
         console.print(f"[bold red]Bag not found: {bag_path}[/bold red]")
         raise typer.Exit(1) from None

@@ -191,7 +191,7 @@ def main() -> None:
     if bag_pidfile.exists():
         try:
             pid = int(bag_pidfile.read_text().strip())
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
         except (ProcessLookupError, ValueError, OSError):
             pass
         bag_pidfile.unlink(missing_ok=True)
