@@ -136,6 +136,32 @@ def main() -> None:
     uv_ok = shutil.which("uv") is not None
     results.append(_check("uv on PATH", uv_ok))
 
+    if args.mode == "hw":
+        import shutil as _shutil
+
+        microxrce_ok = _shutil.which("MicroXRCEAgent") is not None
+        results.append(
+            _check(
+                "MicroXRCEAgent binary on PATH",
+                microxrce_ok,
+                "install: pip install micro-xrce-dds-agent or build from source"
+                if not microxrce_ok
+                else "",
+            )
+        )
+
+        serial_dev = os.environ.get("HARDWARE_SERIAL_PORT", "/dev/ttyUSB0")
+        serial_ok = Path(serial_dev).exists()
+        results.append(
+            _check(
+                f"Serial device exists ({serial_dev})",
+                serial_ok,
+                "device not found — check USB cable and set HARDWARE_SERIAL_PORT in .env"
+                if not serial_ok
+                else "",
+            )
+        )
+
     pymavlink_ok = False
     if uv_ok:
         r = subprocess.run(

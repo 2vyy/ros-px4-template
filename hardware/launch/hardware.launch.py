@@ -6,7 +6,12 @@ from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+)
 from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -18,10 +23,21 @@ def _rosbridge():
     return IncludeLaunchDescription(AnyLaunchDescriptionSource(str(launch_file)))
 
 
+def _microxrce_serial(serial_port: str, baudrate: str) -> ExecuteProcess:
+    """Launch MicroXRCEAgent with serial transport for a physical FC."""
+    return ExecuteProcess(
+        cmd=["MicroXRCEAgent", "serial", "--dev", serial_port, "-b", baudrate],
+        output="screen",
+        name="microxrce_agent_serial",
+    )
+
+
 def _launch_setup(context, *args, **kwargs):
     config_name = LaunchConfiguration("config").perform(context)
     log_dir = LaunchConfiguration("log_dir").perform(context)
     use_sim_time = LaunchConfiguration("use_sim_time").perform(context).lower() == "true"
+    serial_port = LaunchConfiguration("serial_port").perform(context)
+    baudrate = LaunchConfiguration("baudrate").perform(context)
 
     project_root = Path(__file__).resolve().parents[2]
     common_file = project_root / "config" / "params" / "common.yaml"
@@ -36,9 +52,17 @@ def _launch_setup(context, *args, **kwargs):
             raise RuntimeError(msg)
         params_files.append(str(overlay_path))
 
+    vehicle_name = LaunchConfiguration("vehicle").perform(context).strip()
+    if vehicle_name:
+        vehicle_path = project_root / "vehicles" / f"{vehicle_name}.yaml"
+        if not vehicle_path.is_file():
+            msg = f"vehicle overlay not found: {vehicle_path}"
+            raise RuntimeError(msg)
+        params_files.append(str(vehicle_path))
+
     base_params = [*params_files, {"log_dir": log_dir, "use_sim_time": use_sim_time}]
 
-    nodes = [_rosbridge()]
+    nodes = [_rosbridge(), _microxrce_serial(serial_port, baudrate)]
     executables = ("px4_topic_relay", "offboard_controller", "mission_manager")
     nodes.extend(
         [
@@ -75,6 +99,11 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("serial_port", default_value="/dev/ttyUSB0"),
             DeclareLaunchArgument("baudrate", default_value="921600"),
             DeclareLaunchArgument("param_overlay", default_value=""),
+            DeclareLaunchArgument(
+                "vehicle",
+                default_value="",
+                description="Vehicle overlay name (e.g. x500). Must match vehicles/<name>.yaml",
+            ),
             OpaqueFunction(function=_launch_setup),
         ]
     )

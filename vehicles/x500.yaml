@@ -1,0 +1,14 @@
+# vehicles/x500.yaml — Holybro X500 v2 with Pixhawk 6C
+# Apply with: just sim hardware --vehicle x500
+offboard_controller:
+  ros__parameters:
+    arm_delay_s: 5.0
+    target_altitude_m: 3.0
+    position_tolerance_m: 0.3
+
+mission_manager:
+  ros__parameters:
+    takeoff_altitude_m: 3.0
+    takeoff_altitude_tolerance_m: 0.15
+    tolerance_m: 0.5
+    hold_s: 3.0

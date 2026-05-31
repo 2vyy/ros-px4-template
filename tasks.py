@@ -349,6 +349,7 @@ def sim(
     vision: str = typer.Option("false", "--vision", help="Enable vision/aruco detection"),
     port: str = typer.Option("/dev/ttyUSB0", "--port", help="Serial port for hardware"),
     baud: int = typer.Option(921600, "--baud", help="Baudrate for hardware serial"),
+    vehicle: str = typer.Option("", "--vehicle", help="Vehicle overlay name for hardware mode (e.g. x500)"),
     build: bool = typer.Option(True, "--build/--no-build", help="Build workspace before running"),
     speed: float = typer.Option(1.0, "--speed", help="Gazebo physics speed multiplier (headless/bg only). 1.0 = real time."),
 ):
@@ -378,6 +379,13 @@ def sim(
         return
 
     if mode == "hardware":
+        res = subprocess.run(
+            ["uv", "run", "python", "tools/preflight.py", "--mode=hw"],
+            cwd=str(ROOT),
+        )
+        if res.returncode != 0:
+            console.print("[bold red]Preflight check failed. Aborting hardware launch.[/bold red]")
+            raise typer.Exit(1) from None
         if build:
             _build_workspace()
         console.print(f"[cyan]Connecting to hardware on port {port} at {baud} baud...[/cyan]")
@@ -392,6 +400,7 @@ def sim(
                     "use_sim_time:=false",
                     "config:=hardware",
                     f"log_dir:={LOG_DIR}",
+                    f"vehicle:={vehicle}",
                 ],
                 check=True,
                 cwd=str(ROOT),
