@@ -53,7 +53,3 @@ cap *args:
 # Observability hub (merge logs, watch/tail logs, or validate live topic graph)
 log *args:
     @just _run log {{args}}
-
-# Replay a recorded rosbag against the live ROS graph
-replay bag *args:
-    @just _run replay {{bag}} {{args}}
