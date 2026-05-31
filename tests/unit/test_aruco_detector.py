@@ -23,7 +23,7 @@ def _render_marker(marker_id: int = 0, img_size: int = 640) -> tuple[np.ndarray,
 
 def test_detects_known_marker() -> None:
     img, cam = _render_marker(marker_id=0)
-    detections = detect_markers(img, cam, np.zeros((4, 1)), marker_length_m=0.2)
+    detections = detect_markers(img, cam, np.zeros((4, 1)), marker_size_m=0.2)
     assert len(detections) == 1
     assert detections[0].marker_id == 0
 
@@ -37,7 +37,7 @@ def test_no_detections_on_blank_image() -> None:
 
 def test_marker_center_near_image_center() -> None:
     img, cam = _render_marker(marker_id=0, img_size=640)
-    detections = detect_markers(img, cam, np.zeros((4, 1)), marker_length_m=0.2)
+    detections = detect_markers(img, cam, np.zeros((4, 1)), marker_size_m=0.2)
     assert len(detections) == 1
     d = detections[0]
     assert abs(d.center_x_px - 320) < 20
@@ -46,7 +46,7 @@ def test_marker_center_near_image_center() -> None:
 
 def test_detection_has_positive_z_distance() -> None:
     img, cam = _render_marker(marker_id=0)
-    detections = detect_markers(img, cam, np.zeros((4, 1)), marker_length_m=0.2)
+    detections = detect_markers(img, cam, np.zeros((4, 1)), marker_size_m=0.2)
     assert len(detections) == 1
     assert detections[0].z_camera_m > 0
     assert detections[0].distance_m > 0
@@ -56,3 +56,12 @@ def test_returns_list_type() -> None:
     img, cam = _render_marker()
     result = detect_markers(img, cam, np.zeros((4, 1)))
     assert isinstance(result, list)
+
+
+def test_enu_offset_properties_are_finite() -> None:
+    img, cam = _render_marker(marker_id=0)
+    detections = detect_markers(img, cam, np.zeros((4, 1)), marker_size_m=0.2)
+    assert len(detections) == 1
+    d = detections[0]
+    assert np.isfinite(d.enu_east_m)
+    assert np.isfinite(d.enu_north_m)

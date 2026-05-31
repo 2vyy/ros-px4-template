@@ -46,10 +46,10 @@ class ArucoPosePublisher(Node):
     def __init__(self) -> None:
         super().__init__("aruco_pose_publisher")
         self.declare_parameter("target_marker_id", 0)
-        self.declare_parameter("marker_length_m", 0.2)
+        self.declare_parameter("marker_size_m", 0.2)
 
         self._target_id = int(self.get_parameter("target_marker_id").value)
-        self._marker_length = float(self.get_parameter("marker_length_m").value)
+        self._marker_size = float(self.get_parameter("marker_size_m").value)
         self._bridge = CvBridge()
         self._camera_matrix: np.ndarray | None = None
         self._dist_coeffs: np.ndarray | None = None
@@ -79,7 +79,7 @@ class ArucoPosePublisher(Node):
             return
 
         detections = detect_markers(
-            cv_img, self._camera_matrix, self._dist_coeffs, self._marker_length
+            cv_img, self._camera_matrix, self._dist_coeffs, self._marker_size
         )
         target = next((d for d in detections if d.marker_id == self._target_id), None)
 
@@ -93,8 +93,8 @@ class ArucoPosePublisher(Node):
         offset = Vector3Stamped()
         offset.header.stamp = msg.header.stamp
         offset.header.frame_id = "base_link"
-        offset.vector.x = float(-target.y_camera_m)
-        offset.vector.y = float(-target.x_camera_m)
+        offset.vector.x = target.enu_east_m
+        offset.vector.y = target.enu_north_m
         offset.vector.z = 0.0
         self._pub_offset.publish(offset)
 

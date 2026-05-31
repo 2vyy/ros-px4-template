@@ -46,12 +46,22 @@ class MarkerDetection:
     def distance_m(self) -> float:
         return float(np.linalg.norm(self.tvec))
 
+    @property
+    def enu_east_m(self) -> float:
+        """ENU east offset (nadir camera, drone heading ≈ north): -tvec.y."""
+        return float(-self.tvec[1][0])
+
+    @property
+    def enu_north_m(self) -> float:
+        """ENU north offset (nadir camera, drone heading ≈ north): -tvec.x."""
+        return float(-self.tvec[0][0])
+
 
 def detect_markers(
     image: np.ndarray,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
-    marker_length_m: float = 0.2,
+    marker_size_m: float = 0.2,
     dictionary_id: int = cv2.aruco.DICT_4X4_50,
 ) -> list[MarkerDetection]:
     """Detect ArUco markers in an image and estimate 3D pose."""
@@ -63,7 +73,7 @@ def detect_markers(
     if ids is None or len(ids) == 0:
         return []
 
-    half = marker_length_m / 2.0
+    half = marker_size_m / 2.0
     obj_pts = np.array(
         [[-half, half, 0], [half, half, 0], [half, -half, 0], [-half, -half, 0]],
         dtype=np.float32,
