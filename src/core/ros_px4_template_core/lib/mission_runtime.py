@@ -124,7 +124,7 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
             )
         if ctx.marker_hover_start is None:
             ctx.marker_hover_start = inputs.now
-            _emit(ctx, "MARKER_HOVER_START")
+            _emit(ctx, events.MARKER_HOVER_START)
         elif inputs.now - ctx.marker_hover_start >= inputs.marker_hold_s:
             _set_phase(ctx, PHASE_DONE)
             _emit(ctx, events.MISSION_DONE)

@@ -65,7 +65,7 @@ class ArucoPosePublisher(Node):
     def _info_cb(self, msg: CameraInfo) -> None:
         if self._camera_matrix is None:
             self._camera_matrix = np.array(msg.k).reshape(3, 3)
-            self._dist_coeffs = np.array(msg.d).reshape(-1, 1)
+            self._dist_coeffs = np.array(msg.d).reshape(-1, 1)  # (N, 1) shape expected by solvePnP
             self.get_logger().info("Camera intrinsics received.")
 
     def _image_cb(self, msg: Image) -> None:
@@ -97,10 +97,6 @@ class ArucoPosePublisher(Node):
         offset.vector.y = target.enu_north_m
         offset.vector.z = 0.0
         self._pub_offset.publish(offset)
-
-    def destroy_node(self) -> None:
-        super().destroy_node()
-
 
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)

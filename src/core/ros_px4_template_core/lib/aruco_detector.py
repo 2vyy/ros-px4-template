@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 
 
-@dataclass(frozen=True)
+@dataclass
 class MarkerDetection:
     marker_id: int
     center_x_px: float
@@ -64,7 +64,12 @@ def detect_markers(
     marker_size_m: float = 0.2,
     dictionary_id: int = cv2.aruco.DICT_4X4_50,
 ) -> list[MarkerDetection]:
-    """Detect ArUco markers in an image and estimate 3D pose."""
+    """Detect ArUco markers in an image and estimate 3D pose.
+
+    Args:
+        dist_coeffs: Distortion coefficients of shape ``(N,)`` or ``(N, 1)``
+            as returned by ``cv2.calibrateCamera``.
+    """
     aruco_dict = cv2.aruco.getPredefinedDictionary(dictionary_id)
     params = cv2.aruco.DetectorParameters()
     detector = cv2.aruco.ArucoDetector(aruco_dict, params)

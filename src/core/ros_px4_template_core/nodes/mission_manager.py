@@ -7,6 +7,7 @@ ROS 2 Interface
 Subscriptions:
     /drone/controller_status    [px4_ros_msgs/ControllerStatus]
     /drone/pose_enu             [geometry_msgs/PoseStamped]
+    /drone/marker_detected      [std_msgs/Bool]
     /drone/marker_offset_enu    [geometry_msgs/Vector3Stamped]
 
 Publishers:
@@ -24,6 +25,7 @@ from pathlib import Path
 import rclpy
 from geometry_msgs.msg import PoseStamped, Vector3Stamped
 from px4_ros_msgs.msg import ControllerStatus, MissionStatus
+from std_msgs.msg import Bool
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -33,7 +35,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from ros_px4_template_core.lib.mission_profile import MissionProfileParams, build_mission_profile
 from ros_px4_template_core.lib.mission_runtime import MissionContext, TickInputs, tick
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
-from ros_px4_template_core.lib.waypoint_mission import WaypointMission, load_path_yaml
+from ros_px4_template_core.lib.waypoint_mission import EnuPoint, WaypointMission, load_path_yaml
 
 _RELIABLE_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,
@@ -113,6 +115,13 @@ class MissionManager(Node):
             callback_group=self._sub_group,
         )
         self.create_subscription(
+            Bool,
+            "/drone/marker_detected",
+            self._marker_detected_cb,
+            _RELIABLE_QOS,
+            callback_group=self._sub_group,
+        )
+        self.create_subscription(
             Vector3Stamped,
             "/drone/marker_offset_enu",
             self._marker_offset_cb,
@@ -158,6 +167,10 @@ class MissionManager(Node):
         z_eff = max(z, self._controller_alt_enu)
         return (x, y, z_eff)
 
+    def _marker_detected_cb(self, msg: Bool) -> None:
+        if not msg.data:
+            self._marker_offset_enu = None
+
     def _marker_offset_cb(self, msg: Vector3Stamped) -> None:
         self._marker_offset_enu = (float(msg.vector.x), float(msg.vector.y))
 
@@ -166,9 +179,7 @@ class MissionManager(Node):
 
         # Hover-only mode: no mission loaded. Just hold target altitude above origin.
         if self._mission is None:
-            import types
-
-            hover_target = types.SimpleNamespace(x=0.0, y=0.0, z=float(self._takeoff_alt))
+            hover_target = EnuPoint(0.0, 0.0, float(self._takeoff_alt))
             self._publish_target(hover_target, frame_id="map")
             msg = MissionStatus()
             msg.header.stamp = self.get_clock().now().to_msg()
