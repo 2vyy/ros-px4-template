@@ -24,3 +24,10 @@ platforms = [
 ]
 scenario_file = "03_waypoint.py"
 last_verified = "2026-05-27"
+
+[capabilities.aruco_hover]
+description = "Vehicle detects ArUco marker and enters marker_hover phase"
+status = "idea"
+platforms = ["sim"]
+scenario_file = "05_aruco_hover.py"
+last_verified = ""

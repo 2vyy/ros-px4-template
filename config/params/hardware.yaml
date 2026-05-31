@@ -1,0 +1,18 @@
+# config/params/hardware.yaml — applied by `just sim hardware` (config:=hardware)
+# auto_arm is false for hardware: require the pilot to arm manually via GCS or RC.
+offboard_controller:
+  ros__parameters:
+    auto_arm: false
+    arm_delay_s: 5.0
+    target_altitude_m: 3.0
+    offboard_prestream_s: 5.0
+    target_pose_timeout_s: 1.0
+
+mission_manager:
+  ros__parameters:
+    tick_rate_hz: 10.0
+    takeoff_altitude_m: 3.0
+    takeoff_altitude_tolerance_m: 0.15
+    tolerance_m: 0.5
+    z_tolerance_m: 0.0
+    hold_s: 3.0

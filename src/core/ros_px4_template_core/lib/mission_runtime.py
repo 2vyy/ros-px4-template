@@ -14,6 +14,7 @@ from ros_px4_template_core.lib.waypoint_mission import (
 
 PHASE_WAIT_ARM_ALTITUDE = "wait_arm_altitude"
 PHASE_FOLLOW_PATH = "follow_path"
+PHASE_MARKER_HOVER = "marker_hover"
 PHASE_DONE = "done"
 
 
@@ -22,6 +23,7 @@ class MissionContext:
     phase: str = PHASE_WAIT_ARM_ALTITUDE
     waypoint_index: int = 0
     waypoint_hold_start: float | None = None
+    marker_hover_start: float | None = None
     target: EnuPoint = field(default_factory=lambda: EnuPoint(0.0, 0.0, 0.0))
     events: list[dict[str, object]] = field(default_factory=list)
 
@@ -32,6 +34,8 @@ class TickInputs:
     pos_enu: tuple[float, float, float]
     controller_armed: bool
     altitude_ok: bool
+    marker_offset_enu: tuple[float, float] | None = None
+    marker_hold_s: float = 10.0
 
 
 @dataclass(frozen=True)
@@ -88,8 +92,12 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
     elif ctx.phase == PHASE_FOLLOW_PATH:
         wp = current_waypoint(mission, ctx.waypoint_index)
         if wp is None:
-            _set_phase(ctx, PHASE_DONE)
-            _emit(ctx, events.MISSION_DONE)
+            # Path finished — wait for marker or go to done
+            if inputs.marker_offset_enu is not None:
+                _set_phase(ctx, PHASE_MARKER_HOVER)
+            else:
+                _set_phase(ctx, PHASE_DONE)
+                _emit(ctx, events.MISSION_DONE)
         else:
             ctx.target = wp
             if reached(pos, wp, tol, z_tolerance_m=mission.defaults.z_tolerance_m):
@@ -98,10 +106,28 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
                 elif inputs.now - ctx.waypoint_hold_start >= hold_s:
                     _advance_waypoint(ctx, mission, inputs.now)
                     if current_waypoint(mission, ctx.waypoint_index) is None:
-                        _set_phase(ctx, PHASE_DONE)
-                        _emit(ctx, events.MISSION_DONE)
+                        if inputs.marker_offset_enu is not None:
+                            _set_phase(ctx, PHASE_MARKER_HOVER)
+                        else:
+                            _set_phase(ctx, PHASE_DONE)
+                            _emit(ctx, events.MISSION_DONE)
             else:
                 ctx.waypoint_hold_start = None
+
+    elif ctx.phase == PHASE_MARKER_HOVER:
+        offset = inputs.marker_offset_enu
+        if offset is not None:
+            ctx.target = EnuPoint(
+                x=inputs.pos_enu[0] + offset[0],
+                y=inputs.pos_enu[1] + offset[1],
+                z=ctx.target.z,
+            )
+        if ctx.marker_hover_start is None:
+            ctx.marker_hover_start = inputs.now
+            _emit(ctx, events.MARKER_HOVER_START)
+        elif inputs.now - ctx.marker_hover_start >= inputs.marker_hold_s:
+            _set_phase(ctx, PHASE_DONE)
+            _emit(ctx, events.MISSION_DONE)
 
     elif ctx.phase == PHASE_DONE:
         pass

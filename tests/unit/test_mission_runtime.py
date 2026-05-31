@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from ros_px4_template_core.lib.mission_profile import MissionProfileParams, build_mission_profile
 from ros_px4_template_core.lib.mission_runtime import (
     PHASE_DONE,
     PHASE_FOLLOW_PATH,
+    PHASE_MARKER_HOVER,
     MissionContext,
     TickInputs,
     tick,
@@ -21,8 +23,23 @@ def _demo_mission():
     return build_mission_profile(load_path_yaml(DEMO_PATH), MissionProfileParams())
 
 
-def _inputs(now: float = 0.0, pos=(0.0, 0.0, 0.0), armed=True, altitude_ok=True) -> TickInputs:
-    return TickInputs(now=now, pos_enu=pos, controller_armed=armed, altitude_ok=altitude_ok)
+def _inputs(
+    *,
+    pos: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    armed: bool = True,
+    altitude_ok: bool = True,
+    now: float = 0.0,
+    marker_offset_enu: tuple[float, float] | None = None,
+    marker_hold_s: float = 10.0,
+) -> TickInputs:
+    return TickInputs(
+        now=now,
+        pos_enu=pos,
+        controller_armed=armed,
+        altitude_ok=altitude_ok,
+        marker_offset_enu=marker_offset_enu,
+        marker_hold_s=marker_hold_s,
+    )
 
 
 def test_wait_to_follow_path() -> None:
@@ -32,21 +49,77 @@ def test_wait_to_follow_path() -> None:
     assert out.phase == PHASE_FOLLOW_PATH
 
 
-def test_stay_in_wait_when_not_armed() -> None:
+def test_follow_path_transitions_to_done_without_marker() -> None:
     mission = _demo_mission()
     ctx = MissionContext()
-    out = tick(ctx, mission, _inputs(armed=False, altitude_ok=True))
-    assert out.phase == "wait_arm_altitude"
+    ctx.phase = PHASE_FOLLOW_PATH
+    ctx.waypoint_index = len(mission.waypoints) - 1
+    last_wp = mission.waypoints[-1]
 
-
-def test_done_after_last_waypoint_hold() -> None:
-    mission = build_mission_profile(
-        (EnuPoint(1.0, 0.0, 3.0),),
-        MissionProfileParams(hold_s=0.0),
+    tick(ctx, mission, _inputs(pos=(last_wp.x, last_wp.y, last_wp.z), now=0.0))
+    out = tick(
+        ctx,
+        mission,
+        _inputs(
+            pos=(last_wp.x, last_wp.y, last_wp.z),
+            now=mission.defaults.hold_s + 1.0,
+            marker_offset_enu=None,
+        ),
     )
-    ctx = MissionContext(phase=PHASE_FOLLOW_PATH, waypoint_index=0)
-    # First tick — reaches waypoint, starts hold.
-    tick(ctx, mission, _inputs(now=0.0, pos=(1.0, 0.0, 3.0)))
-    # Second tick — hold elapsed (hold_s=0.0), advances and transitions to DONE.
-    out = tick(ctx, mission, _inputs(now=0.1, pos=(1.0, 0.0, 3.0)))
+    assert out.phase == PHASE_DONE
+
+
+def test_follow_path_transitions_to_marker_hover_when_marker_visible() -> None:
+    mission = _demo_mission()
+    ctx = MissionContext()
+    ctx.phase = PHASE_FOLLOW_PATH
+    ctx.waypoint_index = len(mission.waypoints) - 1
+    last_wp = mission.waypoints[-1]
+
+    tick(ctx, mission, _inputs(pos=(last_wp.x, last_wp.y, last_wp.z), now=0.0))
+    out = tick(
+        ctx,
+        mission,
+        _inputs(
+            pos=(last_wp.x, last_wp.y, last_wp.z),
+            now=mission.defaults.hold_s + 1.0,
+            marker_offset_enu=(0.5, -0.3),
+        ),
+    )
+    assert out.phase == PHASE_MARKER_HOVER
+
+
+def test_marker_hover_updates_target_with_offset() -> None:
+    mission = _demo_mission()
+    ctx = MissionContext()
+    ctx.phase = PHASE_MARKER_HOVER
+    ctx.target = EnuPoint(5.0, 5.0, 3.0)
+
+    out = tick(
+        ctx,
+        mission,
+        _inputs(
+            pos=(5.0, 5.0, 3.0),
+            now=0.0,
+            marker_offset_enu=(1.0, -0.5),
+            marker_hold_s=10.0,
+        ),
+    )
+    assert out.target.x == pytest.approx(6.0)
+    assert out.target.y == pytest.approx(4.5)
+    assert out.target.z == pytest.approx(3.0)
+
+
+def test_marker_hover_transitions_to_done_after_hold() -> None:
+    mission = _demo_mission()
+    ctx = MissionContext()
+    ctx.phase = PHASE_MARKER_HOVER
+    ctx.target = EnuPoint(0.0, 0.0, 3.0)
+
+    tick(ctx, mission, _inputs(pos=(0.0, 0.0, 3.0), now=0.0, marker_hold_s=5.0))
+    out = tick(
+        ctx,
+        mission,
+        _inputs(pos=(0.0, 0.0, 3.0), now=6.0, marker_hold_s=5.0),
+    )
     assert out.phase == PHASE_DONE

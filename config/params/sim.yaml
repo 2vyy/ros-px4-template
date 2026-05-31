@@ -8,14 +8,10 @@ offboard_controller:
 mission_manager:
   ros__parameters:
     path_file: "config/paths/demo.yaml"
-    enable_marker_hover: false
     tick_rate_hz: 10.0
     takeoff_altitude_m: 3.0
     takeoff_altitude_tolerance_m: 0.1
     tolerance_m: 0.4
-    z_tolerance_m: 0.0  # 0 = 3D Euclidean mode; positive = separate vertical tolerance
+    z_tolerance_m: 0.0
     hold_s: 2.0
-    marker_hold_offset_z: 1.5
-    marker_hold_duration_s: 30.0
-    marker_lost_timeout_s: 1.0
-    marker_acquire_frames: 5
+    marker_hold_s: 10.0

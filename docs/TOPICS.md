@@ -26,6 +26,8 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 | `/drone/controller_status` | `px4_ros_msgs/msg/ControllerStatus` | pub | `offboard_controller` |
 | `/drone/mission_status` | `px4_ros_msgs/msg/MissionStatus` | pub | `mission_manager` |
 | `/drone/mission_markers` | `visualization_msgs/msg/MarkerArray` | pub | `mission_manager` (RViz waypoint visualization) |
+| `/drone/marker_detected` | `std_msgs/Bool` | pub | `aruco_pose_publisher` |
+| `/drone/marker_offset_enu` | `geometry_msgs/Vector3Stamped` | pub | `aruco_pose_publisher` |
 
 ### Subscriptions
 
@@ -36,6 +38,7 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 | `/fmu/out/vehicle_status` | `offboard_controller` |
 | `/drone/target_pose` | `offboard_controller` |
 | `/drone/controller_status` | `mission_manager` |
+| `/drone/marker_offset_enu` | `mission_manager` |
 
 ## QoS
 

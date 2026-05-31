@@ -23,7 +23,7 @@ from px4_ros_msgs.msg import ControllerStatus
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
-from ros_px4_template_core.lib import events
+from ros_px4_template_core.lib import events, offboard_fsm
 from ros_px4_template_core.lib.frame_transforms import enu_to_ned, ned_to_enu
 from ros_px4_template_core.lib.setpoint_hold import effective_target_setpoint
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
@@ -209,47 +209,35 @@ class OffboardController(Node):
         return time.monotonic() - self._start_time
 
     def _update_state_machine(self) -> None:
-        if not self._auto_arm:
-            self._state = "ARMED" if self._armed else "IDLE"
-            return
-
-        elapsed = self._elapsed()
-
-        # XRCE-triggered arm: don't use a fixed wall-clock delay from node start,
-        # because ROS timers only fire once Gazebo's sim clock flows, which means
-        # arm_delay_s has already elapsed by the time the first callback fires.
-        # Instead, arm as soon as the first VehicleLocalPosition message arrives
-        # (proving XRCE is connected and PX4 is live), with a small settle buffer.
-        xrce_ready = (
-            self._xrce_connect_time is not None
-            and (time.monotonic() - self._xrce_connect_time) >= self._arm_delay_s
-            and self._setpoints_sent > 5
-            and self._px4_ever_disarmed
+        xrce_elapsed = (
+            (time.monotonic() - self._xrce_connect_time)
+            if self._xrce_connect_time is not None
+            else 0.0
         )
-
-        if not xrce_ready:
-            self._state = "PREARM"
-            return
-
-        # Hammer OFFBOARD mode at 2.0s until confirmed — early commands are
-        # discarded by PX4 while XRCE timestamps are not yet synced.
-        if self._nav_state != VehicleStatus.NAVIGATION_STATE_OFFBOARD:
-            if elapsed - self._last_offboard_try >= 2.0:
-                self._send_offboard_mode()
-                self._last_offboard_try = elapsed
-
-        if not self._armed and not self._arm_failed:
-            if elapsed - self._last_arm_try >= 2.0:
-                self._send_arm(True)
-                self._last_arm_try = elapsed
-                self.slog.event(events.ARM_COMMAND_SENT)
-
-        if self._armed:
-            self._state = "ARMED"
-        elif self._arm_failed:
-            self._state = "ARM_FAILED"
-        else:
-            self._state = "ARMING"
+        result = offboard_fsm.tick(
+            offboard_fsm.FsmInputs(
+                elapsed_s=self._elapsed(),
+                auto_arm=self._auto_arm,
+                armed=self._armed,
+                arm_failed=self._arm_failed,
+                xrce_connected=self._xrce_connect_time is not None,
+                xrce_elapsed_s=xrce_elapsed,
+                setpoints_sent=self._setpoints_sent,
+                px4_ever_disarmed=self._px4_ever_disarmed,
+                nav_state=self._nav_state,
+                arm_delay_s=self._arm_delay_s,
+                last_arm_try_s=self._last_arm_try,
+                last_offboard_try_s=self._last_offboard_try,
+            )
+        )
+        self._state = result.state
+        if result.send_offboard:
+            self._send_offboard_mode()
+            self._last_offboard_try = self._elapsed()
+        if result.send_arm:
+            self._send_arm(True)
+            self._last_arm_try = self._elapsed()
+            self.slog.event(events.ARM_COMMAND_SENT)
 
     def _control_loop(self) -> None:
         active = self._active_setpoint_enu()

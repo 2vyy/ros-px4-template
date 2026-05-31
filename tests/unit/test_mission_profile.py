@@ -11,3 +11,10 @@ def test_profile_builds_mission() -> None:
     m = build_mission_profile(wps, MissionProfileParams())
     assert m.waypoints == wps
     assert m.defaults.tolerance_m == 0.4
+
+
+def test_profile_custom_tolerance() -> None:
+    wps = (EnuPoint(1, 2, 3),)
+    m = build_mission_profile(wps, MissionProfileParams(tolerance_m=0.8, hold_s=5.0))
+    assert m.defaults.tolerance_m == 0.8
+    assert m.defaults.hold_s == 5.0
