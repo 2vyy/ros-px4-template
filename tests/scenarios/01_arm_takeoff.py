@@ -14,13 +14,12 @@ import sys
 import time
 
 import rclpy
-from _common import PX4_QOS, spin_until, trigger_auto_arm, trigger_cleanup, write_report
-from px4_msgs.msg import VehicleLocalPosition
+from _common import spin_until, trigger_auto_arm, trigger_cleanup, write_report
+from nav_msgs.msg import Odometry
 from px4_ros_msgs.msg import ControllerStatus, MissionStatus
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from rich.console import Console
-from ros_px4_template_core.lib.frame_transforms import Px4ZFrameTracker, ned_to_enu
 
 console = Console()
 
@@ -47,12 +46,11 @@ class _ScenarioNode(Node):
         self.controller_state = ""
         self.mission_phase = ""
         self.saw_offboard_track = False
-        self._z_frame = Px4ZFrameTracker()
         self.create_subscription(
-            VehicleLocalPosition,
-            "/fmu/out/vehicle_local_position",
-            self._position_cb,
-            PX4_QOS,
+            Odometry,
+            "/drone/odom",
+            self._odom_cb,
+            _RELIABLE_QOS,
         )
         self.create_subscription(
             ControllerStatus,
@@ -67,16 +65,10 @@ class _ScenarioNode(Node):
             _RELIABLE_QOS,
         )
 
-    def _position_cb(self, msg: VehicleLocalPosition) -> None:
-        if not (msg.xy_valid and msg.z_valid):
-            return
-        local_z_ned = self._z_frame.observe(
-            float(msg.z),
-            z_global=bool(msg.z_global),
-            z_reset_counter=int(msg.z_reset_counter),
-            delta_z=float(msg.delta_z),
-        )
-        self.x_enu, self.y_enu, self.z_enu = ned_to_enu(msg.x, msg.y, local_z_ned)
+    def _odom_cb(self, msg: Odometry) -> None:
+        self.x_enu = float(msg.pose.pose.position.x)
+        self.y_enu = float(msg.pose.pose.position.y)
+        self.z_enu = float(msg.pose.pose.position.z)
 
     def _controller_cb(self, msg: ControllerStatus) -> None:
         self.controller_state = msg.state
@@ -113,14 +105,14 @@ async def run(timeout_s: float = _TIMEOUT_S) -> bool:
         console.print("[cyan]Waiting for OFFBOARD position tracking...[/cyan]")
 
         _in_band_since: list[float] = [0.0]
-        _SETTLE_S = 1.5
+        settle_s = 1.5
 
         def climb_done() -> bool:
             near_target = _CLIMB_THRESHOLD <= node.z_enu <= _TARGET_Z_M + _ALT_TOL
             if near_target and (node.saw_offboard_track or node.mission_phase == "follow_path"):
                 if _in_band_since[0] == 0.0:
                     _in_band_since[0] = time.monotonic()
-                elif time.monotonic() - _in_band_since[0] >= _SETTLE_S:
+                elif time.monotonic() - _in_band_since[0] >= settle_s:
                     return True
             else:
                 _in_band_since[0] = 0.0

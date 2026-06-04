@@ -10,13 +10,13 @@ from __future__ import annotations
 import math
 
 import rclpy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Vector3Stamped
+from nav_msgs.msg import Odometry
 from px4_msgs.msg import (
     OffboardControlMode,
     TrajectorySetpoint,
     VehicleCommand,
     VehicleCommandAck,
-    VehicleLocalPosition,
     VehicleStatus,
 )
 from px4_ros_msgs.msg import ControllerStatus
@@ -24,11 +24,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 from ros_px4_template_core.lib import events, offboard_fsm
-from ros_px4_template_core.lib.frame_transforms import (
-    Px4ZFrameTracker,
-    enu_setpoint_to_px4_ned,
-    ned_to_enu,
-)
+from ros_px4_template_core.lib.frame_transforms import enu_setpoint_to_px4_ned
 from ros_px4_template_core.lib.offboard_fsm import NAV_STATE_OFFBOARD
 from ros_px4_template_core.lib.setpoint_hold import (
     effective_target_setpoint,
@@ -96,19 +92,25 @@ class OffboardController(Node):
         self._xrce_connect_time: float | None = None
         self._last_target_pose_time: float | None = None
         self._target_pose_stale = False
-        self._px4_time_offset: int | None = None
-        self._z_frame = Px4ZFrameTracker()
         self._offboard_since: float | None = None
         self._initial_pos_enu: tuple[float, float, float] | None = None
+        self._have_odom = False
+        self._setpoint_origin_ned: tuple[float, float, float] | None = None
 
         self.create_subscription(
             PoseStamped, "/drone/target_pose", self._target_pose_cb, _RELIABLE_QOS
         )
+        self.create_subscription(Odometry, "/drone/odom", self._odom_cb, _RELIABLE_QOS)
         self.create_subscription(
-            VehicleLocalPosition,
-            "/fmu/out/vehicle_local_position",
-            self._position_cb,
-            _PX4_QOS,
+            Vector3Stamped,
+            "/drone/local_origin",
+            self._local_origin_cb,
+            QoSProfile(
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1,
+            ),
         )
         self.create_subscription(
             VehicleStatus, "/fmu/out/vehicle_status", self._status_cb, _PX4_QOS
@@ -168,22 +170,24 @@ class OffboardController(Node):
             self.slog.event(events.TARGET_POSE_STALE, active=False)
         return active
 
-    def _position_cb(self, msg: VehicleLocalPosition) -> None:
-        if not (msg.xy_valid and msg.z_valid):
-            return
-        local_z_ned = self._z_frame.observe(
-            float(msg.z),
-            z_global=bool(msg.z_global),
-            z_reset_counter=int(msg.z_reset_counter),
-            delta_z=float(msg.delta_z),
+    def _odom_cb(self, msg: Odometry) -> None:
+        self._current_pos_enu = (
+            float(msg.pose.pose.position.x),
+            float(msg.pose.pose.position.y),
+            float(msg.pose.pose.position.z),
         )
-        self._current_pos_enu = ned_to_enu(msg.x, msg.y, local_z_ned)
         ros_time_us = int(self.get_clock().now().nanoseconds / 1000)
-        if ros_time_us > 0:
-            self._px4_time_offset = int(msg.timestamp) - ros_time_us
-            if self._xrce_connect_time is None:
-                self._xrce_connect_time = ros_time_us / 1e6
-                self.slog.event("XRCE_CONNECTED", wall_elapsed_s=round(self._elapsed(), 2))
+        if ros_time_us > 0 and self._xrce_connect_time is None:
+            self._xrce_connect_time = ros_time_us / 1e6
+            self.slog.event("XRCE_CONNECTED", wall_elapsed_s=round(self._elapsed(), 2))
+        self._have_odom = True
+
+    def _local_origin_cb(self, msg: Vector3Stamped) -> None:
+        self._setpoint_origin_ned = (
+            float(msg.vector.x),
+            float(msg.vector.y),
+            float(msg.vector.z),
+        )
 
     def _status_cb(self, msg: VehicleStatus) -> None:
         was_armed = self._armed
@@ -282,7 +286,7 @@ class OffboardController(Node):
         )
 
     def _control_loop(self) -> None:
-        if self._z_frame.home_z_ned is None:
+        if not self._have_odom or self._setpoint_origin_ned is None:
             self._publish_offboard_mode()
             self._setpoints_sent += 1
             self._update_state_machine()
@@ -306,10 +310,7 @@ class OffboardController(Node):
         self._pub_status.publish(status)
 
     def _get_px4_timestamp(self) -> int:
-        ros_time_us = int(self.get_clock().now().nanoseconds / 1000)
-        if self._px4_time_offset is not None:
-            return ros_time_us + self._px4_time_offset
-        return ros_time_us
+        return int(self.get_clock().now().nanoseconds / 1000)
 
     def _publish_offboard_mode(self) -> None:
         msg = OffboardControlMode()
@@ -318,10 +319,12 @@ class OffboardController(Node):
         self._pub_offboard_mode.publish(msg)
 
     def _publish_position_setpoint(self, target_enu: tuple[float, float, float]) -> None:
+        ox, oy, oz = self._setpoint_origin_ned
         x_ned, y_ned, z_ned = enu_setpoint_to_px4_ned(
             *target_enu,
-            origin_z_ned=self._z_frame.home_z_ned,
-            z_ekf_adjust_ned=self._z_frame.setpoint_z_adjust_ned,
+            origin_x_ned=ox,
+            origin_y_ned=oy,
+            origin_z_ned=oz,
         )
         msg = TrajectorySetpoint()
         msg.timestamp = self._get_px4_timestamp()

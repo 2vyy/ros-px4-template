@@ -100,41 +100,6 @@ def enu_setpoint_to_px4_ned(
 
 
 @dataclass
-class Px4ZFrameTracker:
-    """Track PX4 vertical frame for telemetry and offboard setpoints."""
-
-    home_z_ned: float | None = None
-    setpoint_z_adjust_ned: float = 0.0
-    _z_reset_counter: int = -1
-
-    def observe(
-        self,
-        z_ned: float,
-        *,
-        z_global: bool,
-        z_reset_counter: int,
-        delta_z: float,
-    ) -> float:
-        """Update EKF reset state and return local NED z (meters, down-positive)."""
-        if self._z_reset_counter >= 0 and z_reset_counter != self._z_reset_counter:
-            self.setpoint_z_adjust_ned += float(delta_z)
-        self._z_reset_counter = int(z_reset_counter)
-
-        local_z, origin = px4_local_z_ned(
-            z_ned,
-            z_global=z_global,
-            origin_z_ned=self.home_z_ned,
-        )
-        if self.home_z_ned is None:
-            if origin is not None:
-                self.home_z_ned = origin
-            else:
-                self.home_z_ned = z_ned
-                local_z = 0.0
-        return local_z
-
-
-@dataclass
 class Px4LocalFrame:
     """Latch the takeoff origin in NED and track EKF resets.
 
@@ -179,9 +144,7 @@ class Px4LocalFrame:
             self.z_adjust_ned += float(delta_z)
         self._z_reset_counter = int(z_reset_counter)
 
-        local_z, origin_z = px4_local_z_ned(
-            z_ned, z_global=z_global, origin_z_ned=self.home_z_ned
-        )
+        local_z, origin_z = px4_local_z_ned(z_ned, z_global=z_global, origin_z_ned=self.home_z_ned)
         if self.home_z_ned is None:
             self.home_x_ned = x_ned
             self.home_y_ned = y_ned

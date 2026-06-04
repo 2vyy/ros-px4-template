@@ -4,7 +4,6 @@ import math
 
 from ros_px4_template_core.lib.frame_transforms import (
     Px4LocalFrame,
-    Px4ZFrameTracker,
     enu_setpoint_to_px4_ned,
     enu_to_ned,
     enu_yaw_from_heading,
@@ -54,16 +53,6 @@ def test_enu_setpoint_to_px4_ned_with_origin_and_ekf_adjust() -> None:
         z_ekf_adjust_ned=0.5,
     )
     assert (x, y, z) == (0.0, 0.0, -2974.5)
-
-
-def test_px4_z_frame_tracker_accumulates_ekf_delta() -> None:
-    tracker = Px4ZFrameTracker()
-    z0 = tracker.observe(-2972.0, z_global=True, z_reset_counter=0, delta_z=0.0)
-    assert z0 == 0.0
-    assert tracker.home_z_ned == -2972.0
-    z1 = tracker.observe(-2975.0, z_global=True, z_reset_counter=1, delta_z=0.25)
-    assert z1 == -3.0
-    assert tracker.setpoint_z_adjust_ned == 0.25
 
 
 def test_enu_yaw_from_heading_cardinals() -> None:
