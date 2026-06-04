@@ -1,0 +1,3 @@
+offboard_controller:
+  ros__parameters:
+    auto_arm: true

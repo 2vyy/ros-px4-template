@@ -15,8 +15,7 @@ runner = CliRunner()
 def _invoke_stop(*extra):
     """Use 'stop' mode so no subprocess is spawned — we only test arg validation."""
     with patch("tasks.subprocess.run"):
-        with patch("tasks._preemptive_world_reset"):
-            return runner.invoke(app, ["sim", "stop", *extra])
+        return runner.invoke(app, ["sim", "stop", *extra])
 
 
 def test_speed_zero_rejected():
@@ -31,15 +30,10 @@ def test_speed_negative_rejected():
 
 
 def test_speed_too_high_rejected():
-    result = _invoke_stop("--speed", "21")
+    result = _invoke_stop("--speed", "1.1")
     assert result.exit_code != 0
 
 
 def test_speed_one_accepted():
     result = _invoke_stop("--speed", "1.0")
-    assert result.exit_code == 0
-
-
-def test_speed_four_accepted():
-    result = _invoke_stop("--speed", "4")
     assert result.exit_code == 0

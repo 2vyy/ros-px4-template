@@ -18,12 +18,47 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 # Matches PX4 uXRCE-DDS publisher QoS (rmw_qos_profile_sensor_data).
 PX4_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.VOLATILE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
     history=HistoryPolicy.KEEP_LAST,
     depth=10,
 )
 
 _LOG_DIR = Path(__file__).resolve().parents[2] / "logs"
+
+
+def _ros2(*args: str, timeout: float = 5.0) -> None:
+    """Run a ros2 CLI command, sourcing the ROS2 setup if ros2 is not already on PATH."""
+    import shutil
+    import subprocess
+
+    if shutil.which("ros2"):
+        cmd = ["ros2", *args]
+    else:
+        ros2_args = " ".join(f'"{a}"' for a in args)
+        cmd = ["bash", "-c", f"source /opt/ros/jazzy/setup.bash 2>/dev/null && ros2 {ros2_args}"]
+    try:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+    except Exception:
+        pass
+
+
+def trigger_auto_arm() -> None:
+    """Dynamically enable auto-arming on the running offboard_controller for scenario execution."""
+    _ros2("param", "set", "/offboard_controller", "auto_arm", "true")
+
+
+def trigger_cleanup() -> None:
+    """Disable auto-arming and command the drone to land."""
+    _ros2("param", "set", "/offboard_controller", "auto_arm", "false")
+    _ros2(
+        "topic",
+        "pub",
+        "--once",
+        "/fmu/in/vehicle_command",
+        "px4_msgs/msg/VehicleCommand",
+        "{command: 21, target_system: 1, target_component: 1, "
+        "source_system: 1, source_component: 1, from_external: true}",
+    )
 
 
 async def spin_until(
@@ -89,6 +124,7 @@ class Scenario(abc.ABC):
 
     async def run(self) -> bool:
         rclpy.init()
+        trigger_auto_arm()
         started = time.monotonic()
         node: Node | None = None
         try:
@@ -118,6 +154,7 @@ class Scenario(abc.ABC):
             )
             return False
         finally:
+            trigger_cleanup()
             if node is not None:
                 node.destroy_node()
             if rclpy.ok():

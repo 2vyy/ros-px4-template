@@ -19,7 +19,7 @@ This repository provides a pre-configured template for rapid drone software deve
 - All internal coordinates follow [ROS REP-103](https://www.ros.org/reps/rep-0103.html) ENU frame. Conversion to and from PX4 NED happens only at the PX4 boundary in `offboard_controller` and `mission_manager`.
 - Scenario integration tests in `tests/scenarios/` validate the capabilities of the current codebase. Verified milestones are recorded in `tests/capabilities.toml`.
 - Live topics are checked against the defined topic manifest in [docs/TOPICS.md](docs/TOPICS.md) with `just check-topics` to prevent interface drift.
-- Each node writes logs to `logs/<node>.jsonl`. After a run, `just log summary` (or `just log merge`) produces the compressed logs and `logs/run_summary.json`.
+- Each node writes logs to `logs/<node>.jsonl`. After a run, `just log merge` produces the compressed logs at `logs/latest.log`, `logs/latest.jsonl`, and a summary at `logs/latest_summary.json`.
 
 ## Runtime architecture
 
@@ -60,6 +60,8 @@ flowchart TD
     Bridge --> MCP
 ```
 
+
+
 ## Quick start
 
 1. Add PX4, ROS, and version paths to `.env` (adjust paths if yours differ):
@@ -68,26 +70,26 @@ flowchart TD
 echo -e 'PX4_DIR=/path/to/PX4-Autopilot\nROS_SETUP=/opt/ros/jazzy/setup.bash\nPX4_VERSION=v1.17.0\n' >> .env
 ```
 
-2. Initialize and build:
+1. Initialize and build:
 
 ```bash
 just setup            # clones px4_msgs, uv sync, rosdep, and builds
 ```
 
-3. Launch the full simulation stack:
+1. Launch the full simulation stack:
 
 ```bash
-just sim              # Gazebo (GUI), PX4 SITL, XRCE, ROS nodes, rosbridge
+just sim              # Gazebo (headless), PX4 SITL, XRCE, ROS nodes, rosbridge
 ```
 
-4. With the sim loaded, run a scenario and record the capability:
+1. With the sim loaded, run a scenario and record the capability:
 
 ```bash
-just test scenario --arg 01_arm_takeoff
-just log cap mark arm_takeoff sim
+just scenario 01_arm_takeoff
+just cap mark arm_takeoff sim
 ```
 
-5. Stop everything:
+1. Stop everything:
 
 ```bash
 just sim stop
@@ -101,8 +103,7 @@ ros-px4-template/
 │   ├── core/
 │   │   └── ros_px4_template_core/   # Core nodes, lib, bridges (sim/hardware agnostic)
 │   │       ├── nodes/               # offboard_controller, mission_manager, px4_topic_relay, ...
-│   │       ├── lib/                 # frame_transforms, mission_runtime, StructuredLogger
-│   │       └── bridges/             # PX4 communication helpers
+│   │       └── lib/                 # frame_transforms, mission_runtime, StructuredLogger
 │   ├── px4_ros_msgs/                # Custom msgs (ControllerStatus, MissionStatus)
 │   ├── px4_ros_sim/                 # Sim-only ROS helpers (not imported from core)
 │   └── px4_msgs/                    # Upstream PX4 micro XRCE defs (release/1.17)
@@ -112,6 +113,7 @@ ros-px4-template/
 │   ├── params/                      # sim/hardware overlays; path_file, enable_marker_hover
 │   └── paths/                       # ENU waypoint lists only
 ├── missions/                        # per-mission launch recipes (e.g. inspect)
+├── vehicles/                        # vehicle configurations (e.g. x500.yaml)
 ├── tests/
 │   ├── scenarios/                   # Live acceptance tests on a running graph
 │   ├── unit/                        # Pure logic (no ROS graph)
@@ -120,27 +122,31 @@ ros-px4-template/
 ├── docs/                            # FRAMES, TOPICS, MCP, MISSIONS, ...
 ├── AGENTS.md                        # Agent operating guide (this repo)
 ├── justfile
-└── pyproject.toml                   # uv, ruff, ty
+├── tasks.py                         # core CLI orchestrator
+├── pyproject.toml                   # uv, ruff, ty
+└── uv.lock                          # frozen dependencies
 ```
 
 ## Everyday commands
 
 ```bash
-just                              # list all 5 workflows
+just                              # list all workflows
 just setup                        # one-time setup (px4_msgs, uv, rosdep, build)
 just check                        # format, lint, typecheck, build, unit tests
-just sim                          # full sim stack (auto-builds first)
-just sim headless                 # same, no Gazebo GUI
-just sim headless --speed <int>   # headless with sim speed multiplier
-just test scenario --arg <name>   # live scenario (e.g. 01_arm_takeoff)
-just log summary                  # merge logs and summarize events/errors
-just log status                   # JSON status snapshot of running sim
+just sim                          # start headless sim (foreground)
+just sim gui                      # start sim with Gazebo GUI
+just sim bg                       # start headless sim in background and wait until ready
+just status                       # JSON status snapshot of running sim
+just scenario <name>              # live scenario (e.g. 01_arm_takeoff)
+just log merge                    # merge logs into latest.log
 just log topics                   # audit live topics vs docs/TOPICS.md
 ```
 
 ## Docs
+
 - [Agent workflows, invariants, troubleshooting](AGENTS.md)
 - [ENU / NED / body frames](docs/FRAMES.md) 
 - [Topic owners and types](docs/TOPICS.md)
 - [rosbridge and ros-mcp-server](docs/MCP.md)
 - [Mission phases and YAML schema](docs/MISSIONS.md)
+

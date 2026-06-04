@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scenario 02 — Hover hold at target altitude for 30 s."""
+"""Scenario 02 — Hover hold at target altitude for 30 s and land/cleanup."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 import time
 
 import rclpy
-from _common import PX4_QOS, spin_until, write_report
+from _common import PX4_QOS, spin_until, trigger_auto_arm, trigger_cleanup, write_report
 from px4_msgs.msg import VehicleLocalPosition
 from rclpy.node import Node
 from rich.console import Console
@@ -43,78 +43,82 @@ class _Node(Node):
 
 async def run() -> bool:
     rclpy.init()
+    trigger_auto_arm()
     node = _Node()
     started = time.monotonic()
-    console.print("[cyan]Climbing to target altitude...[/cyan]")
-
-    def at_alt() -> bool:
-        return node.z >= _CLIMB_THRESHOLD
+    passed = False
+    reason = "timeout"
 
     try:
-        await asyncio.wait_for(spin_until(node, at_alt), timeout=_CLIMB_TIMEOUT_S)
-    except TimeoutError:
-        console.print("[red]✗ FAIL — never reached target altitude[/red]")
-        node.destroy_node()
-        rclpy.shutdown()
-        write_report(
-            "02_hover_hold", False, time.monotonic() - started, {"reason": "climb_timeout"}
+        console.print("[cyan]Climbing to target altitude...[/cyan]")
+
+        def at_alt() -> bool:
+            return node.z >= _CLIMB_THRESHOLD
+
+        try:
+            await asyncio.wait_for(spin_until(node, at_alt), timeout=_CLIMB_TIMEOUT_S)
+        except TimeoutError:
+            console.print("[red]✗ FAIL — never reached target altitude[/red]")
+            write_report(
+                "02_hover_hold", False, time.monotonic() - started, {"reason": "climb_timeout"}
+            )
+            return False
+
+        console.print(f"[cyan]Stabilizing for {_STABILIZE_S}s before anchoring...[/cyan]")
+        stabilize_start = time.monotonic()
+        await spin_until(node, lambda: time.monotonic() - stabilize_start >= _STABILIZE_S)
+
+        anchor = (node.x, node.y, node.z)
+        console.print(
+            f"[cyan]Holding at ({anchor[0]:.1f}, {anchor[1]:.1f}, {anchor[2]:.1f}) "
+            f"for {_HOLD_S}s...[/cyan]"
         )
-        return False
+        hold_start = time.monotonic()
+        consec_violations = 0
 
-    # Brief stabilization dwell — let the controller settle at its hover altitude
-    # before we lock in the anchor. Without this we anchor mid-climb and every
-    # sample while still ascending counts as an altitude violation.
-    console.print(f"[cyan]Stabilizing for {_STABILIZE_S}s before anchoring...[/cyan]")
-    await asyncio.sleep(_STABILIZE_S)
-
-    anchor = (node.x, node.y, node.z)
-    console.print(
-        f"[cyan]Holding at ({anchor[0]:.1f}, {anchor[1]:.1f}, {anchor[2]:.1f}) "
-        f"for {_HOLD_S}s...[/cyan]"
-    )
-    hold_start = time.monotonic()
-    consec_violations = 0
-
-    def hold_ok() -> bool:
-        nonlocal consec_violations
-        if time.monotonic() - hold_start >= _HOLD_S:
-            return True
-        dx = abs(node.x - anchor[0])
-        dy = abs(node.y - anchor[1])
-        dz = abs(node.z - anchor[2])
-        if dx > _XY_TOL or dy > _XY_TOL or dz > _ALT_TOL:
-            consec_violations += 1
-            if consec_violations > _MAX_CONSEC_VIOLATIONS:
+        def hold_ok() -> bool:
+            nonlocal consec_violations
+            if time.monotonic() - hold_start >= _HOLD_S:
                 return True
-        else:
-            consec_violations = 0  # reset on recovery — transient spikes don't accumulate
-        return False
+            dx = abs(node.x - anchor[0])
+            dy = abs(node.y - anchor[1])
+            dz = abs(node.z - anchor[2])
+            if dx > _XY_TOL or dy > _XY_TOL or dz > _ALT_TOL:
+                consec_violations += 1
+                if consec_violations > _MAX_CONSEC_VIOLATIONS:
+                    return True
+            else:
+                consec_violations = 0  # reset on recovery — transient spikes don't accumulate
+            return False
 
-    await spin_until(node, hold_ok)
-    node.destroy_node()
-    rclpy.shutdown()
-    elapsed = time.monotonic() - started
-    hold_elapsed = time.monotonic() - hold_start
-    if consec_violations > _MAX_CONSEC_VIOLATIONS:
-        console.print("[red]✗ FAIL — position drift during hold[/red]")
+        await spin_until(node, hold_ok)
+        hold_elapsed = time.monotonic() - hold_start
+
+        if consec_violations > _MAX_CONSEC_VIOLATIONS:
+            console.print("[red]✗ FAIL — position drift during hold[/red]")
+            reason = "drift"
+        elif hold_elapsed < _HOLD_S - 1:
+            console.print("[red]✗ FAIL — hold ended early[/red]")
+            reason = "hold_too_short"
+        else:
+            console.print("[green]✓ PASS — held position[/green]")
+            passed = True
+            reason = ""
+
         write_report(
             "02_hover_hold",
-            False,
-            elapsed,
-            {"reason": "drift", "violations": consec_violations},
+            passed,
+            time.monotonic() - started,
+            {"anchor": list(anchor), "reason": reason, "violations": consec_violations},
         )
-        return False
-    if hold_elapsed < _HOLD_S - 1:
-        console.print("[red]✗ FAIL — hold ended early[/red]")
-        write_report(
-            "02_hover_hold", False, elapsed, {"reason": "hold_too_short", "hold_s": hold_elapsed}
-        )
-        return False
-    console.print("[green]✓ PASS — held position[/green]")
-    write_report(
-        "02_hover_hold", True, elapsed, {"anchor": list(anchor), "violations": consec_violations}
-    )
-    return True
+
+    finally:
+        trigger_cleanup()
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+    return passed
 
 
 def main() -> None:

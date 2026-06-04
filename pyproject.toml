@@ -6,13 +6,15 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "pyyaml>=6.0",
-    "numpy>=2.0",
+    "numpy>=1.22,<2.0",
     "rich>=13.7",
     "typer>=0.12",
     "tomli-w>=1.0",
     "pymavlink>=2.4",
     "lark>=1.1.9",
     "websocket-client>=1.6",
+    "scipy>=1.17.1",
+    "opencv-python>=4.7.0",
 ]
 
 [dependency-groups]
@@ -21,7 +23,6 @@ dev = [
     "ruff>=0.4",
     "ty>=0.0.1a8",
     "tomli>=2.0",
-    "opencv-python>=4.7.0",
 ]
 
 [tool.ruff]
@@ -106,10 +107,13 @@ known-third-party = [
     "S602",   # ExecuteProcess bash -c for PX4_GZ_WORLD env (sim_full.launch.py)
     "S607",   # bare ros2 / MicroXRCEAgent executables on PATH
     "T201",   # launch files do not use logging
+    "E501",   # long shell commands in launch script
+    "S603",   # subprocess runs under controlled inputs in launch scripts
 ]
 "tests/scenarios/**" = [
     "N999",   # 01_*.py — run as scripts via `just scenario`, not importable modules
     "INP001",
+    "S603",   # subprocess runs under controlled inputs in scenarios
 ]
 "tests/**" = [
     "S101",   # assert in tests is required
@@ -129,4 +133,3 @@ extra-paths = ["src/core", "tools"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
-asyncio_mode = "auto"

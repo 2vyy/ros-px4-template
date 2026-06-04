@@ -21,29 +21,29 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 | `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | pub | `offboard_controller` |
 | `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | pub | `offboard_controller` |
 | `/fmu/in/vehicle_command` | `px4_msgs/msg/VehicleCommand` | pub | `offboard_controller` |
-| `/drone/pose_enu` | `geometry_msgs/msg/PoseStamped` | pub | `px4_pose_adapter` |
+| `/drone/pose_enu` | `geometry_msgs/msg/PoseStamped` | pub | `sim_pose_adapter` (sim) or `px4_pose_adapter` (hardware) |
 | `/drone/target_pose` | `geometry_msgs/msg/PoseStamped` | pub | `mission_manager` |
 | `/drone/controller_status` | `px4_ros_msgs/msg/ControllerStatus` | pub | `offboard_controller` |
 | `/drone/mission_status` | `px4_ros_msgs/msg/MissionStatus` | pub | `mission_manager` |
 | `/drone/mission_markers` | `visualization_msgs/msg/MarkerArray` | pub | `mission_manager` (RViz waypoint visualization) |
 | `/drone/marker_detected` | `std_msgs/Bool` | pub | `aruco_pose_publisher` |
-| `/drone/marker_offset_enu` | `geometry_msgs/Vector3Stamped` | pub | `aruco_pose_publisher` |
+| `/drone/marker_offset_body` | `geometry_msgs/Vector3Stamped` | pub | `aruco_pose_publisher` |
 
 ### Subscriptions
 
 | Topic | Subscribers |
 |-------|-------------|
-| `/fmu/out/vehicle_local_position` | `offboard_controller`, `px4_pose_adapter` |
+| `/fmu/out/vehicle_local_position` | `offboard_controller` |
 | `/drone/pose_enu` | `mission_manager` |
 | `/fmu/out/vehicle_status` | `offboard_controller` |
 | `/drone/target_pose` | `offboard_controller` |
 | `/drone/controller_status` | `mission_manager` |
-| `/drone/marker_offset_enu` | `mission_manager` |
+| `/drone/marker_offset_body` | `mission_manager` |
 
 ## QoS
 
 - PX4 topics (`/fmu/*`): `BEST_EFFORT` reliability, `TRANSIENT_LOCAL` durability, `KEEP_LAST` depth 10. Defined in each node and as `PX4_QOS` in `tests/scenarios/_common.py`.
-- `/drone/pose_enu`: `RELIABLE` (republished from PX4; `px4_pose_adapter` still subscribes to `/fmu/out/vehicle_local_position` as `BEST_EFFORT`).
+- `/drone/pose_enu`: `RELIABLE`. Sim: Gazebo ground truth via `sim_pose_adapter`. Hardware: PX4 local position via `px4_pose_adapter`.
 - Other `/drone/*` status and setpoint topics: `RELIABLE`, `KEEP_LAST` depth 10.
 
 ## Adding a topic

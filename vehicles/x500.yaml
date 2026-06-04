@@ -4,7 +4,6 @@ offboard_controller:
   ros__parameters:
     arm_delay_s: 5.0
     target_altitude_m: 3.0
-    position_tolerance_m: 0.3
 
 mission_manager:
   ros__parameters:

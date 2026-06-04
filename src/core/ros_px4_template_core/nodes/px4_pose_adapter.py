@@ -27,7 +27,7 @@ POSE_ENU_TOPIC = "/drone/pose_enu"
 
 _PX4_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.VOLATILE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
     history=HistoryPolicy.KEEP_LAST,
     depth=10,
 )

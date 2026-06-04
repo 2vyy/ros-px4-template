@@ -5,7 +5,6 @@ offboard_controller:
     auto_arm: false
     arm_delay_s: 5.0
     target_altitude_m: 3.0
-    offboard_prestream_s: 5.0
     target_pose_timeout_s: 1.0
 
 mission_manager:

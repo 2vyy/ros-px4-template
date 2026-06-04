@@ -30,7 +30,7 @@ def format_tabular(records: list[dict[str, Any]]) -> list[str]:
 def load_records(log_dir: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for jsonl_file in sorted(log_dir.glob("*.jsonl")):
-        if jsonl_file.name == "merged.log":
+        if jsonl_file.name in ("merged.log", "merged.jsonl", "latest.log", "latest.jsonl"):
             continue
         with jsonl_file.open(encoding="utf-8") as handle:
             for line in handle:

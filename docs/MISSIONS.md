@@ -109,8 +109,8 @@ Mission logic reads **one** canonical topic. Launch picks the backend:
 
 | Context | Node | Source |
 |---------|------|--------|
-| `just sim` / hardware | `px4_pose_adapter` | PX4 `/fmu/out/vehicle_local_position` → ENU |
-| Optional (launch comment) | `sim_pose_adapter` | Gazebo model pose when bridge is enabled |
+| `just sim` | `sim_pose_adapter` | Gazebo model pose → ENU |
+| hardware | `px4_pose_adapter` | PX4 `/fmu/out/vehicle_local_position` → ENU |
 
 `offboard_controller` still uses PX4 directly for closed-loop control. Future ZED/lidar missions publish `/drone/pose_enu` from an external node (see `missions/README.md`).
 

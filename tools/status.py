@@ -83,7 +83,7 @@ def _scenarios() -> list[dict]:
 
 
 def _last_event() -> dict | None:
-    summary_f = LOG_DIR / "run_summary.json"
+    summary_f = LOG_DIR / "latest_summary.json"
     if not summary_f.exists():
         return None
     try:
@@ -117,7 +117,7 @@ def main() -> None:
         hints.append("just sim headless  # start sim")
     if not scenarios:
         hints.append("just test e2e  # run all scenarios")
-    elif not LOG_DIR.joinpath("run_summary.json").exists():
+    elif not LOG_DIR.joinpath("latest_summary.json").exists():
         hints.append("just log summary  # build event timeline")
     if hints:
         out["help"] = hints

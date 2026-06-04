@@ -57,12 +57,24 @@ def test_follow_path_transitions_to_done_without_marker() -> None:
     last_wp = mission.waypoints[-1]
 
     tick(ctx, mission, _inputs(pos=(last_wp.x, last_wp.y, last_wp.z), now=0.0))
+    t1 = mission.defaults.hold_s + 1.0
+    tick(
+        ctx,
+        mission,
+        _inputs(
+            pos=(last_wp.x, last_wp.y, last_wp.z),
+            now=t1,
+            marker_offset_enu=None,
+        ),
+    )
+    assert ctx.phase == PHASE_FOLLOW_PATH
+
     out = tick(
         ctx,
         mission,
         _inputs(
             pos=(last_wp.x, last_wp.y, last_wp.z),
-            now=mission.defaults.hold_s + 1.0,
+            now=t1 + 2.1,
             marker_offset_enu=None,
         ),
     )

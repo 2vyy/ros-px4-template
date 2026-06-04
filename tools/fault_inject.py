@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import random
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(
@@ -45,7 +44,7 @@ from ros_px4_template_core.lib.fault_transforms import (
 
 _PX4_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.VOLATILE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
     history=HistoryPolicy.KEEP_LAST,
     depth=10,
 )
@@ -58,7 +57,7 @@ class FaultInjector(Node):
         self._duration_s = duration_s
         self._sigma_m = sigma_m
         self._spike_m = spike_m
-        self._start = time.monotonic()
+        self._start: float | None = None
 
         self.create_subscription(
             VehicleLocalPosition,
@@ -74,14 +73,16 @@ class FaultInjector(Node):
         self.get_logger().info(f"FaultInjector active: {fault_type} for {duration_s}s")
 
     def _cb(self, msg: VehicleLocalPosition) -> None:
-        elapsed = time.monotonic() - self._start
+        now = self.get_clock().now().nanoseconds / 1e9
+        if self._start is None:
+            self._start = now
+            self.get_logger().info("First message received, starting fault injection timer.")
+
+        elapsed = now - self._start
 
         if elapsed > self._duration_s:
             self._pub.publish(msg)
             return
-
-        out = VehicleLocalPosition()
-        out.timestamp = msg.timestamp
 
         if self._fault_type == "gps_dropout":
             ok, ok_z, x, y, z = apply_gps_dropout(msg.xy_valid, msg.z_valid, msg.x, msg.y, msg.z)
@@ -104,12 +105,12 @@ class FaultInjector(Node):
             self._pub.publish(msg)
             return
 
-        out.xy_valid = ok
-        out.z_valid = ok_z
-        out.x = x
-        out.y = y
-        out.z = z
-        self._pub.publish(out)
+        msg.xy_valid = ok
+        msg.z_valid = ok_z
+        msg.x = x
+        msg.y = y
+        msg.z = z
+        self._pub.publish(msg)
 
 
 def main() -> None:

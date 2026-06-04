@@ -24,6 +24,8 @@ class MissionContext:
     waypoint_index: int = 0
     waypoint_hold_start: float | None = None
     marker_hover_start: float | None = None
+    marker_search_start: float | None = None
+    marker_phase_entry: float | None = None
     target: EnuPoint = field(default_factory=lambda: EnuPoint(0.0, 0.0, 0.0))
     events: list[dict[str, object]] = field(default_factory=list)
 
@@ -77,6 +79,8 @@ def _advance_waypoint(ctx: MissionContext, mission: WaypointMission, now: float)
 
 def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> TickOutput:
     """Advance mission one step; append structured events to ctx.events."""
+    import math
+
     tol = mission.defaults.tolerance_m
     hold_s = mission.defaults.hold_s
     pos = inputs.pos_enu
@@ -92,12 +96,16 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
     elif ctx.phase == PHASE_FOLLOW_PATH:
         wp = current_waypoint(mission, ctx.waypoint_index)
         if wp is None:
-            # Path finished — wait for marker or go to done
+            # Path finished — wait for marker or go to done with a 2.0s grace period
             if inputs.marker_offset_enu is not None:
                 _set_phase(ctx, PHASE_MARKER_HOVER)
+                ctx.marker_search_start = None
             else:
-                _set_phase(ctx, PHASE_DONE)
-                _emit(ctx, events.MISSION_DONE)
+                if ctx.marker_search_start is None:
+                    ctx.marker_search_start = inputs.now
+                elif inputs.now - ctx.marker_search_start >= 2.0:
+                    _set_phase(ctx, PHASE_DONE)
+                    _emit(ctx, events.MISSION_DONE)
         else:
             ctx.target = wp
             if reached(pos, wp, tol, z_tolerance_m=mission.defaults.z_tolerance_m):
@@ -108,26 +116,39 @@ def tick(ctx: MissionContext, mission: WaypointMission, inputs: TickInputs) -> T
                     if current_waypoint(mission, ctx.waypoint_index) is None:
                         if inputs.marker_offset_enu is not None:
                             _set_phase(ctx, PHASE_MARKER_HOVER)
+                            ctx.marker_search_start = None
                         else:
-                            _set_phase(ctx, PHASE_DONE)
-                            _emit(ctx, events.MISSION_DONE)
+                            ctx.marker_search_start = inputs.now
             else:
                 ctx.waypoint_hold_start = None
 
     elif ctx.phase == PHASE_MARKER_HOVER:
+        if ctx.marker_phase_entry is None:
+            ctx.marker_phase_entry = inputs.now
+
         offset = inputs.marker_offset_enu
         if offset is not None:
             ctx.target = EnuPoint(
                 x=inputs.pos_enu[0] + offset[0],
                 y=inputs.pos_enu[1] + offset[1],
-                z=ctx.target.z,
+                # Maintain altitude at the moment of hover entry
+                z=ctx.target.z if ctx.target.z > 0 else inputs.pos_enu[2],
             )
+
+        dist = math.dist(inputs.pos_enu[:2], (ctx.target.x, ctx.target.y))
+        reached_marker = dist <= tol
+
         if ctx.marker_hover_start is None:
-            ctx.marker_hover_start = inputs.now
-            _emit(ctx, events.MARKER_HOVER_START)
-        elif inputs.now - ctx.marker_hover_start >= inputs.marker_hold_s:
-            _set_phase(ctx, PHASE_DONE)
-            _emit(ctx, events.MISSION_DONE)
+            if inputs.now - ctx.marker_phase_entry >= 15.0:
+                _set_phase(ctx, PHASE_DONE)
+                _emit(ctx, events.MISSION_DONE)
+            elif reached_marker:
+                ctx.marker_hover_start = inputs.now
+                _emit(ctx, events.MARKER_HOVER_START)
+        else:
+            if inputs.now - ctx.marker_hover_start >= inputs.marker_hold_s:
+                _set_phase(ctx, PHASE_DONE)
+                _emit(ctx, events.MISSION_DONE)
 
     elif ctx.phase == PHASE_DONE:
         pass

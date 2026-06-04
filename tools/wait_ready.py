@@ -28,7 +28,8 @@ app = typer.Typer()
 
 _ROSBRIDGE_PORT = 9090
 _REQUIRED_TOPIC = "/fmu/out/vehicle_local_position"
-_POLL_INTERVAL_S = 0.2
+
+_POLL_INTERVAL_S = 0.5
 _GCS_PARAMS_FLAG = Path("/tmp/gcs_params_flag")
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -116,8 +117,44 @@ def _px4_standby() -> bool:
     return _GCS_PARAMS_FLAG.exists()
 
 
+def _set_physics_speed(speed: float) -> bool:
+    update_rate = int(speed * 250)
+    try:
+        r = subprocess.run(
+            [
+                "gz",
+                "service",
+                "-s",
+                "/world/default/set_physics",
+                "--reqtype",
+                "gz.msgs.Physics",
+                "--reptype",
+                "gz.msgs.Boolean",
+                "--timeout",
+                "2000",
+                "--req",
+                f"real_time_factor: {speed}, real_time_update_rate: {update_rate}, max_step_size: 0.004",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return "data: true" in r.stdout
+    except Exception:
+        return False
+
+
 @app.command()
-def main(timeout: int = typer.Option(180, "--timeout", help="Seconds before giving up")) -> None:
+def main(
+    timeout: int = typer.Option(180, "--timeout", help="Seconds before giving up"),
+    speed: float = typer.Option(1.0, "--speed", help="Physics speed factor (must not exceed 1.0)"),
+) -> None:
+    if speed <= 0 or speed > 1.0:
+        typer.echo(
+            f"Error: --speed must be between 0 (exclusive) and 1.0 (inclusive), got {speed}",
+            err=True,
+        )
+        sys.exit(1)
     deadline = time.monotonic() + timeout
     typer.echo(f"Waiting for sim stack (timeout {timeout}s)...")
 
@@ -142,17 +179,14 @@ def main(timeout: int = typer.Option(180, "--timeout", help="Seconds before givi
                 typer.echo("  [OK] GCS params committed (PX4 ready)")
 
         if rosbridge_ok and topic_ok and standby_ok:
+            if _set_physics_speed(speed):
+                typer.echo(f"  [OK] Gazebo physics speed throttled to {speed}x")
+            else:
+                typer.echo("  [WARN] Failed to set Gazebo physics speed (might run unthrottled)")
             typer.echo("Stack ready.")
             raise typer.Exit(0)
 
-        remaining = int(deadline - time.monotonic())
-        typer.echo(
-            f"  waiting... topic={'OK' if topic_ok else '...'} "
-            f"rosbridge={'OK' if rosbridge_ok else '...'} "
-            f"standby={'OK' if standby_ok else '...'} ({remaining}s left)"
-        )
         time.sleep(_POLL_INTERVAL_S)
-
     typer.echo(
         f"TIMEOUT after {timeout}s — topic={topic_ok} rosbridge={rosbridge_ok} standby={standby_ok}",
         err=True,

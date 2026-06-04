@@ -62,7 +62,9 @@ def _launch_setup(context, *args, **kwargs):
 
     base_params = [*params_files, {"log_dir": log_dir, "use_sim_time": use_sim_time}]
 
-    nodes = [_rosbridge(), _microxrce_serial(serial_port, baudrate)]
+    nodes = [_rosbridge()]
+    if config_name != "sim":
+        nodes.append(_microxrce_serial(serial_port, baudrate))
     executables = ("px4_topic_relay", "offboard_controller", "mission_manager")
     nodes.extend(
         [
@@ -76,17 +78,17 @@ def _launch_setup(context, *args, **kwargs):
             for exe in executables
         ]
     )
-    # PX4 pose for mission_manager (reliable on warm Gazebo). sim_pose_adapter in sim_full
-    # is optional debug when the gz model pose topic is live.
-    nodes.append(
-        Node(
-            package="ros_px4_template_core",
-            executable="px4_pose_adapter",
-            name="px4_pose_adapter",
-            output="screen",
-            parameters=base_params,
+    # Sim uses Gazebo ground truth via sim_pose_adapter in sim_full.launch.py.
+    if config_name != "sim":
+        nodes.append(
+            Node(
+                package="ros_px4_template_core",
+                executable="px4_pose_adapter",
+                name="px4_pose_adapter",
+                output="screen",
+                parameters=base_params,
+            )
         )
-    )
 
     vision = LaunchConfiguration("vision").perform(context)
     if vision == "aruco":

@@ -35,8 +35,7 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | Workspace Setup | `uv run tasks.py setup` | `just setup` clones dependencies, runs uv sync and rosdep |
 | Tasks | `just` | `just --list` is canonical. Wraps `tasks.py` |
 | Quality gateway | `just check` | Automatically formats, lint-fixes, typechecks, builds workspace, and runs unit tests |
-| Simulation & Run | `just sim [mode]` | Automatically builds workspace first. Modes: `gui`, `headless`, `bg`, `edit`, `stop`, `kill` |
-| Standalone SITL | `just px4` | Standalone PX4 SITL runner (no ROS nodes spawned) |
+| Simulation & Run | `just sim [mode]` | Automatically builds workspace first. Modes: `headless` (default), `gui`, `bg` (blocks until ready), `stop`, `kill` |
 | Real Hardware | `just hw` | Connects to hardware serial flight controller |
 | Verification suite | `just test [type]` / `just scenario <name>` | Automatically builds workspace first. Types: `unit`, `e2e` |
 | Forensic toolkit | `just log [subcmd]` | Observability helper: `merge`, `tail`, `topics` |
@@ -51,9 +50,7 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | One-time workspace setup | `just setup` |
 | Quality checks + Build | `just check` |
 | Clean build/logs | `just clean` |
-| Full sim with GUI | `just sim` (or `just sim headless` / `just sim bg`) |
-| PX4 SITL standalone (no ROS) | `just px4` |
-| Edit a Gazebo world | `just sim edit --world <name>` |
+| Headless simulation | `just sim` (or `just sim gui` / `just sim bg`) |
 | Connect to Serial Hardware FC | `just hw --port /dev/ttyUSB0 --baud 921600` |
 | Stop everything | `just sim stop` (kills ROS/PX4, keeps Gazebo warm) |
 | Full teardown (cold start) | `just sim kill` (kills everything including Gazebo) |
@@ -66,7 +63,7 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | Show capability registry | `just cap show` |
 | Record verified capability | `just cap mark <id> sim` |
 
-Sim arguments: `just sim [mode] [--world <world>] [--model <model>] [--vision <vision>]`. Defaults: `gui`, `default`, `x500`, `false`. Modes: `gui`, `headless`, `bg`, `inspect`.
+Sim arguments: `just sim [mode] [--world <world>] [--model <model>] [--vision <vision>]`. Defaults: `headless`, `default`, `x500`, `false`. Modes: `headless`, `gui`, `bg`, `inspect`.
 
 ## Verify (use in this order when something changed)
 
@@ -96,9 +93,9 @@ Capability registry: `tests/capabilities.toml`. `just cap show` shows status. Af
 
 ## Logs (Agent Query Workflow)
 
-Each node writes structured JSONL to `logs/<node>.jsonl`. After a run, the merge step (`just log merge`) compresses high-frequency telemetry into `logs/merged.log` (human-readable with relative timestamps) and `logs/run_summary.json` (machine-readable summary JSON). Both are small enough to read directly.
+Each node writes structured JSONL to `logs/<node>.jsonl`. After a run, the merge step (`just log merge`) compresses high-frequency telemetry into `logs/latest.log` (human-readable with relative timestamps) and `logs/latest_summary.json` (machine-readable summary JSON). Both are small enough to read directly.
 
-1. **Search**: Run `rg PHASE_CHANGE logs/merged.log`, `rg ERROR logs/merged.log`, or `rg -C 10 "\[\s*42\." logs/merged.log` to search around relative time t=42. The merge step already removed telemetry noise.
+1. **Search**: Run `rg PHASE_CHANGE logs/latest.log`, `rg ERROR logs/latest.log`, or `rg -C 10 "\[\s*42\." logs/latest.log` to search around relative time t=42. The merge step already removed telemetry noise.
 2. **Node Raw Data**: Use standard Unix tools: `tail -n 50 logs/mission_manager.jsonl | jq -c 'del(.ros_ts)'`.
 3. **Live tail**: Run `just log tail` to watch structured logs live.
 
@@ -118,7 +115,7 @@ Each node writes structured JSONL to `logs/<node>.jsonl`. After a run, the merge
 | No `/fmu/out/*` topics | PX4 SITL is running and MicroXRCEAgent is on UDP 8888 (`ss -ulnp | grep 8888`); check `logs/sim_*.log` for XRCE handshake |
 | `/fmu/out/vehicle_local_position` exists as `_v1` only | `px4_topic_relay` is not running; relaunch with `just sim bg` (it includes the hardware launch which spawns the relay) |
 | Scenario arm fail | `gcs_heartbeat` via `uv run`; `just sim stop` kills MicroXRCEAgent (session key rotates each launch); `arm_delay_s` in `config/params/sim.yaml` (default 3s) |
-| Mission stuck in `wait_arm_altitude` | Gate: effective ENU z (`max(pose, controller alt)`) >= `takeoff_altitude_m - takeoff_altitude_tolerance_m`. Check `px4_pose_adapter` for `First pose published` (`xy_valid` and `z_valid`). |
+| Mission stuck in `wait_arm_altitude` | Gate: effective ENU z (`max(pose, controller alt)`) >= `takeoff_altitude_m - takeoff_altitude_tolerance_m`. In sim check `sim_pose_adapter` / Gazebo pose; on hardware check `px4_pose_adapter` for `First pose published` (`xy_valid` and `z_valid`). |
 | Mission never enters `hover_marker` | `enable_vision:=true` needed; `/vision/marker_pose` valid; `marker.acquire_frames` consecutive frames must be hit |
 | `just log topics` reports missing | Topic backticked in `docs/TOPICS.md` but never published; either fix the node or remove from the manifest |
 | MCP errors | See [docs/MCP.md](docs/MCP.md); confirm port 9090 open and `which uvx` path correct for the OS hosting rosbridge |

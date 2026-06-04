@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Post-run e2e report: scenarios + key log events in ~80 tokens.
 
-Reads logs/run_summary.json and logs/scenario_*.json.
+Reads logs/latest_summary.json and logs/scenario_*.json.
 Exits 1 if any scenario failed or no scenarios found.
 """
 
@@ -22,8 +22,7 @@ def main() -> None:
             scenarios.append(json.loads(f.read_text(encoding="utf-8")))
         except Exception:
             pass
-
-    summary_f = LOG_DIR / "run_summary.json"
+    summary_f = LOG_DIR / "latest_summary.json"
     summary: dict = {}
     if summary_f.exists():
         try:

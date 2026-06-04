@@ -45,10 +45,24 @@ ENU altitude grows with +Z. NED altitude grows as `z_ned` becomes more negative.
 
 ## Mission pose
 
-`mission_manager` uses `/drone/pose_enu` (`geometry_msgs/PoseStamped`, frame `map`, `RELIABLE` QoS), published by `px4_pose_adapter` (PX4 NED to ENU). Optional `sim_pose_adapter` in `sim_full.launch.py` when the Gazebo model pose topic is live. Mission logic blends pose z with `controller_status.altitude_enu_m` until pose is live. Do not feed mission logic raw `/fmu/out/vehicle_local_position`.
+`mission_manager` uses `/drone/pose_enu` (`geometry_msgs/PoseStamped`, frame `map`, `RELIABLE` QoS). In sim, `sim_pose_adapter` publishes Gazebo ground truth; on hardware, `px4_pose_adapter` republishes PX4 NED as ENU. Mission logic blends pose z with `controller_status.altitude_enu_m` until pose is live. Do not feed mission logic raw `/fmu/out/vehicle_local_position`.
 
 ## Quick checks
 
 - Path files under `config/paths/` use ENU meters.
 - Comparing to `/fmu/out/vehicle_local_position` without `ned_to_enu` looks mirrored or swapped.
 - Body-frame bugs show up as wrong lateral direction or inverted climb once yaw or velocity setpoints are non-NaN.
+
+## Camera Frames and Kinematics
+When doing computer vision (e.g. ArUco detection), the camera frame uses the OpenCV standard convention:
+- **Z**: Forward (into the scene)
+- **X**: Right
+- **Y**: Down
+
+To convert a target from the camera frame to the world, use the `lib/kinematics.py` utilities, which rigorously enforce this chain:
+`Camera (OpenCV) -> Body (FLU) -> World (ENU)`
+
+Always represent static camera extrinsics (`cam_ext_R`, `cam_ext_T`) as the transform from the **Camera** to the **Body (FLU)** frame. For instance, a downward-facing (nadir) camera perfectly aligned with the drone has:
+`Body X (Forward) = -Cam Y`
+`Body Y (Left) = -Cam X`
+`Body Z (Up) = -Cam Z`

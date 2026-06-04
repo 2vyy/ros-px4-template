@@ -70,5 +70,3 @@ def _load_from(path: Path) -> dict:
     except ModuleNotFoundError:
         import tomli as tomllib  # type: ignore[no-redef]
     return tomllib.loads(path.read_text(encoding="utf-8"))
-
-

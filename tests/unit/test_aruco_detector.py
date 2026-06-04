@@ -48,8 +48,8 @@ def test_detection_has_positive_z_distance() -> None:
     img, cam = _render_marker(marker_id=0)
     detections = detect_markers(img, cam, np.zeros((4, 1)), marker_size_m=0.2)
     assert len(detections) == 1
-    assert detections[0].z_camera_m > 0
-    assert detections[0].distance_m > 0
+    # Z-forward distance is the 3rd component of tvec
+    assert float(detections[0].tvec_cam[2][0]) > 0
 
 
 def test_returns_list_type() -> None:
@@ -58,10 +58,9 @@ def test_returns_list_type() -> None:
     assert isinstance(result, list)
 
 
-def test_enu_offset_properties_are_finite() -> None:
-    img, cam = _render_marker(marker_id=0)
+def test_uncalibrated_camera_matrix_returns_empty() -> None:
+    img, _ = _render_marker(marker_id=0)
+    # Passed empty/zeroed matrix
+    cam = np.zeros((3, 3), dtype=np.float64)
     detections = detect_markers(img, cam, np.zeros((4, 1)), marker_size_m=0.2)
-    assert len(detections) == 1
-    d = detections[0]
-    assert np.isfinite(d.enu_east_m)
-    assert np.isfinite(d.enu_north_m)
+    assert len(detections) == 0

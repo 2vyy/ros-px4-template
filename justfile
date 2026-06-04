@@ -4,6 +4,10 @@ set dotenv-load := true
 ROS_SETUP := env_var_or_default("ROS_SETUP", "/opt/ros/jazzy/setup.bash")
 WS_INSTALL := justfile_directory() / "install/setup.bash"
 
+# Default recipe: list all workflows
+default:
+    @just --list
+
 # Sourced environment executor (auto-delegates to Distrobox if ROS is missing on host)
 _run *args:
     @if [ ! -f "{{ROS_SETUP}}" ] && command -v distrobox >/dev/null 2>&1; then \
@@ -11,6 +15,7 @@ _run *args:
     else \
         source {{ROS_SETUP}} && \
         (source {{WS_INSTALL}} 2>/dev/null || true) && \
+        unset VIRTUAL_ENV && \
         uv run tasks.py {{args}}; \
     fi
 
@@ -22,13 +27,11 @@ setup:
 check:
     @just _run check
 
-# Run the simulation in foreground (gui/headless) or background (bg), or stop/kill processes
+# Run the simulation in foreground (gui/headless) or background (bg), or stop all processes
 sim *args:
     @just _run sim {{args}}
 
-# Standalone PX4 SITL runner (bypasses ROS nodes entirely)
-px4 *args:
-    @just _run px4 {{args}}
+
 
 # Connect to serial hardware flight controller
 hw *args:

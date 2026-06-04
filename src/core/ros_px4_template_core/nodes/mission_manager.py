@@ -8,12 +8,12 @@ Subscriptions:
     /drone/controller_status    [px4_ros_msgs/ControllerStatus]
     /drone/pose_enu             [geometry_msgs/PoseStamped]
     /drone/marker_detected      [std_msgs/Bool]
-    /drone/marker_offset_enu    [geometry_msgs/Vector3Stamped]
+    /drone/marker_offset_body   [geometry_msgs/Vector3Stamped]
 
 Publishers:
     /drone/target_pose      [geometry_msgs/PoseStamped]
     /drone/mission_status   [px4_ros_msgs/MissionStatus]
-    /drone/mission_markers  [visualization_msgs/MarkerArray]  — RViz visualization (waypoints, path, target)
+    /drone/mission_markers  [visualization_msgs/MarkerArray] - RViz waypoints
 =============================================================================
 """
 
@@ -25,11 +25,11 @@ from pathlib import Path
 import rclpy
 from geometry_msgs.msg import PoseStamped, Vector3Stamped
 from px4_ros_msgs.msg import ControllerStatus, MissionStatus
-from std_msgs.msg import Bool
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Bool
 from visualization_msgs.msg import Marker, MarkerArray
 
 from ros_px4_template_core.lib.mission_profile import MissionProfileParams, build_mission_profile
@@ -98,6 +98,8 @@ class MissionManager(Node):
         self._controller_armed = False
         self._controller_alt_enu = 0.0
         self._marker_offset_enu: tuple[float, float] | None = None
+        self._marker_offset_time = 0.0
+        self._drone_yaw = 0.0
 
         self.create_subscription(
             ControllerStatus,
@@ -122,7 +124,7 @@ class MissionManager(Node):
         )
         self.create_subscription(
             Vector3Stamped,
-            "/drone/marker_offset_enu",
+            "/drone/marker_offset_body",
             self._marker_offset_cb,
             _RELIABLE_QOS,
             callback_group=self._sub_group,
@@ -156,6 +158,12 @@ class MissionManager(Node):
         )
         self._have_pose = True
 
+        # Calculate yaw from quaternion
+        q = msg.pose.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        self._drone_yaw = math.atan2(siny_cosp, cosy_cosp)
+
     def _effective_pos_enu(self) -> tuple[float, float, float]:
         """ENU position for mission logic and status.
 
@@ -171,10 +179,25 @@ class MissionManager(Node):
             self._marker_offset_enu = None
 
     def _marker_offset_cb(self, msg: Vector3Stamped) -> None:
-        self._marker_offset_enu = (float(msg.vector.x), float(msg.vector.y))
+        body_x = float(msg.vector.x)
+        body_y = float(msg.vector.y)
+
+        # Rotate body FLU (Forward-Left-Up) to map ENU (East-North-Up) using self._drone_yaw
+        cos_yaw = math.cos(self._drone_yaw)
+        sin_yaw = math.sin(self._drone_yaw)
+        enu_x = body_x * cos_yaw - body_y * sin_yaw
+        enu_y = body_x * sin_yaw + body_y * cos_yaw
+
+        self._marker_offset_enu = (enu_x, enu_y)
+        self._marker_offset_time = self.get_clock().now().nanoseconds / 1e9
 
     def _tick(self) -> None:
         now = self.get_clock().now().nanoseconds / 1e9
+
+        # Check marker offset age to invalidate stale detections
+        if self._marker_offset_enu is not None:
+            if now - self._marker_offset_time > 1.0:
+                self._marker_offset_enu = None
 
         if self._mission is None:
             hover_target = EnuPoint(0.0, 0.0, float(self._takeoff_alt))
@@ -189,6 +212,10 @@ class MissionManager(Node):
             return
 
         if not self._have_pose:
+            takeoff_z = float(self._takeoff_alt)
+            if self._mission is not None and self._mission.waypoints:
+                takeoff_z = max(takeoff_z, float(self._mission.waypoints[0].z))
+            self._publish_target(EnuPoint(0.0, 0.0, takeoff_z))
             return
 
         takeoff_z = self._takeoff_alt
@@ -238,7 +265,6 @@ class MissionManager(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.phase = out.phase
         msg.waypoint_index = out.waypoint_index
-        msg.marker_seen = self._marker_offset_enu is not None
         msg.position_error_m = float(err)
         self._pub_status.publish(msg)
 

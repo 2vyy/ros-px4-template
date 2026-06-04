@@ -48,11 +48,12 @@ def test_build_run_summary_timeline() -> None:
     assert summary["errors"][0]["msg"] == "Marker timeout"
 
 
-def test_load_records_skips_merged(tmp_path: Path) -> None:
+def test_load_records_skips_merged_and_latest(tmp_path: Path) -> None:
     (tmp_path / "a.jsonl").write_text(
         json.dumps(_rec("n", "INFO", "hi", 1.0)) + chr(10),
         encoding="utf-8",
     )
-    (tmp_path / "merged.log").write_text("should skip" + chr(10), encoding="utf-8")
+    for name in ("merged.log", "merged.jsonl", "latest.log", "latest.jsonl"):
+        (tmp_path / name).write_text("should skip" + chr(10), encoding="utf-8")
     loaded = load_records(tmp_path)
     assert len(loaded) == 1

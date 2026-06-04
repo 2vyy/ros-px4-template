@@ -9,15 +9,11 @@ Subscriptions:
 
 Publishers:
     /drone/marker_detected   [std_msgs/Bool]                      — true when marker visible
-    /drone/marker_offset_enu [geometry_msgs/Vector3Stamped]       — ENU offset drone→marker (m)
+    /drone/marker_offset_body [geometry_msgs/Vector3Stamped]      — FLU offset drone→marker (m)
 =============================================================================
 
 Camera mounting assumption: nadir (straight down), camera X right = body right.
-ENU offset derivation:
-    body_forward_m = -tvec.y  (image Y down → body forward)
-    body_left_m    = -tvec.x  (image X right → body left, inverted)
-Yaw correction is NOT applied — offset is body-frame approximated as ENU
-when drone heading ≈ 0 (north-facing). Add heading correction when yaw source is wired.
+Publishes offset in base_link (Forward-Left-Up).
 """
 
 from __future__ import annotations
@@ -32,6 +28,7 @@ from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import Bool
 
 from ros_px4_template_core.lib.aruco_detector import detect_markers
+from ros_px4_template_core.lib.kinematics import camera_to_body
 
 _RELIABLE_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,
@@ -41,7 +38,7 @@ _RELIABLE_QOS = QoSProfile(
 
 
 class ArucoPosePublisher(Node):
-    """Detects ArUco markers and publishes drone-relative ENU offset."""
+    """Detects ArUco markers and publishes drone-relative body offset."""
 
     def __init__(self) -> None:
         super().__init__("aruco_pose_publisher")
@@ -58,8 +55,10 @@ class ArucoPosePublisher(Node):
         self.create_subscription(CameraInfo, "/camera/camera_info", self._info_cb, _RELIABLE_QOS)
 
         self._pub_detected = self.create_publisher(Bool, "/drone/marker_detected", _RELIABLE_QOS)
+
+        # Publish Body-Frame Offset (FLU)
         self._pub_offset = self.create_publisher(
-            Vector3Stamped, "/drone/marker_offset_enu", _RELIABLE_QOS
+            Vector3Stamped, "/drone/marker_offset_body", _RELIABLE_QOS
         )
 
     def _info_cb(self, msg: CameraInfo) -> None:
@@ -90,13 +89,20 @@ class ArucoPosePublisher(Node):
         if target is None:
             return
 
+        # Map camera to base_link (assume nadir perfectly aligned)
+        cam_ext_t = np.zeros((3, 1))
+        cam_ext_r = np.array([[0, -1, 0], [-1, 0, 0], [0, 0, -1]])
+
+        body_pos, _ = camera_to_body(target.tvec_cam, target.rvec_cam, cam_ext_t, cam_ext_r)
+
         offset = Vector3Stamped()
         offset.header.stamp = msg.header.stamp
         offset.header.frame_id = "base_link"
-        offset.vector.x = target.enu_east_m
-        offset.vector.y = target.enu_north_m
-        offset.vector.z = 0.0
+        offset.vector.x = float(body_pos[0][0])  # Forward
+        offset.vector.y = float(body_pos[1][0])  # Left
+        offset.vector.z = float(body_pos[2][0])  # Up
         self._pub_offset.publish(offset)
+
 
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)

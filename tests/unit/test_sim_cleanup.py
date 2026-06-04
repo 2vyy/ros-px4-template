@@ -1,82 +1,45 @@
 from __future__ import annotations
 
-import signal
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 
 import sim_cleanup
 
 
-def test_gz_excluded_from_default_patterns():
-    gz_patterns = {"gz sim", "gz server", "gzserver"}
-    for pat in gz_patterns:
-        assert pat not in sim_cleanup._PATTERNS, (
-            f"{pat!r} must NOT be in _PATTERNS (Gazebo stays warm on normal stop)"
+def test_gazebo_killed_on_stop():
+    """Cold-start-always policy: Gazebo is torn down on every stop (no warm reuse)."""
+    for pat in ("gz sim", "gz server", "gzserver"):
+        assert pat in sim_cleanup._PATTERNS, (
+            f"{pat!r} must be in _PATTERNS — Gazebo is killed on stop, never kept warm"
         )
+    assert "gz" in sim_cleanup._EXACT_NAMES
+    assert "gzserver" in sim_cleanup._EXACT_NAMES
 
 
-def test_gz_included_in_full_patterns():
-    gz_patterns = {"gz sim", "gz server", "gzserver"}
-    for pat in gz_patterns:
-        assert pat in sim_cleanup._FULL_PATTERNS, (
-            f"{pat!r} must be in _FULL_PATTERNS (killed on --full)"
-        )
+def test_px4_killed_on_stop():
+    """PX4 SITL is always torn down (no warm reuse across runs)."""
+    assert r"/bin/px4$" in sim_cleanup._PATTERNS
+    assert "px4" in sim_cleanup._EXACT_NAMES
 
 
-def test_full_patterns_is_superset():
-    for pat in sim_cleanup._PATTERNS:
-        assert pat in sim_cleanup._FULL_PATTERNS, (
-            "_FULL_PATTERNS must contain everything in _PATTERNS"
-        )
-
-
-def test_xrce_agent_included_in_default_patterns():
-    """MicroXRCEAgent is stopped on normal sim stop (session key rotates each launch)."""
+def test_xrce_agent_killed_on_stop():
+    """MicroXRCEAgent is stopped on every sim stop (session key rotates each launch)."""
     assert r"MicroXRCEAgent" in sim_cleanup._PATTERNS
+    assert "MicroXRCEAgent" in sim_cleanup._EXACT_NAMES
 
 
-def test_xrce_agent_included_in_full_patterns():
-    """MicroXRCEAgent must also be killed on --full teardown."""
-    assert r"MicroXRCEAgent" in sim_cleanup._FULL_PATTERNS
+def test_find_pids_excludes_ancestors():
+    """_find_pids must never return ancestor pids (so cleanup can't kill itself)."""
+    mock_run = MagicMock(return_value=MagicMock(stdout="1234\n5678\n"))
+    with patch("sim_cleanup.subprocess.run", mock_run):
+        pids = sim_cleanup._find_pids("anything", ancestor_pids={5678})
+    assert pids == [1234]
 
 
-def test_graceful_px4_stop_sends_sigterm():
-    """_graceful_px4_stop must SIGTERM the PX4 pid found by pgrep."""
-    mock_run = MagicMock()
-    mock_run.return_value = MagicMock(stdout="1234\n5678\n")
-    with (
-        patch("sim_cleanup.subprocess.run", mock_run),
-        patch("sim_cleanup.os.kill") as mock_kill,
-        patch("sim_cleanup.time.sleep"),
-    ):
-        from sim_cleanup import _graceful_px4_stop
-
-        _graceful_px4_stop()
-    assert call(1234, signal.SIGTERM) in mock_kill.call_args_list
-    assert call(5678, signal.SIGTERM) in mock_kill.call_args_list
-
-
-def test_graceful_px4_stop_silent_on_no_px4():
-    """_graceful_px4_stop must not raise if pgrep finds nothing."""
-    mock_run = MagicMock()
-    mock_run.return_value = MagicMock(stdout="")
-    with (
-        patch("sim_cleanup.subprocess.run", mock_run),
-        patch("sim_cleanup.os.kill") as mock_kill,
-        patch("sim_cleanup.time.sleep"),
-    ):
-        from sim_cleanup import _graceful_px4_stop
-
-        _graceful_px4_stop()
-    mock_kill.assert_not_called()
-
-
-def test_graceful_px4_stop_silent_on_exception():
-    """_graceful_px4_stop must not propagate exceptions."""
+def test_find_pids_silent_on_exception():
+    """_find_pids must not propagate exceptions (best-effort teardown)."""
     with patch("sim_cleanup.subprocess.run", side_effect=Exception("fail")):
-        from sim_cleanup import _graceful_px4_stop
-
-        _graceful_px4_stop()  # must not raise
+        assert sim_cleanup._find_pids("x", ancestor_pids=set()) == []

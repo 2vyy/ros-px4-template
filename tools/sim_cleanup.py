@@ -1,18 +1,9 @@
 #!/usr/bin/env python3
-"""Aggressive sim process cleanup with graceful PX4 shutdown.
-
-Sends SIGTERM to PX4 first (1.5s grace period for parameters.bson flush),
-then SIGKILL all known process patterns. Artifact cleanup (PX4 locks, FastDDS shm)
-runs in parallel so the whole thing finishes in well under 2 s.
-
-Exit 0 if clean, 1 if processes remain after all kill passes.
-"""
+"""Violent sim teardown — SIGKILL everything, no grace period."""
 
 from __future__ import annotations
 
-import argparse
 import glob
-import json
 import os
 import signal
 import subprocess
@@ -23,10 +14,6 @@ from pathlib import Path
 
 _PIDFILE = Path(os.environ.get("SIM_PIDFILE", "logs/sim.pid"))
 
-# Patterns are matched against the full command line (pgrep -f).
-# Order doesn't matter — all are killed in one parallel pass.
-
-# Patterns killed during normal `sim stop` — Gazebo intentionally excluded.
 _PATTERNS = [
     r"ros2 launch.*sim_full",
     r"sim/launch/sim_full\.launch\.py",
@@ -41,20 +28,91 @@ _PATTERNS = [
     r"e2e_sim_test",
     r"install/ros_px4_template_core/lib/ros_px4_template_core/",
     r"install/px4_ros_sim/lib/px4_ros_sim/",
-    r"ruby.*ros",  # any Ruby shim spawned by ros_gz_bridge
+    r"ruby.*ros",
+    r"ruby.*gz",
+    r"ruby.*sim",
     r"component_container",
+    r"tests/scenarios/",
+    r"scratch/",
+    r"pose_monitor",
+    r"debug_setpoints",
+    r"offboard_controller",
+    r"mission_manager",
+    r"px4_pose_adapter",
+    r"aruco_pose_publisher",
+    r"ros_gz_bridge",
+    r"pytest",
+    r"ros2 run",
+    r"ros2 topic",
+    r"ros2 service",
+    r"ros2 node",
+    r"ros2 param",
+    r"ros2 action",
+    r"ros2 daemon",
+    r"gz sim",
+    r"gz server",
+    r"gzserver",
+    r"gz client",
+    r"gzclient",
+    r"gz-sim-server",
+    r"gz-sim-gui",
 ]
 
-# Extra patterns added only when --full is passed (kills Gazebo too).
-_FULL_PATTERNS = [*_PATTERNS, r"MicroXRCEAgent", r"gz sim", r"gz server", r"gzserver"]
+_EXACT_NAMES = [
+    "px4",
+    "MicroXRCEAgent",
+    "parameter_bridge",
+    "ros_gz_bridge",
+    "component_container",
+    "component_container_mt",
+    "rosbridge_websocket",
+    "rosapi_node",
+    "zenoh",
+    "zenoh-bridge-dds",
+    "gz-sim-server",
+    "gz-sim-gui",
+    "gzserver",
+    "gzclient",
+    "gz",
+]
 
 _MY_PID = os.getpid()
 
 
-def _find_pids(pattern: str) -> list[int]:
+def _get_ancestor_pids() -> set[int]:
+    pids = {os.getpid()}
+    try:
+        pid = os.getpid()
+        while True:
+            stat_path = Path(f"/proc/{pid}/stat")
+            if not stat_path.exists():
+                break
+            parts = stat_path.read_text().split()
+            ppid = int(parts[3])
+            if ppid <= 0 or ppid in pids:
+                break
+            pids.add(ppid)
+            pid = ppid
+    except Exception:
+        try:
+            pids.add(os.getppid())
+        except Exception:
+            pass
+    return pids
+
+
+def _find_pids(pattern: str, ancestor_pids: set[int]) -> list[int]:
     try:
         r = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True)
-        return [int(p) for p in r.stdout.split() if p.isdigit() and int(p) != _MY_PID]
+        return [int(p) for p in r.stdout.split() if p.isdigit() and int(p) not in ancestor_pids]
+    except Exception:
+        return []
+
+
+def _find_pids_by_name(name: str, ancestor_pids: set[int]) -> list[int]:
+    try:
+        r = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True)
+        return [int(p) for p in r.stdout.split() if p.isdigit() and int(p) not in ancestor_pids]
     except Exception:
         return []
 
@@ -66,18 +124,18 @@ def _sigkill(pid: int) -> None:
         pass
 
 
-def _all_live_pids(patterns: list[str] | None = None) -> set[int]:
-    if patterns is None:
-        patterns = _PATTERNS
+def _all_live_pids(ancestor_pids: set[int]) -> set[int]:
     found: set[int] = set()
-    with ThreadPoolExecutor(max_workers=len(patterns)) as ex:
-        for pids in ex.map(_find_pids, patterns):
+    with ThreadPoolExecutor(max_workers=max(1, len(_PATTERNS))) as ex:
+        for pids in ex.map(lambda p: _find_pids(p, ancestor_pids), _PATTERNS):
+            found.update(pids)
+    with ThreadPoolExecutor(max_workers=max(1, len(_EXACT_NAMES))) as ex:
+        for pids in ex.map(lambda n: _find_pids_by_name(n, ancestor_pids), _EXACT_NAMES):
             found.update(pids)
     return found
 
 
 def _kill_pidfile_group() -> int | None:
-    """SIGKILL the entire process group recorded in the pidfile."""
     if not _PIDFILE.exists():
         return None
     try:
@@ -98,10 +156,14 @@ def _kill_pidfile_group() -> int | None:
 
 
 def _clean_artifacts() -> None:
-    """Remove PX4 lock files, FastDDS shared memory, and readiness flags."""
     for i in range(4):
         for p in [Path(f"/tmp/px4_lock-{i}"), Path(f"/tmp/px4-sock-{i}")]:
             p.unlink(missing_ok=True)
+    for p in glob.glob("/tmp/launch_params_*"):
+        try:
+            Path(p).unlink(missing_ok=True)
+        except OSError:
+            pass
     for p in glob.glob("/dev/shm/fastrtps_*"):
         try:
             Path(p).unlink(missing_ok=True)
@@ -117,57 +179,24 @@ def _stop_ros2_daemon() -> None:
         pass
 
 
-def _graceful_px4_stop(timeout_s: float = 1.5) -> None:
-    """SIGTERM px4 process and wait briefly so it can flush parameters.bson."""
+def _proc_name(pid: int) -> str:
     try:
-        result = subprocess.run(
-            ["pgrep", "-x", "px4"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        pids_found = [int(p) for p in result.stdout.splitlines() if p.strip().isdigit()]
-        for pid in pids_found:
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-        if pids_found:
-            time.sleep(timeout_s)
-    except Exception:
-        pass
+        return Path(f"/proc/{pid}/comm").read_text().strip()
+    except OSError:
+        return "?"
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Stop sim processes.")
-    ap.add_argument(
-        "--full",
-        action="store_true",
-        help="Also kill Gazebo (full teardown). Default keeps Gazebo warm.",
-    )
-    args = ap.parse_args()
+    ancestor_pids = _get_ancestor_pids()
 
-    patterns = _FULL_PATTERNS if args.full else _PATTERNS
-
-    if args.full:
-        try:
-            sys.path.insert(0, str(Path(__file__).parent))
-            from gz_lifecycle import clear_world_record
-
-            clear_world_record()
-        except Exception:
-            pass
-
-    _graceful_px4_stop()
-
-    # --- Pass 1: kill pidfile group + all known patterns in parallel ---
     with ThreadPoolExecutor(max_workers=3) as ex:
         pgid_future = ex.submit(_kill_pidfile_group)
-        initial_future = ex.submit(_all_live_pids, patterns)
+        initial_future = ex.submit(_all_live_pids, ancestor_pids)
         ex.submit(_clean_artifacts)
 
     pgid_hit = pgid_future.result()
     initial = initial_future.result()
+    names: dict[int, str] = {pid: _proc_name(pid) for pid in initial}
 
     with ThreadPoolExecutor(max_workers=16) as ex:
         ex.map(_sigkill, initial)
@@ -175,26 +204,26 @@ def main() -> None:
     if initial or pgid_hit is not None:
         time.sleep(0.4)
 
-    # --- Pass 2: sweep for survivors ---
-    survivors = _all_live_pids(patterns)
+    survivors = _all_live_pids(ancestor_pids)
     if survivors:
+        names.update({pid: _proc_name(pid) for pid in survivors - initial})
         with ThreadPoolExecutor(max_workers=16) as ex:
             ex.map(_sigkill, survivors)
         time.sleep(0.3)
 
     _stop_ros2_daemon()
 
-    remaining = _all_live_pids(patterns)
+    remaining = _all_live_pids(ancestor_pids)
+    killed = sorted((initial | survivors) - remaining)
 
-    report = {
-        "full": args.full,
-        "stopped_via_pidfile": pgid_hit is not None,
-        "stopped": sorted((initial | survivors) - remaining),
-        "remaining": sorted(remaining),
-        "clean": len(remaining) == 0,
-    }
-    print(json.dumps(report, indent=2))
-    sys.exit(0 if report["clean"] else 1)
+    if killed:
+        col = max(len(names.get(p, "?")) for p in killed)
+        for pid in killed:
+            print(f"{names.get(pid, '?'):<{col}}  {pid}")
+    else:
+        print("nothing to kill")
+
+    sys.exit(0 if not remaining else 1)
 
 
 if __name__ == "__main__":

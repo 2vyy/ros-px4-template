@@ -13,9 +13,9 @@ app = typer.Typer()
 @app.command()
 def merge(
     log_dir: Path = typer.Option(Path("./logs"), "--log-dir"),
-    output_log: Path = typer.Option(Path("./logs/merged.log"), "--output-log"),
-    output_jsonl: Path = typer.Option(Path("./logs/merged.jsonl"), "--output-jsonl"),
-    summary: Path = typer.Option(Path("./logs/run_summary.json"), "--summary"),
+    output_log: Path = typer.Option(Path("./logs/latest.log"), "--output-log"),
+    output_jsonl: Path = typer.Option(Path("./logs/latest.jsonl"), "--output-jsonl"),
+    summary: Path = typer.Option(Path("./logs/latest_summary.json"), "--summary"),
     run_id: str | None = typer.Option(None, "--run-id"),
     no_dedup: bool = typer.Option(False, "--no-dedup", help="Keep all raw lines in merged output"),
     collapse_min: int = typer.Option(4, "--collapse-min", help="Min repeats to collapse"),

@@ -1,13 +1,13 @@
 """Offboard position controller — streams setpoints, optional auto-arm.
 
 Yaw is omitted (NaN) for position-only missions so PX4 holds current heading.
+PX4 mc_pos_control tracks ``/drone/target_pose`` waypoints in OFFBOARD mode.
 =============================================================================
 """
 
 from __future__ import annotations
 
 import math
-import time
 
 import rclpy
 from geometry_msgs.msg import PoseStamped
@@ -24,13 +24,21 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 from ros_px4_template_core.lib import events, offboard_fsm
-from ros_px4_template_core.lib.frame_transforms import enu_to_ned, ned_to_enu
-from ros_px4_template_core.lib.setpoint_hold import effective_target_setpoint
+from ros_px4_template_core.lib.frame_transforms import (
+    Px4ZFrameTracker,
+    enu_setpoint_to_px4_ned,
+    ned_to_enu,
+)
+from ros_px4_template_core.lib.offboard_fsm import NAV_STATE_OFFBOARD
+from ros_px4_template_core.lib.setpoint_hold import (
+    effective_target_setpoint,
+    is_target_pose_stale,
+)
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 
 _PX4_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.VOLATILE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
     history=HistoryPolicy.KEEP_LAST,
     depth=10,
 )
@@ -40,7 +48,6 @@ _RELIABLE_QOS = QoSProfile(
     depth=10,
 )
 
-# PX4 custom main mode OFFBOARD
 _PX4_CUSTOM_MAIN_MODE_OFFBOARD = 6
 
 _ACK_RESULT_NAMES = {
@@ -55,30 +62,27 @@ _ACK_RESULT_NAMES = {
 
 
 class OffboardController(Node):
-    """Controls drone position via PX4 OFFBOARD mode."""
+    """Streams position setpoints to PX4 OFFBOARD mode."""
 
     def __init__(self) -> None:
         super().__init__("offboard_controller")
         self.declare_parameter("log_dir", "./logs")
         self.declare_parameter("target_altitude_m", 3.0)
-        self.declare_parameter("position_tolerance_m", 0.3)
         self.declare_parameter("setpoint_rate_hz", 20.0)
         self.declare_parameter("auto_arm", True)
         self.declare_parameter("arm_delay_s", 15.0)
-        self.declare_parameter("offboard_prestream_s", 1.0)
         self.declare_parameter("target_pose_timeout_s", 2.0)
+        self.declare_parameter("position_ramp_s", 0.0)
 
         log_dir = str(self.get_parameter("log_dir").value)
         self._target_alt = float(self.get_parameter("target_altitude_m").value)
-        self._tolerance = float(self.get_parameter("position_tolerance_m").value)
         self._auto_arm = bool(self.get_parameter("auto_arm").value)
         self._arm_delay_s = float(self.get_parameter("arm_delay_s").value)
-        self._prestream_s = float(self.get_parameter("offboard_prestream_s").value)
         self._target_pose_timeout_s = float(self.get_parameter("target_pose_timeout_s").value)
 
         self.slog = StructuredLogger(self, log_dir=log_dir)
         self._state = "IDLE"
-        self._start_time = time.monotonic()
+        self._start_time_ns = self.get_clock().now().nanoseconds
         self._setpoints_sent = 0
         self._last_arm_try = 0.0
         self._last_offboard_try = 0.0
@@ -88,15 +92,14 @@ class OffboardController(Node):
         self._nav_state = 0
         self._arm_failed = False
         self._arm_fail_reason = ""
-        self._px4_ever_disarmed: bool = False  # latch: blocks arm until PX4 DISARMED seen
-        # Wall-clock time when first VehicleLocalPosition arrived (XRCE connected + PX4 alive).
-        # Used as the real arm-readiness signal instead of a fixed delay from node start.
+        self._px4_ever_disarmed = False
         self._xrce_connect_time: float | None = None
         self._last_target_pose_time: float | None = None
         self._target_pose_stale = False
-        self._latest_px4_timestamp: int | None = None
-        self._latest_px4_timestamp_time: float | None = None
         self._px4_time_offset: int | None = None
+        self._z_frame = Px4ZFrameTracker()
+        self._offboard_since: float | None = None
+        self._initial_pos_enu: tuple[float, float, float] | None = None
 
         self.create_subscription(
             PoseStamped, "/drone/target_pose", self._target_pose_cb, _RELIABLE_QOS
@@ -140,21 +143,23 @@ class OffboardController(Node):
             msg.pose.position.y,
             msg.pose.position.z,
         )
-        self._last_target_pose_time = time.monotonic()
+        self._last_target_pose_time = self.get_clock().now().nanoseconds / 1e9
         if self._target_pose_stale:
             self._target_pose_stale = False
             self.slog.event(events.TARGET_POSE_STALE, active=False)
 
     def _active_setpoint_enu(self) -> tuple[float, float, float]:
-        now = time.monotonic()
+        now = self.get_clock().now().nanoseconds / 1e9
         active = effective_target_setpoint(
             self._setpoint_enu,
             self._current_pos_enu,
             self._last_target_pose_time,
+        )
+        stale = is_target_pose_stale(
+            self._last_target_pose_time,
             now,
             self._target_pose_timeout_s,
         )
-        stale = active != self._setpoint_enu
         if stale and not self._target_pose_stale:
             self._target_pose_stale = True
             self.slog.event(events.TARGET_POSE_STALE, active=True)
@@ -166,19 +171,32 @@ class OffboardController(Node):
     def _position_cb(self, msg: VehicleLocalPosition) -> None:
         if not (msg.xy_valid and msg.z_valid):
             return
-        self._current_pos_enu = ned_to_enu(msg.x, msg.y, msg.z)
-        self._latest_px4_timestamp = int(msg.timestamp)
-        self._latest_px4_timestamp_time = time.monotonic()
+        local_z_ned = self._z_frame.observe(
+            float(msg.z),
+            z_global=bool(msg.z_global),
+            z_reset_counter=int(msg.z_reset_counter),
+            delta_z=float(msg.delta_z),
+        )
+        self._current_pos_enu = ned_to_enu(msg.x, msg.y, local_z_ned)
         ros_time_us = int(self.get_clock().now().nanoseconds / 1000)
-        self._px4_time_offset = int(msg.timestamp) - ros_time_us
-        if self._xrce_connect_time is None:
-            self._xrce_connect_time = time.monotonic()
-            self.slog.event("XRCE_CONNECTED", wall_elapsed_s=round(self._elapsed(), 2))
+        if ros_time_us > 0:
+            self._px4_time_offset = int(msg.timestamp) - ros_time_us
+            if self._xrce_connect_time is None:
+                self._xrce_connect_time = ros_time_us / 1e6
+                self.slog.event("XRCE_CONNECTED", wall_elapsed_s=round(self._elapsed(), 2))
 
     def _status_cb(self, msg: VehicleStatus) -> None:
+        was_armed = self._armed
         self._armed = msg.arming_state == VehicleStatus.ARMING_STATE_ARMED
         self._nav_state = int(msg.nav_state)
-        if not self._px4_ever_disarmed and msg.arming_state == VehicleStatus.ARMING_STATE_DISARMED:
+        if was_armed and not self._armed:
+            self._auto_arm = False
+            self.slog.event("AUTO_ARM_DISABLED_ON_DISARM")
+        if (
+            not self._px4_ever_disarmed
+            and msg.arming_state == VehicleStatus.ARMING_STATE_DISARMED
+            and msg.pre_flight_checks_pass
+        ):
             self._px4_ever_disarmed = True
             self.slog.event("PX4_DISARMED_OBSERVED")
 
@@ -193,9 +211,6 @@ class OffboardController(Node):
         self.slog.event(
             events.ARM_ACK_DENIED, result=result, reason=reason, param1=float(msg.result_param1)
         )
-        # Only truly terminal: UNSUPPORTED or FAILED. DENIED can happen before
-        # COM_ARM_WO_GPS=1 is applied via GCS; keep retrying so the next cycle succeeds.
-        # TEMPORARILY_REJECTED and IN_PROGRESS are also non-terminal.
         if result in (
             VehicleCommandAck.VEHICLE_CMD_RESULT_UNSUPPORTED,
             VehicleCommandAck.VEHICLE_CMD_RESULT_FAILED,
@@ -206,11 +221,14 @@ class OffboardController(Node):
                 self.slog.error("Arm command failed terminally", reason=reason, result=result)
 
     def _elapsed(self) -> float:
-        return time.monotonic() - self._start_time
+        if self._start_time_ns == 0:
+            self._start_time_ns = self.get_clock().now().nanoseconds
+        return (self.get_clock().now().nanoseconds - self._start_time_ns) / 1e9
 
     def _update_state_machine(self) -> None:
+        self._auto_arm = bool(self.get_parameter("auto_arm").value)
         xrce_elapsed = (
-            (time.monotonic() - self._xrce_connect_time)
+            (self.get_clock().now().nanoseconds / 1e9 - self._xrce_connect_time)
             if self._xrce_connect_time is not None
             else 0.0
         )
@@ -239,10 +257,43 @@ class OffboardController(Node):
             self._last_arm_try = self._elapsed()
             self.slog.event(events.ARM_COMMAND_SENT)
 
+        if self._nav_state == NAV_STATE_OFFBOARD and self._offboard_since is None:
+            self._offboard_since = self._elapsed()
+            self._initial_pos_enu = self._current_pos_enu
+        elif self._nav_state != NAV_STATE_OFFBOARD:
+            self._offboard_since = None
+            self._initial_pos_enu = None
+
+    def _ramped_setpoint_enu(
+        self, mission_enu: tuple[float, float, float]
+    ) -> tuple[float, float, float]:
+        ramp_s = float(self.get_parameter("position_ramp_s").value)
+        if self._offboard_since is None or ramp_s <= 0.0 or self._initial_pos_enu is None:
+            return mission_enu
+        t = self._elapsed() - self._offboard_since
+        if t >= ramp_s:
+            return mission_enu
+        alpha = max(0.0, min(1.0, t / ramp_s))
+        start = self._initial_pos_enu
+        return (
+            start[0] + (mission_enu[0] - start[0]) * alpha,
+            start[1] + (mission_enu[1] - start[1]) * alpha,
+            start[2] + (mission_enu[2] - start[2]) * alpha,
+        )
+
     def _control_loop(self) -> None:
-        active = self._active_setpoint_enu()
+        if self._z_frame.home_z_ned is None:
+            self._publish_offboard_mode()
+            self._setpoints_sent += 1
+            self._update_state_machine()
+            return
+
+        mission_active = self._active_setpoint_enu()
         self._publish_offboard_mode()
-        self._publish_setpoint(active)
+        if self._nav_state == NAV_STATE_OFFBOARD:
+            # uXRCE writes trajectory_setpoint directly; do not publish before OFFBOARD
+            # (PX4/PX4-Autopilot#25273) or setpoints fight mc_pos_control.
+            self._publish_position_setpoint(self._ramped_setpoint_enu(mission_active))
         self._setpoints_sent += 1
         self._update_state_machine()
 
@@ -251,17 +302,13 @@ class OffboardController(Node):
         status.state = "TARGET_STALE" if self._target_pose_stale else self._state
         status.armed = self._armed
         status.altitude_enu_m = float(self._current_pos_enu[2])
-        err = math.dist(self._current_pos_enu, active)
-        status.position_error_m = float(err)
+        status.position_error_m = float(math.dist(self._current_pos_enu, mission_active))
         self._pub_status.publish(status)
 
     def _get_px4_timestamp(self) -> int:
         ros_time_us = int(self.get_clock().now().nanoseconds / 1000)
         if self._px4_time_offset is not None:
             return ros_time_us + self._px4_time_offset
-        if self._latest_px4_timestamp is not None and self._latest_px4_timestamp_time is not None:
-            elapsed_us = int((time.monotonic() - self._latest_px4_timestamp_time) * 1e6)
-            return self._latest_px4_timestamp + elapsed_us
         return ros_time_us
 
     def _publish_offboard_mode(self) -> None:
@@ -270,17 +317,19 @@ class OffboardController(Node):
         msg.timestamp = self._get_px4_timestamp()
         self._pub_offboard_mode.publish(msg)
 
-    def _publish_setpoint(self, setpoint_enu: tuple[float, float, float]) -> None:
-        ned = enu_to_ned(*setpoint_enu)
+    def _publish_position_setpoint(self, target_enu: tuple[float, float, float]) -> None:
+        x_ned, y_ned, z_ned = enu_setpoint_to_px4_ned(
+            *target_enu,
+            origin_z_ned=self._z_frame.home_z_ned,
+            z_ekf_adjust_ned=self._z_frame.setpoint_z_adjust_ned,
+        )
         msg = TrajectorySetpoint()
-        msg.position = [float(ned[0]), float(ned[1]), float(ned[2])]
+        msg.timestamp = self._get_px4_timestamp()
+        msg.position = [float(x_ned), float(y_ned), float(z_ned)]
         msg.velocity = [float("nan"), float("nan"), float("nan")]
         msg.acceleration = [float("nan"), float("nan"), float("nan")]
         msg.yaw = float("nan")
-        # yawspeed must also be NaN: a finite 0.0 default tells PX4 to command
-        # zero yaw rate, fighting heading hold. NaN defers to PX4's internal lock.
         msg.yawspeed = float("nan")
-        msg.timestamp = self._get_px4_timestamp()
         self._pub_setpoint.publish(msg)
 
     def _vehicle_command(self, command: int, **params: float) -> None:
