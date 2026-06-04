@@ -19,16 +19,13 @@ from pymavlink import mavutil
 _PARAMS_FLAG = Path("/tmp/gcs_params_flag")
 
 _PARAMS: tuple[tuple[str, float, str], ...] = (
-    ("COM_ARM_WO_GPS", 1.0, "INT32"),  # arm without GPS/EKF fix
-    ("CBRK_SUPPLY_CHK", 894281.0, "INT32"),  # bypass battery supply check in SITL
-    # In SITL there are no real motors, so the simulated spool-up ramp
-    # (default 1 s) just adds dead time between arm and first movement.
-    ("COM_SPOOLUP_TIME", 1.0, "REAL32"),  # motor spool-up ramp: 1.0 s (smooths takeoff)
-    (
-        "EKF2_GPS_CHECK",
-        0.0,
-        "INT32",
-    ),  # bypass GPS quality checks for instant EKF2 GPS fusion in SITL
+    # Arming enablers only. Do NOT push SIM_GZ_EC_MIN / MPC_THR_* — stock thrust
+    # calibration gives stable offboard hold (verified vs bare PX4 SITL); the old
+    # EC_MIN=0 override broke flight and is gone.
+    ("COM_ARM_WO_GPS", 1, "INT32"),
+    ("CBRK_SUPPLY_CHK", 894281, "INT32"),
+    ("COM_SPOOLUP_TIME", 0.0, "REAL32"),
+    ("EKF2_GPS_CHECK", 0, "INT32"),
 )
 
 _CONNECT_TIMEOUT_S = 120.0
