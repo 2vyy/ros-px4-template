@@ -40,7 +40,15 @@ class MarkerLocalizer(Node):
         super().__init__("marker_localizer")
         self.declare_parameter("log_dir", "./logs")
         self.declare_parameter("marker_map_file", "config/markers.yaml")
+        # Relocalization is per-mission. Missions that visually servo onto a marker
+        # (e.g. marker_hover) must NOT relocalize on it: the override would fight the
+        # dead-reckoned estimate they hold against. Such missions set enabled=false.
+        self.declare_parameter("enabled", True)
         self.slog = StructuredLogger(self, log_dir=str(self.get_parameter("log_dir").value))
+
+        if not bool(self.get_parameter("enabled").value):
+            self.slog.info("marker_localizer disabled (relocalization off for this mission)")
+            return
 
         p = Path(str(self.get_parameter("marker_map_file").value))
         if not p.is_absolute():

@@ -4,3 +4,8 @@ offboard_controller:
 mission_manager:
   ros__parameters:
     mission_file: "config/missions/marker_hover.yaml"
+# This mission visually servos onto the marker; relocalizing on it would fight
+# the hold, so keep marker_localizer dormant here.
+marker_localizer:
+  ros__parameters:
+    enabled: false

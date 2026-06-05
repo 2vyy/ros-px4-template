@@ -1,131 +1,177 @@
 # Missions
 
-A **mission** in this template is not a YAML file. It is a **launch recipe + param profile** running a shared navigation **routine** in code (`lib/mission_runtime.tick()`). Geometry lives in path files only.
+A mission is **data, not code**: a YAML graph of *states* and *transitions* that a
+tiny pure engine (`lib/mission/engine.py`) interprets one tick at a time. Each
+state names a **behavior** (what to do) and each transition names a **guard**
+(when to move). Behaviors and guards are small pure functions registered by
+name, so a new mission is usually just a new YAML file — no node changes.
 
-## Three layers
+- Engine + library: `src/core/ros_px4_template_core/lib/mission/`
+- Mission files: `config/missions/*.yaml`
+- Runner node: `mission_manager` (`nodes/mission_manager.py`)
 
-| Layer | Where | Example |
-|-------|--------|---------|
-| **Path** | `config/paths/*.yaml` | `demo.yaml` — ENU points only |
-| **Profile** | `config/params/*.yaml` + overlays | `path_file`, `enable_marker_hover`, tolerances |
-| **Routine** | `lib/mission_runtime.py` | `follow_path` → optional `hover_marker` → `done` |
+## Selecting a mission
 
-**Composition** (vision, world, future pose backends) is chosen in **launch** and `just` recipes, not in path files.
-
-```mermaid
-flowchart LR
-  P[config/paths/demo.yaml]
-  Params[config/params/sim.yaml]
-  Ovl[overlays/inspect.yaml]
-  Launch[sim_full.launch.py]
-  MM[mission_manager]
-  RT[mission_runtime.tick]
-  P --> MM
-  Params --> MM
-  Ovl --> MM
-  Launch --> MM
-  MM --> RT
-```
-
-## Path files
-
-`config/paths/demo.yaml`:
+`mission_manager` reads the `mission_file` parameter (relative to the project
+root). Point it at a mission via a params overlay, e.g.
+`config/params/overlays/search_relocalize.yaml`:
 
 ```yaml
-- {x: 0.0, y: 0.0, z: 3.0}
-- {x: 5.0, y: 0.0, z: 3.0}
-- {x: 8.0, y: 0.0, z: 3.0}
-```
-
-A `waypoints:` wrapper is also accepted. Paths contain **no** marker settings, tolerances, or takeoff logic.
-
-## Mission profiles (ROS params)
-
-Default sim (`config/params/sim.yaml`):
-
-```yaml
+offboard_controller:
+  ros__parameters:
+    auto_arm: true
 mission_manager:
   ros__parameters:
-    path_file: "config/paths/demo.yaml"
-    enable_marker_hover: false
-    takeoff_altitude_m: 3.0
-    tolerance_m: 0.4
-    hold_s: 2.0
+    mission_file: "config/missions/search_relocalize.yaml"
 ```
 
-Inspect overlay (`config/params/overlays/inspect.yaml`) — same path, marker phase enabled:
+## File format
 
 ```yaml
-mission_manager:
-  ros__parameters:
-    enable_marker_hover: true
+mission:
+  initial: <state name>           # state the engine starts in
+  safety:                         # optional global transitions, see below
+    - {guard: <name>, params: {...}, to: <state>}
+  states:
+    <name>: {behavior: <name>, params: {...}}
+    ...
+  transitions:                    # per-state transitions
+    - {from: <state>, guard: <name>, params: {...}, to: <state>}
+    ...
+  terminal: [<state>, ...]        # optional; states with no outgoing mission edges
 ```
 
-Hover-only: set `path_file: ""` (see `config/params/mission.yaml`).
+The loader (`lib/mission/loader.py`) validates the document up front and raises
+`MissionError` for an unknown behavior, guard, initial state, or transition
+target — a malformed mission fails fast at startup, not mid-flight.
 
-| Param | Meaning |
-|-------|---------|
-| `path_file` | Path to `config/paths/*.yaml`; empty = hover at `takeoff_altitude_m` |
-| `enable_marker_hover` | After path (or early acquire), run `hover_marker` using `/vision/marker_pose` |
-| `takeoff_altitude_m` | Gate before `follow_path` |
-| `takeoff_altitude_tolerance_m` | Allow clearing takeoff when within this margin below target (default 0.1 m) |
-| `tolerance_m`, `hold_s` | Waypoint reach criteria |
-| `marker_*` | Debounce and hold when marker hover is enabled |
+## FSM semantics (this is a real FSM, not a switch statement)
 
-## Phases
+Each tick (`tick_rate_hz`, default 10 Hz) the engine:
 
-| Phase | Meaning |
-|-------|---------|
-| `wait_arm_altitude` | Hold until armed and effective ENU z >= `takeoff_altitude_m - takeoff_altitude_tolerance_m` (uses max of pose and controller altitude) |
-| `follow_path` | Visit each path point (tolerance + hold time) |
-| `hover_marker` | Track marker + offset (only if `enable_marker_hover`) |
-| `done` | Complete |
+1. Builds an **immutable `Inputs` snapshot** (pose, arm/altitude/estimate flags,
+   detections, input ages). Behaviors and guards only ever see this snapshot, so
+   a value cannot change underneath them mid-tick — this is what keeps
+   transitions race-free.
+2. Runs the **current state's behavior** to produce a `Command`
+   (`GoTo` / `Hold` / `Land`) and a dict of **signals**.
+3. Evaluates the **`safety` tier first** (every tick, from any state, including
+   terminal states), then — only if the current state is not terminal — the
+   per-state **`transitions`** whose `from` matches the current state.
+4. Fires **at most one transition per tick** (first matching guard wins, in file
+   order; safety always outranks mission transitions). On a fire it logs a
+   structured `TRANSITION` event (from, to, guard, trigger values), clears the
+   scratch of both states so the new state enters fresh, and re-runs the new
+   state's behavior so the entry command is emitted the same tick.
 
-Events: `PHASE_CHANGE`, `WAYPOINT_REACHED`, `MARKER_ACQUIRED`, `MARKER_LOST`, `MISSION_DONE`.
+Because `safety` is checked before the per-state edges, a hazard always wins over
+normal progression. Example from `search_relocalize.yaml`: while flying a
+lawnmower `search`, if `geofence_breach` trips it diverts to `return_to_origin`
+instead of continuing the pattern — exactly the non-linear behavior a search
+mission needs.
 
-## Running demos
+### Terminal states
 
-```bash
-just sim                                    # path_demo profile (default)
-just sim inspect                            # + inspect overlay + vision + inspect world
-just test scenario --arg 03_waypoint        # path following (default sim)
-just test scenario --arg inspect_aruco      # needs just sim inspect
-uv run tasks.py rviz --config inspect       # RViz for inspect
-```
+States listed in `terminal` have no outgoing **mission** transitions evaluated,
+but the **safety** tier still runs — a terminal `done` that holds position will
+still bail out to a safe state if the estimate goes invalid.
+
+## Behaviors
+
+Registered in `lib/mission/behaviors.py`. Each returns a command plus signals
+(read by guards). `params` keys and defaults:
+
+| Behavior | params (default) | Signals emitted |
+|----------|------------------|-----------------|
+| `hold` | `x`,`y`,`z` (current pose at entry), `tolerance_m` (0.4) | `reached` |
+| `follow_waypoints` | `waypoints` (list of `[x,y,z]`) **or** `path_file` (YAML path, resolved to waypoints by the loader), `tolerance_m` (0.4), `hold_s` (2.0) | `reached`, `waypoints_done`, `waypoint_index` |
+| `search_lawnmower` | `center` (`[0,0]`), `spacing_m` (2.0), `legs` (4), `altitude_m` (3.0), `hold_s` (0.0) | `search_complete` |
+| `center_on_marker` | `target_id`, `altitude_m` (current z), `tolerance_m` (0.4), `hold_s` (10.0) | `centering_error`, `centered`, `hold_complete` |
+| `goto_origin` | `z` (current z), `tolerance_m` (0.5) | `reached` |
+
+`path_file` is resolved relative to the project root and may be used anywhere
+`follow_waypoints` accepts `waypoints`.
+
+## Guards
+
+Registered in `lib/mission/guards.py`. Each is a pure predicate over the snapshot
+(and, for the signal guards, the current behavior's signals).
+
+| Guard | params (default) | True when |
+|-------|------------------|-----------|
+| `armed_at_altitude` | — | vehicle armed **and** at/above takeoff altitude |
+| `waypoints_done` | — | behavior signalled `waypoints_done` |
+| `reached` | — | behavior signalled `reached` |
+| `hold_complete` | — | behavior signalled `hold_complete` |
+| `search_complete` | — | behavior signalled `search_complete` |
+| `marker_fresh` | `id`, `t` (1.0) | a detection of `id` is newer than `t` s |
+| `marker_stable` | `id`, `n` (5) | `id` seen on ≥ `n` consecutive fresh detections |
+| `marker_lost` | `id`, `t` (3.0) | no detection of `id` within `t` s |
+| `geofence_breach` | `radius_m` (50.0) | horizontal distance from origin ≥ `radius_m` |
+| `estimate_invalid` | — | the state estimate is not OK |
+| `inputs_stale` | `key` (`odom`), `t` (1.0) | named input older than `t` s |
+
+For `marker_*` guards, omitting `id` matches any marker.
+
+## Vision relocalization
+
+When launched with `vision=aruco`, `aruco_pose_publisher` publishes
+`/drone/marker_detection` and `marker_localizer` turns a detection of a **known**
+marker (mapped in `config/markers.yaml`) into a `/drone/pose_override`
+(`PoseStamped`). `position_node` applies that fix to the published `/drone/odom`
+when it is fresh and within a jump bound — so a known marker can correct drift
+without letting a bad fix teleport the vehicle. Missions consume the corrected
+pose transparently; the `search_relocalize` mission demonstrates the full loop.
+
+## Adding a behavior or guard
+
+1. Write a pure function in `behaviors.py` / `guards.py` and decorate it with
+   `@behavior("name")` / `@guard("name")`. Behaviors take
+   `(scratch, inputs, params)` and return `BehaviorResult(command, signals)`;
+   guards take `(inputs, signals, params)` and return `bool`.
+2. Add a unit test in `tests/unit/test_mission_behaviors.py` /
+   `test_mission_guards.py`.
+3. Reference it by name from a mission YAML. The loader validates the name on
+   load.
 
 ## Topics
 
 | Topic | Role |
 |-------|------|
-| `/drone/mission_status` | Phase, waypoint index |
+| `/drone/mission_status` | Current phase (= engine state name) |
 | `/drone/target_pose` | Setpoint to `offboard_controller` |
-| `/vision/marker_pose` | Sim detector when vision enabled |
+| `/drone/marker_detection` | Metric marker detections (vision) |
+| `/drone/pose_override` | Known-marker relocalization fix |
 
 Full manifest: [docs/TOPICS.md](TOPICS.md).
 
-## Pose (`/drone/pose_enu`)
+## Example: `search_relocalize.yaml`
 
-Mission logic reads **one** canonical topic. Launch picks the backend:
-
-| Context | Node | Source |
-|---------|------|--------|
-| `just sim` | `sim_pose_adapter` | Gazebo model pose → ENU |
-| hardware | `px4_pose_adapter` | PX4 `/fmu/out/vehicle_local_position` → ENU |
-
-`offboard_controller` still uses PX4 directly for closed-loop control. Future ZED/lidar missions publish `/drone/pose_enu` from an external node (see `missions/README.md`).
-
-Optional wrapped launch: `ros2 launch missions/inspect/launch/inspect.launch.py` (same as `just sim inspect`).
-
-## Adding a mission
-
-1. Add `config/paths/<name>.yaml` (points only).
-2. Add or extend a param overlay (`enable_marker_hover`, tolerances, `path_file`).
-3. Add launch extras if needed (vision, sensors) in `sim_full` or a future `missions/<name>/launch/`.
-4. Add `tests/scenarios/<NN>_<name>.py` and a row in `tests/capabilities.toml`.
+```yaml
+mission:
+  initial: takeoff
+  safety:
+    - {guard: estimate_invalid, to: hold_safe}
+    - {guard: inputs_stale, params: {t: 1.0}, to: hold_safe}
+    - {guard: geofence_breach, params: {radius_m: 30.0}, to: return_to_origin}
+  states:
+    takeoff:          {behavior: hold, params: {z: 3.0}}
+    search:           {behavior: search_lawnmower, params: {center: [0.0, 0.0], spacing_m: 8.0, legs: 2, altitude_m: 3.0}}
+    return_to_origin: {behavior: goto_origin, params: {z: 3.0}}
+    done:             {behavior: hold}
+    hold_safe:        {behavior: hold}
+  transitions:
+    - {from: takeoff,          guard: armed_at_altitude,                    to: search}
+    - {from: search,           guard: marker_stable, params: {id: 0, n: 5}, to: return_to_origin}
+    - {from: search,           guard: search_complete,                      to: return_to_origin}
+    - {from: return_to_origin, guard: reached,                              to: done}
+  terminal: [done]
+```
 
 ## Scenario coverage
 
 | Scenario | Needs |
 |----------|--------|
-| `03_waypoint` | Default sim (`path_file` + no marker) |
-| `inspect_aruco` | `just sim inspect` (`enable_marker_hover` + vision) |
+| `03_waypoint` | Default sim (`follow_waypoints` mission, no vision) |
+| `05_aruco_hover` | `vision=aruco` (`marker_hover` mission) |
+| `06_search_relocalize` | `vision=aruco` (`search_relocalize` mission + `marker_localizer`) |
