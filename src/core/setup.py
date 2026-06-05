@@ -8,6 +8,7 @@ setup(
     packages=[
         package_name,
         f"{package_name}.lib",
+        f"{package_name}.lib.mission",
         f"{package_name}.nodes",
     ],
     data_files=[
@@ -28,6 +29,7 @@ setup(
             "mission_manager = ros_px4_template_core.nodes.mission_manager:main",
             "px4_topic_relay = ros_px4_template_core.nodes.px4_topic_relay:main",
             "aruco_pose_publisher = ros_px4_template_core.nodes.aruco_pose_publisher:main",
+            "marker_localizer = ros_px4_template_core.nodes.marker_localizer:main",
         ],
     },
 )
