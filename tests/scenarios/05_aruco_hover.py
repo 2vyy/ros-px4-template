@@ -20,6 +20,7 @@ import numpy as np
 import rclpy
 from _common import spin_until, write_report
 from geometry_msgs.msg import PoseStamped, Vector3Stamped
+from nav_msgs.msg import Odometry
 from px4_ros_msgs.msg import MissionStatus
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -38,7 +39,7 @@ class _ScenarioNode(Node):
         super().__init__("scenario_05_aruco_hover")
         self.entered_marker_hover = False
         self.mission_done = False
-        self.drone_pose: PoseStamped | None = None
+        self.drone_pose: Odometry | None = None
         self.marker_offset_body: Vector3Stamped | None = None
         self.target_pose: PoseStamped | None = None
 
@@ -46,7 +47,7 @@ class _ScenarioNode(Node):
         self.create_subscription(
             MissionStatus, "/drone/mission_status", self._status_cb, _RELIABLE_QOS
         )
-        self.create_subscription(PoseStamped, "/drone/pose_enu", self._pose_cb, _RELIABLE_QOS)
+        self.create_subscription(Odometry, "/drone/odom", self._pose_cb, _RELIABLE_QOS)
         self.create_subscription(PoseStamped, "/drone/target_pose", self._target_cb, _RELIABLE_QOS)
         self.create_subscription(
             Vector3Stamped, "/drone/marker_offset_body", self._offset_cb, _RELIABLE_QOS
@@ -65,7 +66,7 @@ class _ScenarioNode(Node):
         if msg.phase == "done":
             self.mission_done = True
 
-    def _pose_cb(self, msg: PoseStamped) -> None:
+    def _pose_cb(self, msg: Odometry) -> None:
         self.drone_pose = msg
 
     def _target_cb(self, msg: PoseStamped) -> None:
@@ -78,13 +79,13 @@ class _ScenarioNode(Node):
         if self.drone_pose is None:
             return
 
-        # Get current drone pose
-        x = self.drone_pose.pose.position.x
-        y = self.drone_pose.pose.position.y
-        z = self.drone_pose.pose.position.z
+        # Get current drone pose (position_node SoT publishes anchored-ENU Odometry)
+        x = self.drone_pose.pose.pose.position.x
+        y = self.drone_pose.pose.pose.position.y
+        z = self.drone_pose.pose.pose.position.z
 
         # Calculate yaw from quaternion
-        q = self.drone_pose.pose.orientation
+        q = self.drone_pose.pose.pose.orientation
         siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         yaw = math.atan2(siny_cosp, cosy_cosp)

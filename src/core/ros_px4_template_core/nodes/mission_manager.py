@@ -6,7 +6,7 @@ ROS 2 Interface
 
 Subscriptions:
     /drone/controller_status    [px4_ros_msgs/ControllerStatus]
-    /drone/pose_enu             [geometry_msgs/PoseStamped]
+    /drone/odom                 [nav_msgs/Odometry]   (position_node SoT pose)
     /drone/marker_detected      [std_msgs/Bool]
     /drone/marker_offset_body   [geometry_msgs/Vector3Stamped]
 
@@ -24,6 +24,7 @@ from pathlib import Path
 
 import rclpy
 from geometry_msgs.msg import PoseStamped, Vector3Stamped
+from nav_msgs.msg import Odometry
 from px4_ros_msgs.msg import ControllerStatus, MissionStatus
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -109,9 +110,9 @@ class MissionManager(Node):
             callback_group=self._sub_group,
         )
         self.create_subscription(
-            PoseStamped,
-            "/drone/pose_enu",
-            self._pose_enu_cb,
+            Odometry,
+            "/drone/odom",
+            self._odom_cb,
             _RELIABLE_QOS,
             callback_group=self._sub_group,
         )
@@ -150,16 +151,18 @@ class MissionManager(Node):
         self._controller_armed = msg.armed
         self._controller_alt_enu = float(msg.altitude_enu_m)
 
-    def _pose_enu_cb(self, msg: PoseStamped) -> None:
+    def _odom_cb(self, msg: Odometry) -> None:
+        # position_node is the single source of truth: anchored-ENU pose on /drone/odom.
+        pose = msg.pose.pose
         self._pos_enu = (
-            msg.pose.position.x,
-            msg.pose.position.y,
-            msg.pose.position.z,
+            pose.position.x,
+            pose.position.y,
+            pose.position.z,
         )
         self._have_pose = True
 
         # Calculate yaw from quaternion
-        q = msg.pose.orientation
+        q = pose.orientation
         siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         self._drone_yaw = math.atan2(siny_cosp, cosy_cosp)
