@@ -21,7 +21,8 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 | `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | pub | `offboard_controller` |
 | `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | pub | `offboard_controller` |
 | `/fmu/in/vehicle_command` | `px4_msgs/msg/VehicleCommand` | pub | `offboard_controller` |
-| `/drone/pose_enu` | `geometry_msgs/msg/PoseStamped` | pub | `sim_pose_adapter` (sim) or `px4_pose_adapter` (hardware) |
+| `/drone/odom` | `nav_msgs/msg/Odometry` | pub | `position_node` (anchored-ENU SoT pose+twist) |
+| `/drone/local_origin` | `geometry_msgs/msg/Vector3Stamped` | pub | `position_node` (latched effective NED origin) |
 | `/drone/target_pose` | `geometry_msgs/msg/PoseStamped` | pub | `mission_manager` |
 | `/drone/controller_status` | `px4_ros_msgs/msg/ControllerStatus` | pub | `offboard_controller` |
 | `/drone/mission_status` | `px4_ros_msgs/msg/MissionStatus` | pub | `mission_manager` |
@@ -33,8 +34,9 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 
 | Topic | Subscribers |
 |-------|-------------|
-| `/fmu/out/vehicle_local_position` | `offboard_controller` |
-| `/drone/pose_enu` | `mission_manager` |
+| `/fmu/out/vehicle_local_position` | `position_node` (hardware; sim reads `_v1` directly) |
+| `/drone/odom` | `offboard_controller`, `mission_manager` |
+| `/drone/local_origin` | `offboard_controller` |
 | `/fmu/out/vehicle_status` | `offboard_controller` |
 | `/drone/target_pose` | `offboard_controller` |
 | `/drone/controller_status` | `mission_manager` |
@@ -43,7 +45,7 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 ## QoS
 
 - PX4 topics (`/fmu/*`): `BEST_EFFORT` reliability, `TRANSIENT_LOCAL` durability, `KEEP_LAST` depth 10. Defined in each node and as `PX4_QOS` in `tests/scenarios/_common.py`.
-- `/drone/pose_enu`: `RELIABLE`. Sim: Gazebo ground truth via `sim_pose_adapter`. Hardware: PX4 local position via `px4_pose_adapter`.
+- `/drone/odom`: `RELIABLE`. Single source of truth published by `position_node` from PX4's local-position estimate (anchored ENU), in both sim and hardware. `/drone/local_origin`: latched (`TRANSIENT_LOCAL`) effective NED setpoint origin.
 - Other `/drone/*` status and setpoint topics: `RELIABLE`, `KEEP_LAST` depth 10.
 
 ## Adding a topic

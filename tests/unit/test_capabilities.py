@@ -6,7 +6,7 @@ from pathlib import Path
 
 import tomli_w
 
-from capabilities import scenarios_for_platform
+from capabilities import scenario_sim_configs, scenarios_for_platform
 
 
 def _write_registry(path: Path, caps: dict) -> None:
@@ -62,6 +62,53 @@ def test_scenarios_for_platform_excludes_no_scenario_file(tmp_path: Path) -> Non
 def test_scenarios_for_platform_empty_registry(tmp_path: Path) -> None:
     reg = tmp_path / "capabilities.toml"
     assert scenarios_for_platform("sim", registry=reg) == []
+
+
+def test_scenario_sim_configs_reads_vision_and_overlay(tmp_path: Path) -> None:
+    reg = tmp_path / "capabilities.toml"
+    _write_registry(
+        reg,
+        {
+            "arm_takeoff": {
+                "description": "Arms",
+                "scenario_file": "01_arm_takeoff.py",
+                "platforms": ["sim"],
+                "status": "verified",
+                "sim_vision": "none",
+                "sim_overlay": "hover",
+            },
+            "aruco_hover": {
+                "description": "Aruco",
+                "scenario_file": "05_aruco_hover.py",
+                "platforms": ["sim"],
+                "status": "idea",
+                "sim_vision": "aruco",
+                "sim_overlay": "auto_arm",
+            },
+        },
+    )
+    result = scenario_sim_configs("sim", registry=reg)
+    assert result == [
+        {"scenario": "01_arm_takeoff", "vision": "none", "overlay": "hover"},
+        {"scenario": "05_aruco_hover", "vision": "aruco", "overlay": "auto_arm"},
+    ]
+
+
+def test_scenario_sim_configs_defaults_when_fields_missing(tmp_path: Path) -> None:
+    reg = tmp_path / "capabilities.toml"
+    _write_registry(
+        reg,
+        {
+            "waypoint_nav": {
+                "description": "Waypoints",
+                "scenario_file": "03_waypoint.py",
+                "platforms": ["sim"],
+                "status": "verified",
+            },
+        },
+    )
+    result = scenario_sim_configs("sim", registry=reg)
+    assert result == [{"scenario": "03_waypoint", "vision": "none", "overlay": "auto_arm"}]
 
 
 def _load_from(path: Path) -> dict:

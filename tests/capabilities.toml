@@ -5,6 +5,8 @@ platforms = [
     "sim",
 ]
 scenario_file = "01_arm_takeoff.py"
+sim_vision = "none"
+sim_overlay = "hover"
 last_verified = "2026-05-27"
 
 [capabilities.hover_hold]
@@ -14,6 +16,8 @@ platforms = [
     "sim",
 ]
 scenario_file = "02_hover_hold.py"
+sim_vision = "none"
+sim_overlay = "hover"
 last_verified = "2026-05-27"
 
 [capabilities.waypoint_nav]
@@ -23,6 +27,8 @@ platforms = [
     "sim",
 ]
 scenario_file = "03_waypoint.py"
+sim_vision = "none"
+sim_overlay = "auto_arm"
 last_verified = "2026-05-27"
 
 [capabilities.aruco_hover]
@@ -30,4 +36,6 @@ description = "Vehicle detects ArUco marker and enters marker_hover phase"
 status = "idea"
 platforms = ["sim"]
 scenario_file = "05_aruco_hover.py"
+sim_vision = "aruco"
+sim_overlay = "auto_arm"
 last_verified = ""

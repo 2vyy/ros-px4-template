@@ -145,7 +145,7 @@ def _ros2_launch_bash_argv(launch_args: list[str], *, cwd: Path = ROOT) -> list[
 
 # Ensure tools/ is on path to import sub-apps
 sys.path.append(str(ROOT / "tools"))
-from capabilities import app as cap_app, scenarios_for_platform
+from capabilities import app as cap_app, scenario_sim_configs
 from log_merger import run_merge
 from log_query import app as log_app
 
@@ -625,6 +625,92 @@ def hw(
     except subprocess.CalledProcessError:
         print("Hardware connection closed with error.", file=sys.stderr)
 
+def _run_e2e_sim_group(
+    vision: str,
+    overlay: str,
+    scenarios: list[str],
+    *,
+    gz_resource: str,
+    audit_topics: bool = False,
+) -> int:
+    """Launch one isolated headless sim for a ``(vision, overlay)`` config, wait for
+    readiness, run the given scenarios sequentially, optionally audit the topic
+    graph, then tear the sim down.
+
+    Isolating each config keeps hold scenarios (hover overlay, no path) from racing
+    the auto-flown waypoint mission that the demo path scenarios need. Returns the
+    number of failed scenarios in this group (a sim that never becomes ready counts
+    every scenario in the group as failed).
+    """
+    pidfile = LOG_DIR / "sim.pid"
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    log_file = LOG_DIR / f"sim_{overlay}_{vision}_{stamp}.log"
+    print(f"\n=== Sim group: vision={vision} overlay={overlay} ({', '.join(scenarios)}) ===")
+    print(f"Starting background headless simulation (log: {log_file.name})...")
+
+    launch_args = [
+        str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
+        "world:=default",
+        "model:=x500",
+        "headless:=true",
+        f"log_dir:={LOG_DIR}",
+        f"vision:={vision}",
+        f"param_overlay:={overlay}",
+    ]
+    env = _ros_launch_env(
+        GZ_IP="127.0.0.1",
+        GZ_SIM_RESOURCE_PATH=f"{gz_resource}:{os.environ.get('GZ_SIM_RESOURCE_PATH', '')}",
+        HEADLESS="1",
+    )
+
+    proc = subprocess.Popen(
+        _ros2_launch_bash_argv(launch_args),
+        env=env,
+        stdout=log_file.open("w", encoding="utf-8"),
+        stderr=subprocess.STDOUT,
+        preexec_fn=os.setsid,
+        cwd=str(ROOT),
+    )
+    pidfile.write_text(str(proc.pid))
+
+    fails = 0
+    try:
+        print("Waiting for simulation to stabilize...")
+        try:
+            subprocess.run(
+                ["uv", "run", "python", "tools/wait_ready.py", "--timeout", "180", "--speed", "1.0"],
+                check=True,
+                cwd=str(ROOT),
+            )
+        except subprocess.CalledProcessError:
+            print(
+                f"  [FAIL] sim never became ready; failing {len(scenarios)} scenario(s) "
+                f"in group (vision={vision} overlay={overlay})",
+                file=sys.stderr,
+            )
+            return len(scenarios)
+
+        for s in scenarios:
+            print(f"Running scenario {s}...")
+            res_s = subprocess.run(
+                ["uv", "run", "python", f"tests/scenarios/{s}.py"], cwd=str(ROOT)
+            )
+            if res_s.returncode != 0:
+                fails += 1
+
+        if audit_topics:
+            print("Auditing topic graph...")
+            subprocess.run(
+                ["uv", "run", "python", "tools/check_topics.py", "--manifest", "docs/TOPICS.md"],
+                cwd=str(ROOT),
+            )
+    finally:
+        print(f"Tearing down sim group (vision={vision} overlay={overlay})...")
+        subprocess.run(["uv", "run", "python", "tools/sim_cleanup.py"], cwd=str(ROOT))
+
+    return fails
+
+
 @app.command()
 def test(
     type: str = typer.Argument("unit", help="Test type: unit, scenario, e2e"),
@@ -672,69 +758,41 @@ def test(
             print("Preflight check failed. Aborting E2E cycle.", file=sys.stderr)
             raise typer.Exit(1) from None
 
-        pidfile = LOG_DIR / "sim.pid"
-        log_file = LOG_DIR / f"sim_{datetime.now().strftime('%Y%m%dT%H%M%S')}.log"
-        print("Starting background headless simulation...")
-
         gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
-        launch_args = [
-            str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
-            "world:=default",
-            "model:=x500",
-            "headless:=true",
-            f"log_dir:={LOG_DIR}",
-            "vision:=aruco",
-            "param_overlay:=auto_arm",
-        ]
-        env = _ros_launch_env(
-            GZ_IP="127.0.0.1",
-            GZ_SIM_RESOURCE_PATH=f"{gz_resource}:{os.environ.get('GZ_SIM_RESOURCE_PATH', '')}",
-            HEADLESS="1",
-        )
 
-        proc = subprocess.Popen(
-            _ros2_launch_bash_argv(launch_args),
-            env=env,
-            stdout=Path(log_file).open("w", encoding="utf-8"),
-            stderr=subprocess.STDOUT,
-            preexec_fn=os.setsid,
-            cwd=str(ROOT),
-        )
-        pidfile.write_text(str(proc.pid))
+        # Group scenarios by their required (vision, overlay) sim config and run
+        # each group against its own freshly launched, isolated sim. Hold scenarios
+        # (hover overlay) must not share a sim with the auto-flown demo mission that
+        # path scenarios need, so each config gets a clean boot + teardown.
+        configs = scenario_sim_configs("sim")
+        if not configs:
+            print("Warning: no sim scenarios found in capabilities.toml")
+        groups: dict[tuple[str, str], list[str]] = {}
+        for cfg in configs:
+            groups.setdefault((cfg["vision"], cfg["overlay"]), []).append(cfg["scenario"])
+
+        import atexit
 
         def cleanup():
             print("Cleaning up E2E simulation...")
             subprocess.run(["uv", "run", "python", "tools/sim_cleanup.py"], cwd=str(ROOT))
 
-        import atexit
-
+        # Safety net: ensure any leaked sim is reaped even if the process is killed
+        # mid-group (each group also tears down its own sim in a finally block).
         atexit.register(cleanup)
 
         try:
-            print("Waiting for simulation to stabilize...")
-            subprocess.run(
-                ["uv", "run", "python", "tools/wait_ready.py", "--timeout", "180", "--speed", "1.0"],
-                check=True,
-                cwd=str(ROOT),
-            )
-
             fails = 0
-            scenarios = scenarios_for_platform("sim")
-            if not scenarios:
-                print("Warning: no sim scenarios found in capabilities.toml")
-            for s in scenarios:
-                print(f"Running scenario {s}...")
-                res_s = subprocess.run(
-                    ["uv", "run", "python", f"tests/scenarios/{s}.py"], cwd=str(ROOT)
+            group_items = list(groups.items())
+            for idx, ((vision, overlay), scenarios) in enumerate(group_items):
+                is_last = idx == len(group_items) - 1
+                fails += _run_e2e_sim_group(
+                    vision,
+                    overlay,
+                    scenarios,
+                    gz_resource=gz_resource,
+                    audit_topics=is_last,
                 )
-                if res_s.returncode != 0:
-                    fails += 1
-
-            print("Auditing topic graph...")
-            subprocess.run(
-                ["uv", "run", "python", "tools/check_topics.py", "--manifest", "docs/TOPICS.md"],
-                cwd=str(ROOT),
-            )
 
             print("Merging execution logs...")
             try:

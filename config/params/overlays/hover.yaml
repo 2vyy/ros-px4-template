@@ -1,0 +1,11 @@
+# Hover-only overlay: arm + climb to target altitude and hold, with no mission
+# path. Clears the demo path baked into sim.yaml so position-hold scenarios
+# (01_arm_takeoff, 02_hover_hold) test a static hover instead of racing the
+# auto-flown waypoint mission.
+offboard_controller:
+  ros__parameters:
+    auto_arm: true
+
+mission_manager:
+  ros__parameters:
+    path_file: ""
