@@ -8,20 +8,29 @@ from ros_px4_template_core.lib.mission.registry import get_guard
 from ros_px4_template_core.lib.mission.types import Inputs
 
 
-def _inputs(**kw) -> Inputs:
-    base = dict(
-        now=10.0,
-        pose_enu=(0.0, 0.0, 0.0),
-        yaw_enu=0.0,
-        armed=True,
-        altitude_ok=True,
-        estimate_ok=True,
-        detections=(),
-        detection_stability={},
-        input_ages={"odom": 0.0},
+def _inputs(
+    *,
+    now: float = 10.0,
+    pose_enu: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    yaw_enu: float = 0.0,
+    armed: bool = True,
+    altitude_ok: bool = True,
+    estimate_ok: bool = True,
+    detections: tuple[Detection, ...] = (),
+    detection_stability: dict[int, int] | None = None,
+    input_ages: dict[str, float] | None = None,
+) -> Inputs:
+    return Inputs(
+        now=now,
+        pose_enu=pose_enu,
+        yaw_enu=yaw_enu,
+        armed=armed,
+        altitude_ok=altitude_ok,
+        estimate_ok=estimate_ok,
+        detections=detections,
+        detection_stability={} if detection_stability is None else detection_stability,
+        input_ages={"odom": 0.0} if input_ages is None else input_ages,
     )
-    base.update(kw)
-    return Inputs(**base)
 
 
 def test_armed_at_altitude() -> None:

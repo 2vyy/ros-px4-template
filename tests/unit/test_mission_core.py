@@ -15,7 +15,7 @@ def test_goto_is_frozen() -> None:
     g = GoTo(1.0, 2.0, 3.0)
     assert (g.x, g.y, g.z, g.yaw) == (1.0, 2.0, 3.0, None)
     with pytest.raises(AttributeError):
-        g.x = 9.0  # type: ignore[misc]
+        g.x = 9.0  # type: ignore
 
 
 def test_behavior_result_carries_signals() -> None:

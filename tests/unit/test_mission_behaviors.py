@@ -11,20 +11,29 @@ from ros_px4_template_core.lib.mission.registry import get_behavior
 from ros_px4_template_core.lib.mission.types import Inputs
 
 
-def _inputs(**kw) -> Inputs:
-    base = dict(
-        now=0.0,
-        pose_enu=(0.0, 0.0, 0.0),
-        yaw_enu=0.0,
-        armed=True,
-        altitude_ok=True,
-        estimate_ok=True,
-        detections=(),
-        detection_stability={},
-        input_ages={"odom": 0.0},
+def _inputs(
+    *,
+    now: float = 0.0,
+    pose_enu: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    yaw_enu: float = 0.0,
+    armed: bool = True,
+    altitude_ok: bool = True,
+    estimate_ok: bool = True,
+    detections: tuple[Detection, ...] = (),
+    detection_stability: dict[int, int] | None = None,
+    input_ages: dict[str, float] | None = None,
+) -> Inputs:
+    return Inputs(
+        now=now,
+        pose_enu=pose_enu,
+        yaw_enu=yaw_enu,
+        armed=armed,
+        altitude_ok=altitude_ok,
+        estimate_ok=estimate_ok,
+        detections=detections,
+        detection_stability={} if detection_stability is None else detection_stability,
+        input_ages={"odom": 0.0} if input_ages is None else input_ages,
     )
-    base.update(kw)
-    return Inputs(**base)
 
 
 def test_hold_latches_entry_point() -> None:
@@ -34,6 +43,7 @@ def test_hold_latches_entry_point() -> None:
     assert isinstance(r.command, GoTo)
     assert (r.command.x, r.command.y, r.command.z) == (1.0, 2.0, 5.0)
     r2 = hold(scratch, _inputs(pose_enu=(9.0, 9.0, 5.0)), {"z": 5.0})
+    assert isinstance(r2.command, GoTo)
     assert (r2.command.x, r2.command.y, r2.command.z) == (1.0, 2.0, 5.0)
 
 
@@ -42,10 +52,12 @@ def test_follow_waypoints_advances_after_dwell() -> None:
     scratch: dict = {}
     params = {"waypoints": [(0.0, 0.0, 3.0), (5.0, 0.0, 3.0)], "hold_s": 2.0, "tolerance_m": 0.4}
     r = fw(scratch, _inputs(now=0.0, pose_enu=(0.0, 0.0, 0.0)), params)
+    assert isinstance(r.command, GoTo)
     assert (r.command.x, r.command.y) == (0.0, 0.0)
     assert r.signals["reached"] is False
     fw(scratch, _inputs(now=1.0, pose_enu=(0.0, 0.0, 3.0)), params)
     r = fw(scratch, _inputs(now=3.5, pose_enu=(0.0, 0.0, 3.0)), params)
+    assert isinstance(r.command, GoTo)
     assert (r.command.x, r.command.y) == (5.0, 0.0)
     assert r.signals["waypoint_index"] == 1
     fw(scratch, _inputs(now=4.0, pose_enu=(5.0, 0.0, 3.0)), params)
@@ -62,6 +74,7 @@ def test_center_on_marker_targets_pose_plus_offset() -> None:
         _inputs(pose_enu=(0.0, 0.0, 3.0), detections=(det,)),
         {"target_id": 0, "altitude_m": 3.0, "hold_s": 10.0},
     )
+    assert isinstance(r.command, GoTo)
     assert math.isclose(r.command.x, 8.0, abs_tol=1e-6)
     assert math.isclose(r.command.y, 0.0, abs_tol=1e-6)
     assert math.isclose(r.command.z, 3.0, abs_tol=1e-6)
@@ -81,6 +94,7 @@ def test_center_on_marker_hold_complete_after_dwell() -> None:
 def test_goto_origin_commands_origin() -> None:
     go = get_behavior("goto_origin")
     r = go({}, _inputs(pose_enu=(5.0, 5.0, 3.0)), {"z": 3.0})
+    assert isinstance(r.command, GoTo)
     assert (r.command.x, r.command.y, r.command.z) == (0.0, 0.0, 3.0)
 
 
