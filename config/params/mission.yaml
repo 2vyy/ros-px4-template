@@ -1,7 +1,6 @@
 mission_manager:
   ros__parameters:
-    path_file: ""
-    enable_marker_hover: false
+    mission_file: "config/missions/hover.yaml"
     tick_rate_hz: 10.0
     takeoff_altitude_m: 2.5
-    takeoff_altitude_tolerance_m: 0.1
+    takeoff_altitude_tolerance_m: 0.3

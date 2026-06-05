@@ -3,4 +3,4 @@ offboard_controller:
     auto_arm: true
 mission_manager:
   ros__parameters:
-    mission_file: "config/missions/hover.yaml"
+    mission_file: "config/missions/marker_hover.yaml"

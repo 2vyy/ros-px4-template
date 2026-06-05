@@ -37,5 +37,5 @@ status = "idea"
 platforms = ["sim"]
 scenario_file = "05_aruco_hover.py"
 sim_vision = "aruco"
-sim_overlay = "auto_arm"
+sim_overlay = "marker_hover"
 last_verified = ""
