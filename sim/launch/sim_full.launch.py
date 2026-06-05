@@ -77,16 +77,21 @@ def _pose_setup(context, *args, **kwargs):
 
 def _clock_bridge(context, *args, **kwargs):
     world = LaunchConfiguration("world").perform(context)
+    # Wait until PX4 has started Gazebo and the world clock is being published before
+    # bridging it. Subscribing to the gz clock earlier can make PX4's rcS mis-detect a
+    # "running" world during its own startup check and skip launching gz.
+    wait_and_bridge = (
+        f"for _ in $(seq 1 600); do "
+        f'  if gz topic -l 2>/dev/null | grep -qx "/world/{world}/clock"; then break; fi; '
+        f"  sleep 0.2; "
+        f"done; "
+        f"exec ros2 run ros_gz_bridge parameter_bridge "
+        f'"/world/{world}/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock" '
+        f'"/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"'
+    )
     return [
         ExecuteProcess(
-            cmd=[
-                "ros2",
-                "run",
-                "ros_gz_bridge",
-                "parameter_bridge",
-                f"/world/{world}/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
-                "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
-            ],
+            cmd=["bash", "-c", wait_and_bridge],
             name="clock_bridge",
             output="screen",
         ),
@@ -94,15 +99,18 @@ def _clock_bridge(context, *args, **kwargs):
 
 
 def _gz_px4_stack(context, *args, **kwargs):
-    """Start the Gazebo server, then PX4 (non-standalone) which spawns the model.
+    """Run PX4 (non-standalone); PX4's own rcS starts Gazebo and spawns the model.
 
-    We launch `gz sim` ourselves so we control the world file (our custom
-    sim/worlds/default.sdf, which embeds the gz sensor systems) and headless mode.
-    PX4 runs WITHOUT PX4_GZ_STANDALONE: its rcS detects the already-running world,
-    spawns the vehicle via gz_bridge, and drives it. Flight uses stock thrust
-    calibration (no SIM_GZ_EC_MIN / MPC_THR overrides) — verified to hold altitude.
-    PX4_SIM_SPEED_FACTOR is exported ONLY for speed != 1.0 (see the critical note
-    below the env block) — exporting it at all breaks physics at default speed.
+    We do NOT pre-start `gz sim`. PX4 runs WITHOUT PX4_GZ_STANDALONE, so its rcS
+    starts Gazebo late in boot via `${PX4_GZ_WORLDS}/${world}.sdf` (PX4_GZ_WORLDS
+    points at our sim/worlds dir) and immediately attaches gz_bridge — giving a clean
+    lockstep boot. Pre-starting gz ourselves let it free-run ~7-9 s before PX4 attached,
+    corrupting IMU/baro timing → EKF2 divergence → phantom altitude runaway. Headless is
+    controlled by the HEADLESS env; sensor systems come from PX4_GZ_SERVER_CONFIG. Flight
+    uses stock thrust calibration (no SIM_GZ_EC_MIN / MPC_THR overrides) — verified to
+    hold altitude. PX4_SIM_SPEED_FACTOR is exported ONLY for speed != 1.0 (see the
+    critical note below the env block) — exporting it at all breaks physics at default
+    speed.
     """
     world = LaunchConfiguration("world").perform(context)
     model = LaunchConfiguration("model").perform(context)
@@ -115,7 +123,7 @@ def _gz_px4_stack(context, *args, **kwargs):
     project_root = Path(__file__).resolve().parents[2]
     px4_dir = _require_px4_dir()
     build = _px4_build(px4_dir)
-    world_sdf, px4_gz_worlds = _world_sdf(project_root, px4_dir, world)
+    _world_sdf_path, px4_gz_worlds = _world_sdf(project_root, px4_dir, world)
     gz_paths = _gz_paths(project_root, px4_dir)
     plugins = f"{build}/src/modules/simulation/gz_plugins"
     server_config = f"{px4_dir}/Tools/simulation/gz/server.config"
@@ -153,36 +161,29 @@ def _gz_px4_stack(context, *args, **kwargs):
     )
 
     print(
-        f"[sim_full] Starting Gazebo then PX4 (non-standalone) world='{world}' model='{model}'",
+        f"[sim_full] Starting PX4 (it starts Gazebo in lockstep) world='{world}' model='{model}'",
         flush=True,
     )
     headless_export = "export HEADLESS=1; " if headless else ""
 
-    # Start the Gazebo server ourselves so we control the world file and headless mode,
-    # then let PX4 (non-standalone) detect the running world, spawn the model via
-    # gz_bridge, and drive it. PX4's own rcS would otherwise race the clock_bridge's
-    # topic subscription and mis-detect "gazebo already running".
-    gz_server_flag = "-s " if headless else ""
-    gz_start = f'setsid gz sim -r {gz_server_flag}"{world_sdf}"'
-
+    # Let PX4's own rcS start Gazebo (stock non-standalone path). PX4 boots its modules
+    # first and only then runs `gz sim -r -s ${PX4_GZ_WORLDS}/${world}.sdf` and
+    # immediately attaches gz_bridge, so Gazebo free-runs for only a fraction of a second
+    # before the EKF is fed sensors — a clean lockstep boot. Pre-starting gz ourselves let
+    # it free-run ~7-9 s before PX4 attached, which corrupted IMU/baro timing and made
+    # EKF2 diverge (attitude + height), producing a phantom altitude runaway even while
+    # disarmed. PX4_GZ_WORLDS (exported above) points at our sim/worlds dir so PX4 picks
+    # up our custom world; sensor systems come from PX4_GZ_SERVER_CONFIG. The clock bridge
+    # waits for the world to exist (see _clock_bridge) so it cannot make PX4 mis-detect a
+    # "running" world during its own startup check.
     cmd = (
-        common_env + f"{gz_start} & "
-        "GZPID=$!; "
-        # Wait up to 90s for the Gazebo scene service to become available.
-        f"for _ in $(seq 1 900); do "
-        f'  if gz service -i --service "/world/{world}/scene/info" 2>&1 | '
-        f'grep -q "Service providers"; then break; fi; '
-        "  sleep 0.1; "
-        "done; "
-        f'cd "{build}"; '
+        common_env + headless_export + f'cd "{build}"; '
         # Boot from stock airframe defaults every time (determinism): clear any params
         # persisted by a prior run so flight behaviour never drifts between launches.
         # Arming-enabler params come from the PX4_PARAM_* env above; everything else
         # (thrust calibration, EKF tuning) stays at the proven-stable stock defaults.
         "rm -f rootfs/parameters*.bson 2>/dev/null; "
-        + headless_export
-        + f'PX4_GZ_WORLD="{world}" PX4_SIM_MODEL=gz_{model} ./bin/px4; '
-        "PX4_EXIT=$?; kill $GZPID 2>/dev/null || true; exit $PX4_EXIT"
+        + f'exec env PX4_GZ_WORLD="{world}" PX4_SIM_MODEL=gz_{model} ./bin/px4'
     )
 
     return [ExecuteProcess(cmd=["bash", "-c", cmd], name="gz_px4_stack", output="screen")]

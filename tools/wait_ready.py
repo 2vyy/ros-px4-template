@@ -179,7 +179,15 @@ def main(
                 typer.echo("  [OK] GCS params committed (PX4 ready)")
 
         if rosbridge_ok and topic_ok and standby_ok:
-            if _set_physics_speed(speed):
+            # Only throttle physics for faster-than-realtime runs. At speed 1.0 the world
+            # SDF already provides real_time_factor=1.0 / real_time_update_rate=250 /
+            # max_step_size=0.004, so calling set_physics is redundant — and dangerous: it
+            # re-initialises the Gazebo integrator, which destabilises an already-airborne
+            # vehicle (e.g. under the auto_arm overlay) and triggers the altitude runaway.
+            # Skip it entirely at the default speed.
+            if speed == 1.0:
+                typer.echo("  [OK] Physics at realtime (world SDF defaults; set_physics skipped)")
+            elif _set_physics_speed(speed):
                 typer.echo(f"  [OK] Gazebo physics speed throttled to {speed}x")
             else:
                 typer.echo("  [WARN] Failed to set Gazebo physics speed (might run unthrottled)")
