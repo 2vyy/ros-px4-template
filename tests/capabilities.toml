@@ -39,3 +39,12 @@ scenario_file = "05_aruco_hover.py"
 sim_vision = "aruco"
 sim_overlay = "marker_hover"
 last_verified = ""
+
+[capabilities.search_relocalize]
+description = "Vehicle searches a lawnmower pattern, relocalizes on a known marker (/drone/pose_override), and returns to origin"
+status = "idea"
+platforms = ["sim"]
+scenario_file = "06_search_relocalize.py"
+sim_vision = "aruco"
+sim_overlay = "search_relocalize"
+last_verified = ""

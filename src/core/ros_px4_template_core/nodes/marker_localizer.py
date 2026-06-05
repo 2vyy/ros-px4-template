@@ -72,7 +72,10 @@ class MarkerLocalizer(Node):
         out.header.stamp = self.get_clock().now().to_msg()
         out.header.frame_id = "map"
         out.pose.position.x, out.pose.position.y, out.pose.position.z = x, y, z
-        out.pose.orientation.w = 1.0
+        # Relocalization corrects position only; pass current heading through so a
+        # fix never teleports yaw.
+        out.pose.orientation.z = math.sin(self._yaw / 2.0)
+        out.pose.orientation.w = math.cos(self._yaw / 2.0)
         self._pub.publish(out)
         self.slog.event("POSE_OVERRIDE", marker_id=int(msg.id), x=x, y=y, z=z)
 

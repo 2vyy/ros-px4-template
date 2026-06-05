@@ -102,6 +102,16 @@ def _launch_setup(context, *args, **kwargs):
                 parameters=base_params,
             )
         )
+        # Known-marker relocalization: detection + odom + marker map -> /drone/pose_override.
+        nodes.append(
+            Node(
+                package="ros_px4_template_core",
+                executable="marker_localizer",
+                name="marker_localizer",
+                output="screen",
+                parameters=base_params,
+            )
+        )
     return nodes
 
 

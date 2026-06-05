@@ -1,0 +1,25 @@
+# Search a lawnmower pattern, relocalize on a KNOWN marker, then return to origin.
+#
+# Demonstrates a real (non-linear) FSM: the global `safety` tier runs every tick
+# before the per-state transitions, so a geofence breach during the search safely
+# diverts to return_to_origin instead of continuing the pattern. Finding the known
+# marker (marker_localizer emits /drone/pose_override) is the nominal path back.
+# Used by 06_search_relocalize.
+mission:
+  initial: takeoff
+  safety:
+    - {guard: estimate_invalid, to: hold_safe}
+    - {guard: inputs_stale, params: {t: 1.0}, to: hold_safe}
+    - {guard: geofence_breach, params: {radius_m: 30.0}, to: return_to_origin}
+  states:
+    takeoff:          {behavior: hold, params: {z: 3.0}}
+    search:           {behavior: search_lawnmower, params: {center: [0.0, 0.0], spacing_m: 8.0, legs: 2, altitude_m: 3.0}}
+    return_to_origin: {behavior: goto_origin, params: {z: 3.0}}
+    done:             {behavior: hold}
+    hold_safe:        {behavior: hold}
+  transitions:
+    - {from: takeoff,          guard: armed_at_altitude,                    to: search}
+    - {from: search,           guard: marker_stable, params: {id: 0, n: 5}, to: return_to_origin}
+    - {from: search,           guard: search_complete,                      to: return_to_origin}
+    - {from: return_to_origin, guard: reached,                              to: done}
+  terminal: [done]
