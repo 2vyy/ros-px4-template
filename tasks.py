@@ -325,7 +325,7 @@ def check():
     """Format, lint-fix, typecheck, compile, and run unit tests."""
     print("Running checks")
 
-    ruff_paths = ["src/core", "src/px4_ros_sim", "tests", "tools", "sim", "hardware"]
+    ruff_paths = ["src/core", "tests", "tools", "sim", "hardware"]
     ruff_paths_str = [str(ROOT / p) for p in ruff_paths]
     env = _get_clean_env()
 

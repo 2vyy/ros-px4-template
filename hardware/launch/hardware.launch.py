@@ -78,17 +78,18 @@ def _launch_setup(context, *args, **kwargs):
             for exe in executables
         ]
     )
-    # Sim uses Gazebo ground truth via sim_pose_adapter in sim_full.launch.py.
-    if config_name != "sim":
-        nodes.append(
-            Node(
-                package="ros_px4_template_core",
-                executable="px4_pose_adapter",
-                name="px4_pose_adapter",
-                output="screen",
-                parameters=base_params,
-            )
+    # Single source of truth: position_node reads PX4's local-position estimate
+    # in both sim and hardware (source param selects the topic name).
+    source = "pixhawk" if config_name != "sim" else "sitl"
+    nodes.append(
+        Node(
+            package="ros_px4_template_core",
+            executable="position_node",
+            name="position_node",
+            output="screen",
+            parameters=[*base_params, {"source": source}],
         )
+    )
 
     vision = LaunchConfiguration("vision").perform(context)
     if vision == "aruco":

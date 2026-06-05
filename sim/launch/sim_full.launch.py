@@ -20,6 +20,7 @@ from launch_ros.actions import Node
 
 _sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 
+
 def _require_px4_dir() -> str:
     """Return PX4_DIR or raise with a clear, actionable error."""
     value = os.environ.get("PX4_DIR", "").strip()
@@ -61,24 +62,15 @@ def _px4_build(px4_dir: str) -> str:
     return str(Path(px4_dir) / "build" / "px4_sitl_default")
 
 
-
 def _pose_setup(context, *args, **kwargs):
-    """Gazebo pose/info -> sim_pose_adapter (Harmonic has no per-model pose topic)."""
-    world = LaunchConfiguration("world").perform(context)
-    model = LaunchConfiguration("model").perform(context)
+    """Single source of truth: position_node reading PX4's SITL estimate."""
     return [
         Node(
-            package="px4_ros_sim",
-            executable="sim_pose_adapter",
-            name="sim_pose_adapter",
+            package="ros_px4_template_core",
+            executable="position_node",
+            name="position_node",
             output="screen",
-            parameters=[
-                {
-                    "world": world,
-                    "model_name": f"{model}_0",
-                    "frame_id": "map",
-                }
-            ],
+            parameters=[{"source": "sitl", "frame_id": "map"}],
         ),
     ]
 
@@ -139,9 +131,7 @@ def _gz_px4_stack(context, *args, **kwargs):
 
     common_env = (
         "set -e; "
-        "export GZ_IP=127.0.0.1; "
-        + speed_export
-        + f'export GZ_SIM_RESOURCE_PATH="{gz_paths}"; '
+        "export GZ_IP=127.0.0.1; " + speed_export + f'export GZ_SIM_RESOURCE_PATH="{gz_paths}"; '
         f'export PX4_GZ_WORLDS="{px4_gz_worlds}"; '
         f'export PX4_GZ_PLUGINS="{plugins}"; '
         f'export PX4_GZ_SERVER_CONFIG="{server_config}"; '
@@ -162,7 +152,10 @@ def _gz_px4_stack(context, *args, **kwargs):
         # actually broke flight (no liftoff / runaway). Keep stock thrust calibration.
     )
 
-    print(f"[sim_full] Starting Gazebo then PX4 (non-standalone) world='{world}' model='{model}'", flush=True)
+    print(
+        f"[sim_full] Starting Gazebo then PX4 (non-standalone) world='{world}' model='{model}'",
+        flush=True,
+    )
     headless_export = "export HEADLESS=1; " if headless else ""
 
     # Start the Gazebo server ourselves so we control the world file and headless mode,
@@ -173,8 +166,7 @@ def _gz_px4_stack(context, *args, **kwargs):
     gz_start = f'setsid gz sim -r {gz_server_flag}"{world_sdf}"'
 
     cmd = (
-        common_env
-        + f"{gz_start} & "
+        common_env + f"{gz_start} & "
         "GZPID=$!; "
         # Wait up to 90s for the Gazebo scene service to become available.
         f"for _ in $(seq 1 900); do "

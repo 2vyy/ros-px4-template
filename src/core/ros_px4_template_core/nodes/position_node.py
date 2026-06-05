@@ -82,9 +82,7 @@ class PositionNode(Node):
         self._frame = Px4LocalFrame()
         self._have_pose = False
 
-        self.create_subscription(
-            VehicleLocalPosition, self._topic, self._position_cb, _PX4_QOS
-        )
+        self.create_subscription(VehicleLocalPosition, self._topic, self._position_cb, _PX4_QOS)
         self._pub_odom = self.create_publisher(Odometry, "/drone/odom", _ODOM_QOS)
         self._pub_origin = self.create_publisher(
             Vector3Stamped, "/drone/local_origin", _LATCHED_QOS
