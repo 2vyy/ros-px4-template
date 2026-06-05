@@ -33,18 +33,22 @@ last_verified = "2026-05-27"
 
 [capabilities.aruco_hover]
 description = "Vehicle detects ArUco marker and enters marker_hover phase"
-status = "idea"
-platforms = ["sim"]
+status = "verified"
+platforms = [
+    "sim",
+]
 scenario_file = "05_aruco_hover.py"
 sim_vision = "aruco"
 sim_overlay = "marker_hover"
-last_verified = ""
+last_verified = "2026-06-05"
 
 [capabilities.search_relocalize]
 description = "Vehicle searches a lawnmower pattern, relocalizes on a known marker (/drone/pose_override), and returns to origin"
-status = "idea"
-platforms = ["sim"]
+status = "verified"
+platforms = [
+    "sim",
+]
 scenario_file = "06_search_relocalize.py"
 sim_vision = "aruco"
 sim_overlay = "search_relocalize"
-last_verified = ""
+last_verified = "2026-06-05"
