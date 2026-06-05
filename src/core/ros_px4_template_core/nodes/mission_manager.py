@@ -5,8 +5,7 @@ ROS 2 Interface
 Subscriptions:
     /drone/controller_status    [px4_ros_msgs/ControllerStatus]
     /drone/odom                 [nav_msgs/Odometry]   (position_node SoT pose)
-    /drone/marker_detected      [std_msgs/Bool]
-    /drone/marker_offset_body   [geometry_msgs/Vector3Stamped]
+    /drone/marker_detection     [px4_ros_msgs/MarkerDetection]
 Publishers:
     /drone/target_pose      [geometry_msgs/PoseStamped]
     /drone/mission_status   [px4_ros_msgs/MissionStatus]
@@ -20,14 +19,13 @@ import math
 from pathlib import Path
 
 import rclpy
-from geometry_msgs.msg import PoseStamped, Vector3Stamped
+from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
-from px4_ros_msgs.msg import ControllerStatus, MissionStatus
+from px4_ros_msgs.msg import ControllerStatus, MarkerDetection, MissionStatus
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
-from std_msgs.msg import Bool
 from visualization_msgs.msg import Marker, MarkerArray
 
 from ros_px4_template_core.lib.mission.commands import GoTo, Hold
@@ -95,16 +93,9 @@ class MissionManager(Node):
             Odometry, "/drone/odom", self._odom_cb, _RELIABLE_QOS, callback_group=self._sub_group
         )
         self.create_subscription(
-            Bool,
-            "/drone/marker_detected",
-            self._marker_detected_cb,
-            _RELIABLE_QOS,
-            callback_group=self._sub_group,
-        )
-        self.create_subscription(
-            Vector3Stamped,
-            "/drone/marker_offset_body",
-            self._marker_offset_cb,
+            MarkerDetection,
+            "/drone/marker_detection",
+            self._detection_cb,
             _RELIABLE_QOS,
             callback_group=self._sub_group,
         )
@@ -135,13 +126,17 @@ class MissionManager(Node):
         self._have_odom = True
         self._odom_time = self.get_clock().now().nanoseconds / 1e9
 
-    def _marker_detected_cb(self, msg: Bool) -> None:
-        if not msg.data:
+    def _detection_cb(self, msg: MarkerDetection) -> None:
+        if not msg.valid:
             self._marker_offset_body = None
             self._marker_stability = 0
-
-    def _marker_offset_cb(self, msg: Vector3Stamped) -> None:
-        self._marker_offset_body = (float(msg.vector.x), float(msg.vector.y), float(msg.vector.z))
+            return
+        self._marker_id_seen = int(msg.id)
+        self._marker_offset_body = (
+            msg.offset_body_flu.x,
+            msg.offset_body_flu.y,
+            msg.offset_body_flu.z,
+        )
         self._marker_time = self.get_clock().now().nanoseconds / 1e9
         self._marker_stability += 1
 

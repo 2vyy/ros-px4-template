@@ -27,8 +27,7 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 | `/drone/controller_status` | `px4_ros_msgs/msg/ControllerStatus` | pub | `offboard_controller` |
 | `/drone/mission_status` | `px4_ros_msgs/msg/MissionStatus` | pub | `mission_manager` |
 | `/drone/mission_markers` | `visualization_msgs/msg/MarkerArray` | pub | `mission_manager` (RViz waypoint visualization) |
-| `/drone/marker_detected` | `std_msgs/Bool` | pub | `aruco_pose_publisher` |
-| `/drone/marker_offset_body` | `geometry_msgs/Vector3Stamped` | pub | `aruco_pose_publisher` |
+| `/drone/marker_detection` | `px4_ros_msgs/msg/MarkerDetection` | pub | `aruco_pose_publisher` |
 
 ### Subscriptions
 
@@ -40,12 +39,13 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 | `/fmu/out/vehicle_status` | `offboard_controller` |
 | `/drone/target_pose` | `offboard_controller` |
 | `/drone/controller_status` | `mission_manager` |
-| `/drone/marker_offset_body` | `mission_manager` |
+| `/drone/marker_detection` | `mission_manager`, `marker_localizer` |
 
 ## QoS
 
 - PX4 topics (`/fmu/*`): `BEST_EFFORT` reliability, `TRANSIENT_LOCAL` durability, `KEEP_LAST` depth 10. Defined in each node and as `PX4_QOS` in `tests/scenarios/_common.py`.
 - `/drone/odom`: `RELIABLE`. Single source of truth published by `position_node` from PX4's local-position estimate (anchored ENU), in both sim and hardware. `/drone/local_origin`: latched (`TRANSIENT_LOCAL`) effective NED setpoint origin.
+- `/drone/marker_detection`: `RELIABLE`, `KEEP_LAST` depth 10.
 - Other `/drone/*` status and setpoint topics: `RELIABLE`, `KEEP_LAST` depth 10.
 
 ## Adding a topic
