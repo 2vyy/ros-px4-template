@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 import rclpy
 from _common import spin_until, write_report
-from geometry_msgs.msg import PoseStamped, Vector3Stamped
+from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from px4_ros_msgs.msg import MissionStatus
 from rclpy.node import Node
@@ -40,7 +40,6 @@ class _ScenarioNode(Node):
         self.entered_marker_hover = False
         self.mission_done = False
         self.drone_pose: Odometry | None = None
-        self.marker_offset_body: Vector3Stamped | None = None
         self.target_pose: PoseStamped | None = None
 
         # Subscriptions
@@ -49,9 +48,6 @@ class _ScenarioNode(Node):
         )
         self.create_subscription(Odometry, "/drone/odom", self._pose_cb, _RELIABLE_QOS)
         self.create_subscription(PoseStamped, "/drone/target_pose", self._target_cb, _RELIABLE_QOS)
-        self.create_subscription(
-            Vector3Stamped, "/drone/marker_offset_body", self._offset_cb, _RELIABLE_QOS
-        )
 
         # Publishers for synthetic camera data
         self.pub_image = self.create_publisher(Image, "/camera/image_raw", _RELIABLE_QOS)
@@ -71,9 +67,6 @@ class _ScenarioNode(Node):
 
     def _target_cb(self, msg: PoseStamped) -> None:
         self.target_pose = msg
-
-    def _offset_cb(self, msg: Vector3Stamped) -> None:
-        self.marker_offset_body = msg
 
     def _timer_cb(self) -> None:
         if self.drone_pose is None:
