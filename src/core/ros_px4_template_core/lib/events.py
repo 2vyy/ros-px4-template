@@ -1,4 +1,4 @@
-"""Canonical event names used by StructuredLogger.event() and mission_runtime.
+"""Canonical event names used by StructuredLogger.event() and the mission FSM engine.
 
 Centralising these prevents typos and lets tools (status, log-events, e2e-report)
 discover the full taxonomy.
@@ -6,7 +6,7 @@ discover the full taxonomy.
 
 from __future__ import annotations
 
-# Mission phase transitions and milestones (emitted by mission_runtime).
+# Mission phase transitions and milestones (emitted by the mission FSM engine).
 PHASE_CHANGE = "PHASE_CHANGE"
 WAYPOINT_REACHED = "WAYPOINT_REACHED"
 MISSION_DONE = "MISSION_DONE"

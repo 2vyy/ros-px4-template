@@ -10,9 +10,15 @@ from ros_px4_template_core.lib.mission.types import Inputs, Mission, StateDef, T
 
 def _inputs(**kw) -> Inputs:
     base = dict(
-        now=0.0, pose_enu=(0.0, 0.0, 3.0), yaw_enu=0.0,
-        armed=True, altitude_ok=True, estimate_ok=True,
-        detections=(), detection_stability={}, input_ages={"odom": 0.0},
+        now=0.0,
+        pose_enu=(0.0, 0.0, 3.0),
+        yaw_enu=0.0,
+        armed=True,
+        altitude_ok=True,
+        estimate_ok=True,
+        detections=(),
+        detection_stability={},
+        input_ages={"odom": 0.0},
     )
     base.update(kw)
     return Inputs(**base)

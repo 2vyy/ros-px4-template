@@ -13,9 +13,15 @@ from ros_px4_template_core.lib.mission.types import Inputs
 
 def _inputs(**kw) -> Inputs:
     base = dict(
-        now=0.0, pose_enu=(0.0, 0.0, 0.0), yaw_enu=0.0,
-        armed=True, altitude_ok=True, estimate_ok=True,
-        detections=(), detection_stability={}, input_ages={"odom": 0.0},
+        now=0.0,
+        pose_enu=(0.0, 0.0, 0.0),
+        yaw_enu=0.0,
+        armed=True,
+        altitude_ok=True,
+        estimate_ok=True,
+        detections=(),
+        detection_stability={},
+        input_ages={"odom": 0.0},
     )
     base.update(kw)
     return Inputs(**base)
@@ -82,7 +88,11 @@ def test_search_lawnmower_steps_through_legs_then_complete() -> None:
     sl = get_behavior("search_lawnmower")
     scratch: dict = {}
     params = {
-        "spacing_m": 2.0, "legs": 2, "altitude_m": 3.0, "tolerance_m": 0.5, "center": (0.0, 0.0)
+        "spacing_m": 2.0,
+        "legs": 2,
+        "altitude_m": 3.0,
+        "tolerance_m": 0.5,
+        "center": (0.0, 0.0),
     }
     r = sl(scratch, _inputs(now=0.0, pose_enu=(0.0, 0.0, 3.0)), params)
     assert isinstance(r.command, GoTo)

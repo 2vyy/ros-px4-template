@@ -1,0 +1,15 @@
+# Waypoint demo: arm+climb, fly the demo path, then done. Used by 03_waypoint.
+mission:
+  initial: takeoff
+  safety:
+    - {guard: estimate_invalid, to: hold_safe}
+    - {guard: inputs_stale, params: {t: 1.0}, to: hold_safe}
+  states:
+    takeoff:   {behavior: hold, params: {z: 3.0}}
+    follow:    {behavior: follow_waypoints, params: {path_file: config/paths/demo.yaml, hold_s: 2.0, tolerance_m: 0.4}}
+    done:      {behavior: hold}
+    hold_safe: {behavior: hold}
+  transitions:
+    - {from: takeoff, guard: armed_at_altitude, to: follow}
+    - {from: follow,  guard: waypoints_done,    to: done}
+  terminal: [done]

@@ -10,9 +10,15 @@ from ros_px4_template_core.lib.mission.types import Inputs
 
 def _inputs(**kw) -> Inputs:
     base = dict(
-        now=10.0, pose_enu=(0.0, 0.0, 0.0), yaw_enu=0.0,
-        armed=True, altitude_ok=True, estimate_ok=True,
-        detections=(), detection_stability={}, input_ages={"odom": 0.0},
+        now=10.0,
+        pose_enu=(0.0, 0.0, 0.0),
+        yaw_enu=0.0,
+        armed=True,
+        altitude_ok=True,
+        estimate_ok=True,
+        detections=(),
+        detection_stability={},
+        input_ages={"odom": 0.0},
     )
     base.update(kw)
     return Inputs(**base)
@@ -39,19 +45,22 @@ def test_marker_fresh_and_stable_and_lost() -> None:
     assert get_guard("marker_stable")(ins, {}, {"id": 7, "n": 5}) is True
     assert get_guard("marker_stable")(ins, {}, {"id": 7, "n": 10}) is False
     old = Detection(id=7, offset_body_flu=(0.0, 0.0, -3.0), stamp=2.0)
-    assert get_guard("marker_lost")(
-        _inputs(now=10.0, detections=(old,)), {}, {"id": 7, "t": 3.0}
-    ) is True
+    assert (
+        get_guard("marker_lost")(_inputs(now=10.0, detections=(old,)), {}, {"id": 7, "t": 3.0})
+        is True
+    )
     assert get_guard("marker_lost")(ins, {}, {"id": 7, "t": 3.0}) is False
 
 
 def test_safety_guards() -> None:
-    assert get_guard("geofence_breach")(
-        _inputs(pose_enu=(40.0, 30.0, 3.0)), {}, {"radius_m": 50.0}
-    ) is True
-    assert get_guard("geofence_breach")(
-        _inputs(pose_enu=(3.0, 4.0, 3.0)), {}, {"radius_m": 50.0}
-    ) is False
+    assert (
+        get_guard("geofence_breach")(_inputs(pose_enu=(40.0, 30.0, 3.0)), {}, {"radius_m": 50.0})
+        is True
+    )
+    assert (
+        get_guard("geofence_breach")(_inputs(pose_enu=(3.0, 4.0, 3.0)), {}, {"radius_m": 50.0})
+        is False
+    )
     assert get_guard("estimate_invalid")(_inputs(estimate_ok=False), {}, {}) is True
     assert get_guard("estimate_invalid")(_inputs(estimate_ok=True), {}, {}) is False
     assert get_guard("inputs_stale")(_inputs(input_ages={"odom": 2.0}), {}, {"t": 1.0}) is True
