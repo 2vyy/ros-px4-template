@@ -112,8 +112,6 @@ def test_scenario_sim_configs_defaults_when_fields_missing(tmp_path: Path) -> No
 
 
 def _load_from(path: Path) -> dict:
-    try:
-        import tomllib
-    except ModuleNotFoundError:
-        import tomli as tomllib  # type: ignore[no-redef]
+    import tomllib
+
     return tomllib.loads(path.read_text(encoding="utf-8"))

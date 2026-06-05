@@ -3,17 +3,12 @@
 
 from __future__ import annotations
 
+import tomllib
 from datetime import date
 from pathlib import Path
 
-import typer
-
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib  # type: ignore[no-redef]
-
 import tomli_w
+import typer
 
 app = typer.Typer()
 REGISTRY = Path("tests/capabilities.toml")

@@ -15,7 +15,7 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         (f"share/{package_name}", ["package.xml"]),
     ],
-    install_requires=["setuptools", "opencv-python>=4.7.0"],
+    install_requires=["setuptools", "opencv-python-headless>=4.7.0"],
     zip_safe=True,
     maintainer="Developer",
     maintainer_email="dev@example.com",
