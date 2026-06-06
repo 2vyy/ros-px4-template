@@ -12,7 +12,7 @@ from _common import PX4_QOS, spin_until, trigger_auto_arm, trigger_cleanup, writ
 from px4_msgs.msg import VehicleLocalPosition
 from rclpy.node import Node
 from rich.console import Console
-from ros_px4_template_core.lib.frame_transforms import ned_to_enu
+from ros_px4_template_core.lib.frames import ned_to_enu
 
 console = Console()
 _TARGET_Z = 3.0

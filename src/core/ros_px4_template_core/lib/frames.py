@@ -132,9 +132,9 @@ def drone_pose_from_marker(
 
 
 def camera_to_body(
-    tvec_cam: np.ndarray | list[float],
+    tvec_cam: np.ndarray | list[float] | tuple[float, ...],
     cam_ext_r: np.ndarray | list[list[float]],
-    cam_ext_t: np.ndarray | list[float],
+    cam_ext_t: np.ndarray | list[float] | tuple[float, ...],
 ) -> tuple[float, float, float]:
     """Map a point from the camera optical frame to body FLU: ``R_ext @ t + t_ext``.
 

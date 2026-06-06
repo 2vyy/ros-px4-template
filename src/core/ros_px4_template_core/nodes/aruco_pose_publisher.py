@@ -24,7 +24,7 @@ from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo, Image
 
 from ros_px4_template_core.lib.aruco_detector import detect_markers
-from ros_px4_template_core.lib.kinematics import camera_to_body
+from ros_px4_template_core.lib.frames import camera_to_body
 
 _RELIABLE_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,
@@ -96,12 +96,12 @@ class ArucoPosePublisher(Node):
         # Map camera to base_link (assume nadir perfectly aligned)
         cam_ext_t = np.zeros((3, 1))
         cam_ext_r = np.array([[0, -1, 0], [-1, 0, 0], [0, 0, -1]])
-        body_pos, _ = camera_to_body(target.tvec_cam, target.rvec_cam, cam_ext_t, cam_ext_r)
+        offset = camera_to_body(target.tvec_cam, cam_ext_r, cam_ext_t)
         self._publish(
             msg.header.stamp,
             valid=True,
             marker_id=target.marker_id,
-            offset=(float(body_pos[0][0]), float(body_pos[1][0]), float(body_pos[2][0])),
+            offset=offset,
         )
 
 

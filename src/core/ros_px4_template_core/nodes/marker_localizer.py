@@ -23,7 +23,7 @@ from px4_ros_msgs.msg import MarkerDetection
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 
-from ros_px4_template_core.lib.marker_localizer_math import drone_pose_from_marker
+from ros_px4_template_core.lib.frames import drone_pose_from_marker
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 
 _RELIABLE_QOS = QoSProfile(

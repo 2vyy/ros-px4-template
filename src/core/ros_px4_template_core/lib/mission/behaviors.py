@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import math
 
+from ros_px4_template_core.lib.frames import marker_world_from_drone
 from ros_px4_template_core.lib.mission.commands import BehaviorResult, GoTo
-from ros_px4_template_core.lib.mission.detection import Detection, body_flu_to_enu_offset
+from ros_px4_template_core.lib.mission.detection import Detection
 from ros_px4_template_core.lib.mission.registry import behavior
 from ros_px4_template_core.lib.mission.types import Inputs
 
@@ -99,9 +100,7 @@ def center_on_marker(scratch: dict, inputs: Inputs, params: dict) -> BehaviorRes
     hold_s = float(params.get("hold_s", 10.0))
     det = _latest(inputs.detections, tid)
     if det is not None:
-        east, north = body_flu_to_enu_offset(det.offset_body_flu, inputs.yaw_enu)
-        tx = inputs.pose_enu[0] + east
-        ty = inputs.pose_enu[1] + north
+        tx, ty, _ = marker_world_from_drone(inputs.pose_enu, det.offset_body_flu, inputs.yaw_enu)
         scratch["tx"], scratch["ty"] = tx, ty
     else:
         tx = scratch.get("tx", inputs.pose_enu[0])

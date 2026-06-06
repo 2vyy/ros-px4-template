@@ -24,7 +24,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 from ros_px4_template_core.lib import events, offboard_fsm
-from ros_px4_template_core.lib.frame_transforms import enu_setpoint_to_px4_ned
+from ros_px4_template_core.lib.frames import enu_setpoint_to_px4_ned
 from ros_px4_template_core.lib.offboard_fsm import NAV_STATE_OFFBOARD
 from ros_px4_template_core.lib.setpoint_hold import (
     effective_target_setpoint,
