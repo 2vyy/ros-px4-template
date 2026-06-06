@@ -1,59 +1,73 @@
-"""Structured JSONL logging alongside ROS 2 logging."""
+"""Structured logfmt logging to stdout (captured into logs/latest.log by log_capture).
+
+Each call prints exactly one logfmt line and nothing else: no private files and no
+ROS-logger mirror, so a message is emitted once. The capture filter assigns the
+``src=`` tag (from the ros2 launch prefix) and relativizes ``t=``; this module emits
+an absolute ``t=<epoch>`` so event timing survives capture latency.
+"""
 
 from __future__ import annotations
 
-import json
 import time
-from pathlib import Path
 from typing import Any, Protocol
 
 
 class _NodeLike(Protocol):
-    """ROS node surface used by StructuredLogger (no rclpy import in lib/)."""
-
-    def get_name(self) -> str: ...
-
-    def get_logger(self): ...
+    """Minimal ROS node surface used here (no rclpy import in lib/)."""
 
     def get_clock(self): ...
 
 
+def _fmt_value(value: Any) -> str:
+    text = str(value)
+    if text == "" or " " in text or "=" in text or '"' in text:
+        return '"' + text.replace('"', '\\"') + '"'
+    return text
+
+
+def render_logfmt(
+    level: str,
+    key: str,
+    msg: str,
+    sim_t: float | None,
+    fields: dict[str, Any],
+) -> str:
+    """Render one logfmt line: ``t=<epoch> level=.. [sim_t=..] <key>=<msg> k=v ...``."""
+    parts = [f"t={time.time():.3f}", f"level={level}"]
+    if sim_t is not None:
+        parts.append(f"sim_t={sim_t:.3f}")
+    parts.append(f"{key}={_fmt_value(msg)}")
+    parts.extend(f"{k}={_fmt_value(v)}" for k, v in fields.items())
+    return " ".join(parts)
+
+
 class StructuredLogger:
-    """Writes structured JSONL logs for agent-friendly debugging."""
+    """Writes structured logfmt lines to stdout for agent-friendly debugging."""
 
-    def __init__(self, node: _NodeLike, log_dir: str = "./logs") -> None:
+    def __init__(self, node: _NodeLike) -> None:
         self._node = node
-        self._log_dir = Path(log_dir)
-        self._log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = self._log_dir / f"{node.get_name()}.jsonl"
-        self._file = log_path.open("a", encoding="utf-8", buffering=1)
 
-    def _emit(self, level: str, msg: str, **fields: Any) -> None:
-        record = {
-            "ts": time.time(),
-            "ros_ts": self._node.get_clock().now().nanoseconds / 1e9,
-            "node": self._node.get_name(),
-            "level": level,
-            "msg": msg,
-            **fields,
-        }
-        self._file.write(json.dumps(record) + "\n")
+    def _sim_t(self) -> float | None:
+        try:
+            ns = self._node.get_clock().now().nanoseconds
+        except Exception:
+            return None
+        return ns / 1e9 if ns > 0 else None
+
+    def _emit(self, level: str, key: str, msg: str, fields: dict[str, Any]) -> None:
+        print(render_logfmt(level, key, msg, self._sim_t(), fields), flush=True)
 
     def info(self, msg: str, **fields: Any) -> None:
-        self._node.get_logger().info(msg)
-        self._emit("INFO", msg, **fields)
+        self._emit("info", "msg", msg, fields)
 
     def warn(self, msg: str, **fields: Any) -> None:
-        self._node.get_logger().warn(msg)
-        self._emit("WARN", msg, **fields)
+        self._emit("warn", "msg", msg, fields)
 
     def error(self, msg: str, **fields: Any) -> None:
-        self._node.get_logger().error(msg)
-        self._emit("ERROR", msg, **fields)
+        self._emit("error", "msg", msg, fields)
 
     def event(self, event: str, **fields: Any) -> None:
-        """Named moment for agents — JSONL only, no ROS logger line."""
-        self._emit("EVENT", event, **fields)
+        self._emit("info", "event", event, fields)
 
     def close(self) -> None:
-        self._file.close()
+        """Retained no-op: nodes call this from destroy_node()."""

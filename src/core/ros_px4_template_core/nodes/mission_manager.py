@@ -58,7 +58,7 @@ class MissionManager(Node):
         self.declare_parameter("takeoff_altitude_tolerance_m", 0.3)
         self.declare_parameter("marker_id", 0)
 
-        self.slog = StructuredLogger(self, log_dir=str(self.get_parameter("log_dir").value))
+        self.slog = StructuredLogger(self)
         mission_file = str(self.get_parameter("mission_file").value).strip() or _DEFAULT_MISSION
         p = Path(mission_file)
         if not p.is_absolute():

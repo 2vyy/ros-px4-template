@@ -44,7 +44,7 @@ class MarkerLocalizer(Node):
         # (e.g. marker_hover) must NOT relocalize on it: the override would fight the
         # dead-reckoned estimate they hold against. Such missions set enabled=false.
         self.declare_parameter("enabled", True)
-        self.slog = StructuredLogger(self, log_dir=str(self.get_parameter("log_dir").value))
+        self.slog = StructuredLogger(self)
 
         if not bool(self.get_parameter("enabled").value):
             self.slog.info("marker_localizer disabled (relocalization off for this mission)")

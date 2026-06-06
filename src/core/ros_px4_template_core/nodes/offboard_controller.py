@@ -70,13 +70,12 @@ class OffboardController(Node):
         self.declare_parameter("target_pose_timeout_s", 2.0)
         self.declare_parameter("position_ramp_s", 0.0)
 
-        log_dir = str(self.get_parameter("log_dir").value)
         self._target_alt = float(self.get_parameter("target_altitude_m").value)
         self._auto_arm = bool(self.get_parameter("auto_arm").value)
         self._arm_delay_s = float(self.get_parameter("arm_delay_s").value)
         self._target_pose_timeout_s = float(self.get_parameter("target_pose_timeout_s").value)
 
-        self.slog = StructuredLogger(self, log_dir=log_dir)
+        self.slog = StructuredLogger(self)
         self._state = "IDLE"
         self._start_time_ns = self.get_clock().now().nanoseconds
         self._setpoints_sent = 0

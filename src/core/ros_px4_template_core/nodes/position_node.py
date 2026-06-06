@@ -86,7 +86,7 @@ class PositionNode(Node):
         self._child_frame_id = str(self.get_parameter("child_frame_id").value)
         self._override_timeout_s = float(self.get_parameter("override_timeout_s").value)
         self._override_max_jump_m = float(self.get_parameter("override_max_jump_m").value)
-        self.slog = StructuredLogger(self, log_dir=str(self.get_parameter("log_dir").value))
+        self.slog = StructuredLogger(self)
 
         self._frame = Px4LocalFrame()
         self._have_pose = False
