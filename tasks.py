@@ -516,8 +516,8 @@ def sim(
             _build_workspace()
 
         LOG_DIR.mkdir(parents=True, exist_ok=True)
-        log_file = LOG_DIR / f"sim_{datetime.now().strftime('%Y%m%dT%H%M%S')}.log"
-        print(f"Starting headless simulation in background (log: {log_file})...")
+        latest = LOG_DIR / "latest.log"
+        print(f"Starting headless simulation in background (-> {latest})...")
 
         gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
         vision_arg = "aruco" if vision.lower() in ("true", "aruco") else "none"
@@ -538,21 +538,20 @@ def sim(
         )
 
         try:
-            with Path(log_file).open("w", encoding="utf-8") as out:
-                proc = subprocess.Popen(
-                    _ros2_launch_bash_argv(launch_args),
-                    env=env,
-                    stdout=out,
-                    stderr=subprocess.STDOUT,
-                    preexec_fn=os.setsid,
-                    cwd=str(ROOT),
-                )
+            proc = subprocess.Popen(
+                _ros2_launch_capture_argv(launch_args, latest, append=False),
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+                preexec_fn=os.setsid,
+                cwd=str(ROOT),
+            )
 
             pidfile.write_text(str(proc.pid))
             status = {
                 "started": True,
                 "pid": proc.pid,
-                "log": str(log_file),
+                "log": str(latest),
                 "pidfile": str(pidfile),
             }
             print(json.dumps(status))

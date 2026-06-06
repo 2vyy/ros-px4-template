@@ -40,9 +40,11 @@ def parse_logfmt(line: str) -> dict[str, Any]:
 def _infer_run_id(log_dir: Path) -> str:
     if rid := os.environ.get("LOG_RUN_ID"):
         return rid
-    sims = sorted(log_dir.glob("sim_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if sims:
-        return sims[0].name.removeprefix("sim_").removesuffix(".log")
+    latest = log_dir / "latest.log"
+    if latest.exists():
+        from datetime import UTC, datetime
+
+        return datetime.fromtimestamp(latest.stat().st_mtime, tz=UTC).strftime("%Y%m%dT%H%M%S")
     return "unknown"
 
 
