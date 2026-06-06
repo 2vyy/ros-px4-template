@@ -38,7 +38,7 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | Simulation & Run | `just sim [mode]` | Automatically builds workspace first. Modes: `headless` (default), `gui`, `bg` (blocks until ready), `stop`, `kill` |
 | Real Hardware | `just hw` | Connects to hardware serial flight controller |
 | Verification suite | `just test [type]` / `just scenario <name>` | Automatically builds workspace first. Types: `unit`, `e2e` |
-| Forensic toolkit | `just log [subcmd]` | Observability helper: `merge`, `tail`, `topics` |
+| Forensic toolkit | `just log [subcmd]` | Observability helper: `summary`, `tail`, `topics` |
 | Capabilities | `just cap [subcmd]` | Exposes verified capabilities: `show`, `mark` |
 
 `just check` runs lint, invariants, typecheck, and unit tests in that order. Run this before every commit.
@@ -93,11 +93,13 @@ Capability registry: `tests/capabilities.toml`. `just cap show` shows status. Af
 
 ## Logs (Agent Query Workflow)
 
-Each node writes structured JSONL to `logs/<node>.jsonl`. After a run, the merge step (`just log merge`) compresses high-frequency telemetry into `logs/latest.log` (human-readable with relative timestamps) and `logs/latest_summary.json` (machine-readable summary JSON). Both are small enough to read directly.
+All processes (our nodes plus PX4 / Gazebo / XRCE) stream to one session log, `logs/latest.log`, in logfmt: every line is `t=<rel_s> src=<source> ...`. There are no per-node `*.jsonl` files and no `jq` step.
 
-1. **Search**: Run `rg PHASE_CHANGE logs/latest.log`, `rg ERROR logs/latest.log`, or `rg -C 10 "\[\s*42\." logs/latest.log` to search around relative time t=42. The merge step already removed telemetry noise.
-2. **Node Raw Data**: Use standard Unix tools: `tail -n 50 logs/mission_manager.jsonl | jq -c 'del(.ros_ts)'`.
-3. **Live tail**: Run `just log tail` to watch structured logs live.
+1. **Grep it directly**: `rg src=px4 logs/latest.log` (one source), `rg event= logs/latest.log` (state transitions), `rg ERROR logs/latest.log`, `rg -C 5 "t=42\." logs/latest.log` (everything around t=42). Field extraction needs no tool: `rg event=WAYPOINT_REACHED logs/latest.log | grep -o "err_m=[0-9.]*"`.
+2. **Arc summary**: `just log summary` (re)generates and prints `logs/latest_summary.json` (run arc, errors, per-scenario pass/fail). E2E prints it automatically at the end.
+3. **Live tail**: `just log tail` follows `logs/latest.log`.
+
+Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing else is filtered, so a smoking gun is never hidden.
 
 ## MCP / rosbridge
 
