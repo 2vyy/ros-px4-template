@@ -143,10 +143,35 @@ def _ros2_launch_bash_argv(launch_args: list[str], *, cwd: Path = ROOT) -> list[
     return ["bash", "-lc", inner]
 
 
+def _ros2_launch_capture_argv(
+    launch_args: list[str], out_file: Path, *, append: bool, cwd: Path = ROOT
+) -> list[str]:
+    """``bash -lc`` that sources ROS, then pipes ``ros2 launch`` stdout through the
+    live capture filter into ``out_file`` (logfmt session log). Not ``exec`` because
+    a pipeline cannot be exec'd; the whole pipeline lives in the caller's setsid group.
+    """
+    ros_setup = _ros_setup_path()
+    ws_setup = cwd / "install" / "setup.bash"
+    sources = [f"source {shlex.quote(ros_setup)}"]
+    if ws_setup.exists():
+        sources.append(f"source {shlex.quote(str(ws_setup))}")
+    redirect = ">>" if append else ">"
+    launch = "ros2 launch " + " ".join(shlex.quote(a) for a in launch_args)
+    capture = "uv run python tools/log_capture.py"
+    inner = " && ".join(
+        [
+            *sources,
+            f"cd {shlex.quote(str(cwd))}",
+            f"{launch} 2>&1 | {capture} {redirect} {shlex.quote(str(out_file))}",
+        ]
+    )
+    return ["bash", "-lc", inner]
+
+
 # Ensure tools/ is on path to import sub-apps
 sys.path.append(str(ROOT / "tools"))
 from capabilities import app as cap_app, scenario_sim_configs
-from log_merger import run_merge
+from log_summary import build_run_summary
 from log_query import app as log_app
 
 # Register sub-apps
@@ -154,17 +179,15 @@ app.add_typer(log_app, name="log", help="Query, merge, tail, or view logs/status
 app.add_typer(cap_app, name="cap", help="Manage verified capabilities registry.")
 
 
-def _merge_logs_silent() -> None:
-    """Merge per-node JSONL logs after a run; non-fatal if log dir is empty or missing."""
+def _summarize_logs_silent() -> None:
+    """Regenerate latest_summary.json from latest.log; non-fatal if absent."""
     try:
-        run_merge(
-            log_dir=LOG_DIR,
-            output_log=LOG_DIR / "latest.log",
-            output_jsonl=LOG_DIR / "latest.jsonl",
-            summary=LOG_DIR / "latest_summary.json",
+        summary = build_run_summary(LOG_DIR / "latest.log")
+        (LOG_DIR / "latest_summary.json").write_text(
+            json.dumps(summary, indent=2) + "\n", encoding="utf-8"
         )
     except Exception as e:
-        print(f"Warning: log merge skipped: {e}", file=sys.stderr)
+        print(f"Warning: log summary skipped: {e}", file=sys.stderr)
 
 
 def _resolve_scenario_script(name: str) -> Path:
@@ -582,12 +605,11 @@ def sim(
     )
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    log_file = LOG_DIR / f"sim_{datetime.now().strftime('%Y%m%dT%H%M%S')}.log"
 
     try:
-        argv = _ros2_launch_bash_argv(launch_args)
-        shell_cmd = " ".join(shlex.quote(a) for a in argv) + f" 2>&1 | tee {shlex.quote(str(log_file))}"
-        subprocess.run(shell_cmd, shell=True, env=env, cwd=str(ROOT), check=True)
+        argv = _ros2_launch_capture_argv(launch_args, LOG_DIR / "latest.log", append=False)
+        inner = argv[2] + f" ; cat {shlex.quote(str(LOG_DIR / 'latest.log'))}"
+        subprocess.run(["bash", "-lc", inner], env=env, cwd=str(ROOT), check=True)
     except KeyboardInterrupt:
         print("Simulation stopped by user.")
     except subprocess.CalledProcessError:
@@ -643,10 +665,12 @@ def _run_e2e_sim_group(
     every scenario in the group as failed).
     """
     pidfile = LOG_DIR / "sim.pid"
-    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-    log_file = LOG_DIR / f"sim_{overlay}_{vision}_{stamp}.log"
-    print(f"\n=== Sim group: vision={vision} overlay={overlay} ({', '.join(scenarios)}) ===")
-    print(f"Starting background headless simulation (log: {log_file.name})...")
+    latest = LOG_DIR / "latest.log"
+    banner = f"=== Sim group: vision={vision} overlay={overlay} ({', '.join(scenarios)}) ==="
+    with latest.open("a", encoding="utf-8") as fh:
+        fh.write(banner + "\n")
+    print(f"\n{banner}")
+    print("Starting background headless simulation (-> logs/latest.log)...")
 
     launch_args = [
         str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
@@ -664,9 +688,9 @@ def _run_e2e_sim_group(
     )
 
     proc = subprocess.Popen(
-        _ros2_launch_bash_argv(launch_args),
+        _ros2_launch_capture_argv(launch_args, latest, append=True),
         env=env,
-        stdout=log_file.open("w", encoding="utf-8"),
+        stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
         preexec_fn=os.setsid,
         cwd=str(ROOT),
@@ -783,6 +807,7 @@ def test(
 
         try:
             fails = 0
+            (LOG_DIR / "latest.log").write_text("", encoding="utf-8")
             group_items = list(groups.items())
             for idx, ((vision, overlay), scenarios) in enumerate(group_items):
                 is_last = idx == len(group_items) - 1
@@ -794,28 +819,8 @@ def test(
                     audit_topics=is_last,
                 )
 
-            print("Merging execution logs...")
-            try:
-                subprocess.run(
-                    [
-                        "uv",
-                        "run",
-                        "python",
-                        "tools/log_merger.py",
-                        "--log-dir",
-                        str(LOG_DIR),
-                        "--output-log",
-                        str(LOG_DIR / "latest.log"),
-                        "--output-jsonl",
-                        str(LOG_DIR / "latest.jsonl"),
-                        "--summary",
-                        str(LOG_DIR / "latest_summary.json"),
-                    ],
-                    check=True,
-                    cwd=str(ROOT),
-                )
-            except Exception as e:
-                print(f"Failed to merge logs: {e}")
+            print("Summarizing execution log...")
+            _summarize_logs_silent()
 
             print("Generating E2E Report...")
             subprocess.run(["uv", "run", "python", "tools/e2e_report.py"], cwd=str(ROOT))
@@ -849,7 +854,7 @@ def scenario(
         )
         passed = result.returncode == 0
     finally:
-        _merge_logs_silent()
+        _summarize_logs_silent()
     if not passed:
         raise typer.Exit(1)
 
