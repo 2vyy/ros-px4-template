@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 
-from log_capture import Capturer, split_prefix  # noqa: E402
+from log_capture import Capturer, split_prefix
 
 
 def test_split_prefix_node() -> None:

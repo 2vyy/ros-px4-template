@@ -7,11 +7,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 
-from log_summary import build_run_summary, parse_logfmt  # noqa: E402
+from log_summary import build_run_summary, parse_logfmt
 
 
 def test_parse_logfmt_basic() -> None:
-    rec = parse_logfmt('t=2.50 src=mission level=info event=PHASE_CHANGE phase=hover')
+    rec = parse_logfmt("t=2.50 src=mission level=info event=PHASE_CHANGE phase=hover")
     assert rec == {
         "t": 2.5,
         "src": "mission",
