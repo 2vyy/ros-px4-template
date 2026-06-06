@@ -1,8 +1,7 @@
-"""Detector-agnostic metric detection + body→ENU offset helper."""
+"""Detector-agnostic metric detection."""
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 
@@ -19,15 +18,3 @@ class Detection:
     offset_body_flu: tuple[float, float, float]
     stamp: float
     pose_world: tuple[float, float, float] | None = None
-
-
-def body_flu_to_enu_offset(
-    offset_body_flu: tuple[float, float, float], yaw_enu: float
-) -> tuple[float, float]:
-    """Rotate a body-FLU horizontal offset into world ENU using the drone yaw."""
-    forward, left, _up = offset_body_flu
-    cos_y = math.cos(yaw_enu)
-    sin_y = math.sin(yaw_enu)
-    east = forward * cos_y - left * sin_y
-    north = forward * sin_y + left * cos_y
-    return (east, north)

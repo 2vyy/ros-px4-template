@@ -6,9 +6,9 @@ import math
 
 import pytest
 from ros_px4_template_core.lib import mission as mission_pkg  # noqa: F401 (populates registry)
+from ros_px4_template_core.lib.frames import body_flu_to_enu_offset
 from ros_px4_template_core.lib.mission import registry
 from ros_px4_template_core.lib.mission.commands import BehaviorResult, GoTo, Hold
-from ros_px4_template_core.lib.mission.detection import body_flu_to_enu_offset
 
 
 def test_goto_is_frozen() -> None:

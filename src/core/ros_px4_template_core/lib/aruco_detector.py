@@ -16,7 +16,6 @@ class MarkerDetection:
     marker_id: int
     center_x_px: float
     center_y_px: float
-    rvec_cam: np.ndarray
     tvec_cam: np.ndarray
 
 
@@ -55,7 +54,7 @@ def detect_markers(
     for corner, marker_id in zip(corners, ids, strict=True):
         # cv2.SOLVEPNP_IPPE_SQUARE is mathematically optimized for flat squares
         # and drastically reduces pose flip ambiguity/rotational jitter over ITERATIVE.
-        ok, rvec, tvec = cv2.solvePnP(
+        ok, _rvec, tvec = cv2.solvePnP(
             obj_pts, corner[0], camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_IPPE_SQUARE
         )
         if not ok:
@@ -68,7 +67,6 @@ def detect_markers(
                 marker_id=int(marker_id[0]),
                 center_x_px=cx,
                 center_y_px=cy,
-                rvec_cam=rvec,
                 tvec_cam=tvec,
             )
         )
