@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Query toolkit for agent-friendly log introspection."""
+"""Agent-facing log subcommands: summarize and tail the session log."""
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import typer
@@ -11,38 +12,24 @@ app = typer.Typer()
 
 
 @app.command()
-def merge(
-    log_dir: Path = typer.Option(Path("./logs"), "--log-dir"),
-    output_log: Path = typer.Option(Path("./logs/latest.log"), "--output-log"),
-    output_jsonl: Path = typer.Option(Path("./logs/latest.jsonl"), "--output-jsonl"),
-    summary: Path = typer.Option(Path("./logs/latest_summary.json"), "--summary"),
+def summary(
+    log: Path = typer.Option(Path("./logs/latest.log"), "--log"),
+    out: Path = typer.Option(Path("./logs/latest_summary.json"), "--out"),
     run_id: str | None = typer.Option(None, "--run-id"),
-    no_dedup: bool = typer.Option(False, "--no-dedup", help="Keep all raw lines in merged output"),
-    collapse_min: int = typer.Option(4, "--collapse-min", help="Min repeats to collapse"),
-):
-    """Merge per-node JSONL logs, deduplicate repeats, write run summary."""
-    from log_merger import main as merge_main
+) -> None:
+    """(Re)generate logs/latest_summary.json from logs/latest.log and print it."""
+    from log_summary import main as summary_main
 
-    merge_main(
-        log_dir=log_dir,
-        output_log=output_log,
-        output_jsonl=output_jsonl,
-        summary=summary,
-        run_id=run_id,
-        no_dedup=no_dedup,
-        collapse_min=collapse_min,
-    )
+    summary_main(log=log, out=out, run_id=run_id)
 
 
 @app.command()
-def tail(
-    log_dir: Path = typer.Option(Path("./logs"), "--log-dir"),
-    poll_s: float = typer.Option(0.25, "--poll-s"),
-):
-    """Follow live per-node JSONL logs and pretty-print new lines."""
-    from log_watch import main as watch_main
-
-    watch_main(log_dir=log_dir, poll_s=poll_s)
+def tail(log: Path = typer.Option(Path("./logs/latest.log"), "--log")) -> None:
+    """Follow the live session log (logfmt is already readable)."""
+    if not log.exists():
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.touch()
+    subprocess.run(["tail", "-f", str(log)], check=False)
 
 
 if __name__ == "__main__":
