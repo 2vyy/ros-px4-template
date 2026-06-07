@@ -79,17 +79,40 @@ async def spin_until(
         executor.remove_node(node)
 
 
+def scenario_verdict_line(name: str, passed: bool, elapsed_s: float, detail: dict) -> str:
+    """One rich English line stating what the scenario actually verified.
+
+    Kept local to the scenario harness (this module has no tools/ on its path);
+    mirrors tools/cli_verdict.format_scenario by design.
+    """
+    items = [f"{k}={v}" for k, v in detail.items() if k != "reason"]
+    if passed:
+        summary = ", ".join(items) if items else "ok"
+    else:
+        reason = detail.get("reason", "failed")
+        summary = f"{reason}" + (f" ({', '.join(items)})" if items else "")
+    tag = "PASS" if passed else "FAIL"
+    return f"{tag} {name:<20} {summary:<48} {elapsed_s:>6.1f}s"
+
+
 def write_report(name: str, passed: bool, elapsed_s: float, detail: dict | None = None) -> None:
-    """Write a machine-readable JSON report to logs/scenario_<name>.json."""
+    """Write the machine-readable JSON report AND print the rich verdict line.
+
+    The JSON file (logs/scenario_<name>.json) is the durable artifact; the
+    printed line is the truthful, human/agent-readable verdict surfaced live
+    by the scenario/e2e runner.
+    """
+    detail = detail or {}
     _LOG_DIR.mkdir(parents=True, exist_ok=True)
     report = {
         "scenario": name,
         "passed": passed,
         "elapsed_s": round(elapsed_s, 2),
-        "detail": detail or {},
+        "detail": detail,
     }
     out = _LOG_DIR / f"scenario_{name}.json"
     out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(scenario_verdict_line(name, passed, round(elapsed_s, 2), detail), flush=True)
 
 
 class Scenario(abc.ABC):
