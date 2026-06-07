@@ -1,119 +1,160 @@
 #!/usr/bin/env python3
-"""Violent sim teardown — SIGKILL everything, no grace period."""
+"""Exhaustive cold sim teardown — SIGKILL everything, verify no survivor.
+
+Importable: ``teardown()`` returns a result dict the CLI formats into a verdict.
+Also runnable as a script (``main()``) for any remaining subprocess callers.
+There is no warm/keep-Gazebo path: teardown is always fully cold.
+"""
 
 from __future__ import annotations
 
 import glob
 import os
+import re
 import signal
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
 from pathlib import Path
 
 _PIDFILE = Path(os.environ.get("SIM_PIDFILE", "logs/sim.pid"))
 
-_PATTERNS = [
-    r"ros2 launch.*sim_full",
-    r"sim/launch/sim_full\.launch\.py",
-    r"hardware/launch/hardware\.launch\.py",
-    r"gz_px4_stack",
-    r"/bin/px4$",
-    r"parameter_bridge",
-    r"MicroXRCEAgent",
-    r"rosbridge_websocket",
-    r"gcs_heartbeat",
-    r"wait_ready",
-    r"e2e_sim_test",
-    r"install/ros_px4_template_core/lib/ros_px4_template_core/",
-    r"ruby.*ros",
-    r"ruby.*gz",
-    r"ruby.*sim",
-    r"component_container",
-    r"tests/scenarios/",
-    r"scratch/",
-    r"pose_monitor",
-    r"debug_setpoints",
-    r"offboard_controller",
-    r"mission_manager",
-    r"position_node",
-    r"aruco_pose_publisher",
-    r"ros_gz_bridge",
-    r"pytest",
-    r"ros2 run",
-    r"ros2 topic",
-    r"ros2 service",
-    r"ros2 node",
-    r"ros2 param",
-    r"ros2 action",
-    r"ros2 daemon",
-    r"gz sim",
-    r"gz server",
-    r"gzserver",
-    r"gz client",
-    r"gzclient",
-    r"gz-sim-server",
-    r"gz-sim-gui",
-]
+# Matching is deliberately precise. A false positive here is catastrophic: this
+# code runs INSIDE distrobox in normal use, where /proc may expose host processes
+# (the podman/distrobox wrapper, the terminal, the agent itself). Killing one of
+# those wedges the very session we are trying to keep healthy. So we match only
+# (a) exact executable basenames of our stack, or (b) specific script-path
+# fragments, and we NEVER touch an infrastructure process regardless of what its
+# command line happens to contain (e.g. a wrapper bash whose argv includes the
+# repo path "ros-px4-template" or "tests/scenarios/...").
 
-_EXACT_NAMES = [
+# Killed when the process's argv[0] basename matches exactly.
+_EXACT_BASENAMES: set[str] = {
     "px4",
     "MicroXRCEAgent",
+    "gz",
+    "gzserver",
+    "gzclient",
+    "gz-sim-server",
+    "gz-sim-gui",
     "parameter_bridge",
     "ros_gz_bridge",
     "component_container",
     "component_container_mt",
     "rosbridge_websocket",
     "rosapi_node",
-    "zenoh",
-    "zenoh-bridge-dds",
-    "gz-sim-server",
-    "gz-sim-gui",
-    "gzserver",
-    "gzclient",
-    "gz",
+}
+
+# Killed when the full command line contains one of these specific fragments
+# (covers interpreter-hosted scripts and compiled node entry points). Each label
+# is the short name reported in the verdict.
+_CMDLINE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"sim_full\.launch\.py"), "sim_launch"),
+    (re.compile(r"hardware\.launch\.py"), "hw_launch"),
+    (re.compile(r"gz_px4_stack"), "gz_px4_stack"),
+    (re.compile(r"gcs_heartbeat"), "gcs_heartbeat"),
+    (re.compile(r"wait_ready"), "wait_ready"),
+    (re.compile(r"ruby.*\b(?:gz|sim)\b"), "gz_ruby"),
+    (re.compile(r"tests/scenarios/"), "scenario"),
+    (re.compile(r"install/ros_px4_template_core/lib/ros_px4_template_core/"), "node"),
 ]
 
-_MY_PID = os.getpid()
+# Never killed, no matter what their command line contains. Protects the
+# container runtime, shells, terminal, and init so teardown cannot end the
+# agent's own distrobox session. Interpreters (python/ruby) are intentionally
+# absent: an interpreter is only ever killed via a specific _CMDLINE_PATTERNS
+# fragment, never on its bare name.
+_NEVER_BASENAMES: set[str] = {
+    "bash",
+    "sh",
+    "zsh",
+    "fish",
+    "dash",
+    "login",
+    "podman",
+    "conmon",
+    "distrobox",
+    "distrobox-host-exec",
+    "docker",
+    "containerd",
+    "runc",
+    "crun",
+    "systemd",
+    "init",
+    "sshd",
+    "foot",
+    "tmux",
+    "screen",
+}
 
 
-def _get_ancestor_pids() -> set[int]:
+def _match_label(cmd: str) -> str | None:
+    """Return the short kill-label if ``cmd`` is one of our stack processes, else
+    None. Infrastructure basenames are never matched."""
+    argv = cmd.split()
+    if not argv:
+        return None
+    base = os.path.basename(argv[0])
+    if base in _NEVER_BASENAMES:
+        return None
+    if base in _EXACT_BASENAMES:
+        return base
+    for rx, label in _CMDLINE_PATTERNS:
+        if rx.search(cmd):
+            return label
+    return None
+
+
+def _proc_table() -> list[tuple[int, str]]:
+    """Default process lister: (pid, cmdline) for every readable /proc entry."""
+    out: list[tuple[int, str]] = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        try:
+            raw = (entry / "cmdline").read_bytes()
+        except OSError:
+            continue
+        cmd = raw.replace(b"\x00", b" ").decode("utf-8", "replace").strip()
+        if cmd:
+            out.append((pid, cmd))
+    return out
+
+
+def _ancestor_pids() -> set[int]:
+    """PIDs of self + ancestors, so we never kill the teardown process itself."""
     pids = {os.getpid()}
+    pid = os.getpid()
     try:
-        pid = os.getpid()
         while True:
-            stat_path = Path(f"/proc/{pid}/stat")
-            if not stat_path.exists():
-                break
-            parts = stat_path.read_text().split()
+            parts = Path(f"/proc/{pid}/stat").read_text().split()
             ppid = int(parts[3])
             if ppid <= 0 or ppid in pids:
                 break
             pids.add(ppid)
             pid = ppid
     except Exception:
-        try:
-            pids.add(os.getppid())
-        except Exception:
-            pass
+        pids.add(os.getppid())
     return pids
 
 
-def _find_pids(pattern: str, ancestor_pids: set[int]) -> list[int]:
-    try:
-        r = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True)
-        return [int(p) for p in r.stdout.split() if p.isdigit() and int(p) not in ancestor_pids]
-    except Exception:
-        return []
-
-
-def _find_pids_by_name(name: str, ancestor_pids: set[int]) -> list[int]:
-    try:
-        r = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True)
-        return [int(p) for p in r.stdout.split() if p.isdigit() and int(p) not in ancestor_pids]
-    except Exception:
-        return []
+def scan_survivors(
+    lister: Callable[[], list[tuple[int, str]]] | None = None,
+) -> list[tuple[int, str]]:
+    """Return (pid, cmdline) for every live process matching a straggler pattern,
+    excluding this process and its ancestors. ``lister`` is injectable for tests.
+    """
+    table = (lister or _proc_table)()
+    ancestors = _ancestor_pids()
+    hits: list[tuple[int, str]] = []
+    for pid, cmd in table:
+        if pid in ancestors:
+            continue
+        if _match_label(cmd) is not None:
+            hits.append((pid, cmd))
+    return hits
 
 
 def _sigkill(pid: int) -> None:
@@ -123,18 +164,8 @@ def _sigkill(pid: int) -> None:
         pass
 
 
-def _all_live_pids(ancestor_pids: set[int]) -> set[int]:
-    found: set[int] = set()
-    with ThreadPoolExecutor(max_workers=max(1, len(_PATTERNS))) as ex:
-        for pids in ex.map(lambda p: _find_pids(p, ancestor_pids), _PATTERNS):
-            found.update(pids)
-    with ThreadPoolExecutor(max_workers=max(1, len(_EXACT_NAMES))) as ex:
-        for pids in ex.map(lambda n: _find_pids_by_name(n, ancestor_pids), _EXACT_NAMES):
-            found.update(pids)
-    return found
-
-
 def _kill_pidfile_group() -> int | None:
+    """SIGKILL the recorded setsid process group, if any. Returns the pgid hit."""
     if not _PIDFILE.exists():
         return None
     try:
@@ -156,18 +187,14 @@ def _kill_pidfile_group() -> int | None:
 
 def _clean_artifacts() -> None:
     for i in range(4):
-        for p in [Path(f"/tmp/px4_lock-{i}"), Path(f"/tmp/px4-sock-{i}")]:
+        for p in (Path(f"/tmp/px4_lock-{i}"), Path(f"/tmp/px4-sock-{i}")):
             p.unlink(missing_ok=True)
-    for p in glob.glob("/tmp/launch_params_*"):
-        try:
-            Path(p).unlink(missing_ok=True)
-        except OSError:
-            pass
-    for p in glob.glob("/dev/shm/fastrtps_*"):
-        try:
-            Path(p).unlink(missing_ok=True)
-        except OSError:
-            pass
+    for pat in ("/tmp/launch_params_*", "/dev/shm/fastrtps_*"):
+        for p in glob.glob(pat):
+            try:
+                Path(p).unlink(missing_ok=True)
+            except OSError:
+                pass
     Path("/tmp/gcs_params_flag").unlink(missing_ok=True)
 
 
@@ -178,51 +205,50 @@ def _stop_ros2_daemon() -> None:
         pass
 
 
-def _proc_name(pid: int) -> str:
-    try:
-        return Path(f"/proc/{pid}/comm").read_text().strip()
-    except OSError:
-        return "?"
+def _short_name(cmd: str) -> str:
+    """A short label for a command line, for the verdict (e.g. 'px4', 'node')."""
+    label = _match_label(cmd)
+    if label is not None:
+        return label
+    argv = cmd.split()
+    return os.path.basename(argv[0])[:24] if argv else "?"
 
 
-def main() -> None:
-    ancestor_pids = _get_ancestor_pids()
-
-    with ThreadPoolExecutor(max_workers=3) as ex:
-        pgid_future = ex.submit(_kill_pidfile_group)
-        initial_future = ex.submit(_all_live_pids, ancestor_pids)
-        ex.submit(_clean_artifacts)
-
-    pgid_hit = pgid_future.result()
-    initial = initial_future.result()
-    names: dict[int, str] = {pid: _proc_name(pid) for pid in initial}
-
-    with ThreadPoolExecutor(max_workers=16) as ex:
-        ex.map(_sigkill, initial)
-
-    if initial or pgid_hit is not None:
+def teardown() -> dict:
+    """Exhaustive cold teardown. Returns ``{"killed": [...], "survivors": [...]}``
+    (lists of short process labels). Never raises.
+    """
+    _kill_pidfile_group()
+    initial = scan_survivors()
+    for pid, _ in initial:
+        _sigkill(pid)
+    if initial:
         time.sleep(0.4)
 
-    survivors = _all_live_pids(ancestor_pids)
-    if survivors:
-        names.update({pid: _proc_name(pid) for pid in survivors - initial})
-        with ThreadPoolExecutor(max_workers=16) as ex:
-            ex.map(_sigkill, survivors)
+    mid = scan_survivors()
+    for pid, _ in mid:
+        _sigkill(pid)
+    if mid:
         time.sleep(0.3)
 
     _stop_ros2_daemon()
+    _clean_artifacts()
 
-    remaining = _all_live_pids(ancestor_pids)
-    killed = sorted((initial | survivors) - remaining)
+    final = scan_survivors()
+    final_pids = {pid for pid, _ in final}
+    killed = sorted({_short_name(cmd) for pid, cmd in initial if pid not in final_pids})
+    survivors = sorted({_short_name(cmd) for _, cmd in final})
+    return {"killed": killed, "survivors": survivors}
 
-    if killed:
-        col = max(len(names.get(p, "?")) for p in killed)
-        for pid in killed:
-            print(f"{names.get(pid, '?'):<{col}}  {pid}")
+
+def main() -> None:
+    result = teardown()
+    if result["killed"]:
+        for name in result["killed"]:
+            print(name)
     else:
         print("nothing to kill")
-
-    sys.exit(0 if not remaining else 1)
+    sys.exit(0 if not result["survivors"] else 1)
 
 
 if __name__ == "__main__":
