@@ -165,13 +165,15 @@ def _ros2_launch_capture_argv(
             f"{launch} 2>&1 | {capture} {redirect} {shlex.quote(str(out_file))}",
         ]
     )
-    return ["bash", "-lc", inner]
+    return ["bash", "-lc", "set -o pipefail; " + inner]
 
 
 # Ensure tools/ is on path to import sub-apps
 sys.path.append(str(ROOT / "tools"))
 from capabilities import app as cap_app, scenario_sim_configs
 from log_summary import build_run_summary
+from cli_verdict import format_stopped
+import sim_cleanup
 from log_query import app as log_app
 
 # Register sub-apps
@@ -188,6 +190,32 @@ def _summarize_logs_silent() -> None:
         )
     except Exception as e:
         print(f"Warning: log summary skipped: {e}", file=sys.stderr)
+
+
+def _teardown() -> bool:
+    """Exhaustive cold teardown of the whole stack. Prints a STOPPED verdict.
+
+    Returns True if nothing survived. Used by `stop`, by failed launches, and at
+    every e2e group boundary.
+    """
+    result = sim_cleanup.teardown()
+    print(format_stopped(result["killed"], result["survivors"]))
+    return not result["survivors"]
+
+
+def _spawn_stack(launch_args: list[str], env: dict[str, str], *, append: bool) -> "subprocess.Popen[bytes]":
+    """Spawn a detached, captured ros2 launch into logs/latest.log. One launch path
+    for sim, hw, and e2e groups. Caller owns readiness checking and teardown.
+    """
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    return subprocess.Popen(
+        _ros2_launch_capture_argv(launch_args, LOG_DIR / "latest.log", append=append),
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+        preexec_fn=os.setsid,
+        cwd=str(ROOT),
+    )
 
 
 def _resolve_scenario_script(name: str) -> Path:
@@ -451,7 +479,7 @@ def sim(
         overlay_args.append("param_overlay:=auto_arm")
 
     if mode == "stop":
-        subprocess.run(["uv", "run", "python", "tools/sim_cleanup.py"], cwd=str(ROOT))
+        _teardown()
         return
 
     if mode == "hardware":
@@ -508,7 +536,7 @@ def sim(
                 pid = int(pidfile.read_text().strip())
                 os.kill(pid, 0)
                 print(f"Simulation already running (PID {pid}). Stopping it first for idempotency...")
-                subprocess.run(["uv", "run", "python", "tools/sim_cleanup.py"], cwd=str(ROOT))
+                _teardown()
             except (ProcessLookupError, ValueError):
                 pass
 
@@ -538,14 +566,7 @@ def sim(
         )
 
         try:
-            proc = subprocess.Popen(
-                _ros2_launch_capture_argv(launch_args, latest, append=False),
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.STDOUT,
-                preexec_fn=os.setsid,
-                cwd=str(ROOT),
-            )
+            proc = _spawn_stack(launch_args, env, append=False)
 
             pidfile.write_text(str(proc.pid))
             status = {
@@ -566,7 +587,7 @@ def sim(
             except subprocess.CalledProcessError:
                 print("Simulation failed to stabilize or timed out.", file=sys.stderr)
                 # Kill background process cleanly on failure so we don't leak processes
-                subprocess.run(["uv", "run", "python", "tools/sim_cleanup.py"], cwd=str(ROOT))
+                _teardown()
                 raise typer.Exit(1) from None
         except Exception as e:
             print(f"Failed to start background simulation: {e}", file=sys.stderr)
@@ -686,14 +707,7 @@ def _run_e2e_sim_group(
         HEADLESS="1",
     )
 
-    proc = subprocess.Popen(
-        _ros2_launch_capture_argv(launch_args, latest, append=True),
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-        preexec_fn=os.setsid,
-        cwd=str(ROOT),
-    )
+    proc = _spawn_stack(launch_args, env, append=True)
     pidfile.write_text(str(proc.pid))
 
     fails = 0
@@ -729,7 +743,7 @@ def _run_e2e_sim_group(
             )
     finally:
         print(f"Tearing down sim group (vision={vision} overlay={overlay})...")
-        subprocess.run(["uv", "run", "python", "tools/sim_cleanup.py"], cwd=str(ROOT))
+        _teardown()
 
     return fails
 
@@ -798,7 +812,7 @@ def test(
 
         def cleanup():
             print("Cleaning up E2E simulation...")
-            subprocess.run(["uv", "run", "python", "tools/sim_cleanup.py"], cwd=str(ROOT))
+            _teardown()
 
         # Safety net: ensure any leaked sim is reaped even if the process is killed
         # mid-group (each group also tears down its own sim in a finally block).
