@@ -129,7 +129,7 @@ indent-style = "space"
 
 [tool.ty.environment]
 python-version = "3.12"
-extra-paths = ["src/core", "tools"]
+extra-paths = ["src/core", "tools", "tests/scenarios"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
