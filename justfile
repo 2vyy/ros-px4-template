@@ -27,11 +27,13 @@ setup:
 check:
     @just _run check
 
-# Run the simulation in foreground (gui/headless) or background (bg), or stop all processes
+# Boot the sim stack detached, wait until ready, print a verdict, and return
 sim *args:
     @just _run sim {{args}}
 
-
+# Exhaustive cold teardown of the whole stack (no process survives)
+stop:
+    @just _run stop
 
 # Connect to serial hardware flight controller
 hw *args:

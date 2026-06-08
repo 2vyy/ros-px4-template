@@ -172,7 +172,7 @@ def _ros2_launch_capture_argv(
 sys.path.append(str(ROOT / "tools"))
 from capabilities import app as cap_app, scenario_sim_configs
 from log_summary import build_run_summary
-from cli_verdict import format_stopped
+from cli_verdict import ExitCode, format_not_ready, format_ready, format_stopped
 import sim_cleanup
 from log_query import app as log_app
 
@@ -266,6 +266,18 @@ def _build_workspace() -> None:
     except subprocess.CalledProcessError:
         print("Build failed.", file=sys.stderr)
         raise typer.Exit(1) from None
+
+
+def _smart_build(force: bool = True) -> None:
+    """Build only when install/ is stale, unless force is False (then never)."""
+    if not force:
+        _source_workspace_env()
+        return
+    if _needs_build():
+        _build_workspace()
+    else:
+        print("Build skipped — install/ is up-to-date.")
+        _source_workspace_env()
 
 
 @app.command()
@@ -442,175 +454,55 @@ def check():
 
 
 
-def _sim_launch_overlay_args(mode: str) -> list[str]:
-    if mode == "inspect":
-        return ["param_overlay:=inspect"]
-    return []
-
-
 @app.command()
 def sim(
-    mode: str = typer.Argument(
-        "headless", help="Mode: gui, headless, bg, stop"
-    ),
+    gui: bool = typer.Option(False, "--gui", help="Show the Gazebo GUI (default headless)."),
     world: str = typer.Option("default", "--world", help="World file name"),
     model: str = typer.Option("x500", "--model", help="Airframe model"),
     vision: str = typer.Option("false", "--vision", help="Enable vision/aruco detection"),
-    port: str = typer.Option("/dev/ttyUSB0", "--port", help="Serial port for hardware"),
-    baud: int = typer.Option(921600, "--baud", help="Baudrate for hardware serial"),
-    vehicle: str = typer.Option("", "--vehicle", help="Vehicle overlay name for hardware mode (e.g. x500)"),
-    build: bool = typer.Option(True, "--build/--no-build", help="Build workspace before running"),
-    speed: float = typer.Option(1.0, "--speed", help="Gazebo physics speed multiplier (headless/bg only). Must not exceed 1.0."),
-    auto_arm: bool = typer.Option(None, "--auto-arm/--no-auto-arm", help="Enable/disable auto-arming on startup (defaults to True for bg mode, False otherwise)."),
+    speed: float = typer.Option(1.0, "--speed", help="Gazebo physics speed (<=1.0, headless only)."),
+    overlay: str = typer.Option(
+        "", "--overlay", help="Param overlay: auto_arm | inspect | hover (default: none, disarmed)."
+    ),
+    build: bool = typer.Option(True, "--build/--no-build", help="Smart-build before launch."),
+    timeout: int = typer.Option(180, "--timeout", help="Seconds to wait for readiness."),
 ):
-    """Simulation runner. Modes: gui, headless, bg, stop."""
+    """Boot the sim stack detached, wait until ready, print a verdict, and return.
+
+    Never holds the terminal. Watch with `just log tail`; stop with `just stop`.
+    """
     if speed <= 0 or speed > 1.0:
-        print(f"--speed must be between 0 (exclusive) and 1.0 (inclusive), got {speed}", file=sys.stderr)
-        raise typer.Exit(1) from None
-    if mode in ("gui", "inspect") and speed != 1.0:
-        print(f"--speed {speed} ignored for '{mode}' mode (only applies to headless/bg)")
+        print(f"--speed must be in (0, 1.0], got {speed}", file=sys.stderr)
+        raise typer.Exit(int(ExitCode.USAGE))
+    if gui and speed != 1.0:
+        print(f"--speed {speed} ignored with --gui (headless only)")
         speed = 1.0
+    if overlay and overlay not in ("auto_arm", "inspect", "hover"):
+        print(f"--overlay must be auto_arm|inspect|hover, got {overlay!r}", file=sys.stderr)
+        raise typer.Exit(int(ExitCode.USAGE))
 
-    if auto_arm is None:
-        auto_arm = (mode == "bg")
-
-    overlay_args = _sim_launch_overlay_args(mode)
-    if auto_arm and not any(a.startswith("param_overlay:=") for a in overlay_args):
-        overlay_args.append("param_overlay:=auto_arm")
-
-    if mode == "stop":
-        _teardown()
-        return
-
-    if mode == "hardware":
-        res = subprocess.run(
-            ["uv", "run", "python", "tools/preflight.py", "--mode=hw"],
-            cwd=str(ROOT),
-        )
-        if res.returncode != 0:
-            print("Preflight check failed. Aborting hardware launch.", file=sys.stderr)
-            raise typer.Exit(1) from None
-        if vehicle:
-            vehicle_path = ROOT / "vehicles" / f"{vehicle}.yaml"
-            if not vehicle_path.is_file():
-                print(f"Vehicle overlay not found: {vehicle_path}", file=sys.stderr)
-                raise typer.Exit(1) from None
-        if build:
-            _build_workspace()
-        print(f"Connecting to hardware on port {port} at {baud} baud...")
-        launch_args = [
-            str(ROOT / "hardware" / "launch" / "hardware.launch.py"),
-            f"serial_port:={port}",
-            f"baudrate:={baud}",
-            "use_sim_time:=false",
-            "config:=hardware",
-            f"log_dir:={LOG_DIR}",
-            f"vehicle:={vehicle}",
-        ]
-        try:
-            argv = _ros2_launch_bash_argv(launch_args)
-            subprocess.run(
-                argv,
-                check=True,
-                env=_ros_launch_env(),
-                cwd=str(ROOT),
-            )
-        except KeyboardInterrupt:
-            print("Connection stopped by user.")
-        except subprocess.CalledProcessError:
-            print("Hardware connection closed with error.", file=sys.stderr)
-        return
-
-    # Check preflight first for all active sim modes
+    # Preflight (precondition class).
     res = subprocess.run(
-        ["uv", "run", "python", "tools/preflight.py", f"--mode={mode}"], cwd=str(ROOT)
+        ["uv", "run", "python", "tools/preflight.py", "--mode=headless"], cwd=str(ROOT)
     )
     if res.returncode != 0:
-        print("Preflight check failed. Aborting simulation launch.", file=sys.stderr)
-        raise typer.Exit(1) from None
+        print("Preflight failed. Aborting launch.", file=sys.stderr)
+        raise typer.Exit(int(ExitCode.PRECONDITION))
 
-    if mode == "bg":
-        pidfile = LOG_DIR / "sim.pid"
-        if pidfile.exists():
-            try:
-                pid = int(pidfile.read_text().strip())
-                os.kill(pid, 0)
-                print(f"Simulation already running (PID {pid}). Stopping it first for idempotency...")
-                _teardown()
-            except (ProcessLookupError, ValueError):
-                pass
+    # Idempotent: cold-tear-down any existing stack, then boot fresh.
+    if (LOG_DIR / "sim.pid").exists():
+        print("Existing stack found — tearing it down first.")
+        _teardown()
 
-        if build:
-            _build_workspace()
-
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        latest = LOG_DIR / "latest.log"
-        print(f"Starting headless simulation in background (-> {latest})...")
-
-        gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
-        vision_arg = "aruco" if vision.lower() in ("true", "aruco") else "none"
-        launch_args = [
-            str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
-            f"world:={world}",
-            f"model:={model}",
-            "headless:=true",
-            f"log_dir:={LOG_DIR}",
-            f"speed:={speed}",
-            f"vision:={vision_arg}",
-            *overlay_args,
-        ]
-        env = _ros_launch_env(
-            GZ_IP="127.0.0.1",
-            GZ_SIM_RESOURCE_PATH=f"{gz_resource}:{os.environ.get('GZ_SIM_RESOURCE_PATH', '')}",
-            HEADLESS="1",
-        )
-
-        try:
-            proc = _spawn_stack(launch_args, env, append=False)
-
-            pidfile.write_text(str(proc.pid))
-            status = {
-                "started": True,
-                "pid": proc.pid,
-                "log": str(latest),
-                "pidfile": str(pidfile),
-            }
-            print(json.dumps(status))
-
-            # Block until simulation stack is ready
-            try:
-                subprocess.run(
-                    ["uv", "run", "python", "tools/wait_ready.py", "--timeout", "180", "--speed", str(speed)],
-                    check=True,
-                    cwd=str(ROOT),
-                )
-            except subprocess.CalledProcessError:
-                print("Simulation failed to stabilize or timed out.", file=sys.stderr)
-                # Kill background process cleanly on failure so we don't leak processes
-                _teardown()
-                raise typer.Exit(1) from None
-        except Exception as e:
-            print(f"Failed to start background simulation: {e}", file=sys.stderr)
-            raise typer.Exit(1) from None
-        return
-
-    # Foreground Simulation (gui, headless, inspect)
-    if build:
-        _build_workspace()
-
-    world_val = world
-    headless_val = "false"
-
-    if mode == "headless":
-        headless_val = "true"
-
-    print(f"Starting simulation (mode: {mode}, world: {world_val}, model: {model})...")
+    _smart_build(build)
 
     gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
     vision_arg = "aruco" if vision.lower() in ("true", "aruco") else "none"
+    headless_val = "false" if gui else "true"
+    overlay_args = [f"param_overlay:={overlay}"] if overlay else []
     launch_args = [
         str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
-        f"world:={world_val}",
+        f"world:={world}",
         f"model:={model}",
         f"headless:={headless_val}",
         f"log_dir:={LOG_DIR}",
@@ -621,19 +513,41 @@ def sim(
     env = _ros_launch_env(
         GZ_IP="127.0.0.1",
         GZ_SIM_RESOURCE_PATH=f"{gz_resource}:{os.environ.get('GZ_SIM_RESOURCE_PATH', '')}",
-        **({"HEADLESS": "1"} if headless_val == "true" else {}),
+        **({"HEADLESS": "1"} if not gui else {}),
     )
 
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    import time as _time
 
-    try:
-        argv = _ros2_launch_capture_argv(launch_args, LOG_DIR / "latest.log", append=False)
-        inner = argv[2] + f" ; cat {shlex.quote(str(LOG_DIR / 'latest.log'))}"
-        subprocess.run(["bash", "-lc", inner], env=env, cwd=str(ROOT), check=True)
-    except KeyboardInterrupt:
-        print("Simulation stopped by user.")
-    except subprocess.CalledProcessError:
-        print("Simulation exited with error.", file=sys.stderr)
+    started = _time.monotonic()
+    proc = _spawn_stack(launch_args, env, append=False)
+    (LOG_DIR / "sim.pid").write_text(str(proc.pid))
+
+    res = subprocess.run(
+        ["uv", "run", "python", "tools/wait_ready.py", "--timeout", str(timeout),
+         "--speed", str(speed)],
+        cwd=str(ROOT),
+    )
+    elapsed = _time.monotonic() - started
+    if res.returncode != 0:
+        print(
+            format_not_ready("stack did not reach readiness (topics/rosbridge/GCS params)", elapsed),
+            file=sys.stderr,
+        )
+        _teardown()
+        raise typer.Exit(int(ExitCode.FAIL))
+
+    print(
+        format_ready(
+            ["/fmu topics up", "rosbridge:9090", "GCS params committed"], elapsed
+        )
+    )
+
+
+@app.command()
+def stop():
+    """Exhaustive cold teardown of the whole stack (no process survives)."""
+    ok = _teardown()
+    raise typer.Exit(int(ExitCode.OK) if ok else int(ExitCode.FAIL))
 
 
 @app.command()
@@ -760,12 +674,12 @@ def test(
         try:
             subprocess.run(["uv", "run", "pytest", "tests/unit/", "-q", "--tb=short"], check=True, cwd=str(ROOT))
         except subprocess.CalledProcessError:
-            raise typer.Exit(1) from None
+            raise typer.Exit(int(ExitCode.FAIL)) from None
     elif type == "scenario":
         if not arg:
             print("Error: Scenario name required (e.g. just test scenario --arg 01_arm_takeoff)", file=sys.stderr)
-            raise typer.Exit(1) from None
-        _build_workspace()
+            raise typer.Exit(int(ExitCode.USAGE)) from None
+        _smart_build(True)
         script = _resolve_scenario_script(arg)
         print(f"Running scenario test: {arg}...")
         try:
@@ -773,7 +687,7 @@ def test(
                 ["uv", "run", "python", str(script)], check=True, cwd=str(ROOT)
             )
         except subprocess.CalledProcessError:
-            raise typer.Exit(1) from None
+            raise typer.Exit(int(ExitCode.FAIL)) from None
 
     elif type == "e2e":
         print("starting e2e headless cycle...")
@@ -788,12 +702,12 @@ def test(
                 elif f.is_dir():
                     shutil.rmtree(f)
 
-        _build_workspace()
+        _smart_build(True)
 
         res = subprocess.run(["uv", "run", "python", "tools/preflight.py"], cwd=str(ROOT))
         if res.returncode != 0:
             print("Preflight check failed. Aborting E2E cycle.", file=sys.stderr)
-            raise typer.Exit(1) from None
+            raise typer.Exit(int(ExitCode.PRECONDITION)) from None
 
         gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
 
@@ -839,10 +753,8 @@ def test(
             subprocess.run(["uv", "run", "python", "tools/e2e_report.py"], cwd=str(ROOT))
 
             if fails > 0:
-                print(f"E2E cycle finished with {fails} failures.", file=sys.stderr)
-                raise typer.Exit(fails) from None
-            else:
-                print("E2E cycle finished successfully (all scenarios passed).")
+                raise typer.Exit(int(ExitCode.FAIL))
+            print("E2E cycle finished successfully (all scenarios passed).")
 
         except Exception as e:
             print(f"E2E run interrupted: {e}", file=sys.stderr)
@@ -857,7 +769,7 @@ def scenario(
     name: str = typer.Argument(..., help="Scenario name (e.g. 01_arm_takeoff)"),
 ) -> None:
     """Run a live scenario test directly by name."""
-    _build_workspace()
+    _smart_build(True)
     script = _resolve_scenario_script(name)
     print(f"Running scenario test: {name}...")
     passed = False
@@ -869,7 +781,7 @@ def scenario(
     finally:
         _summarize_logs_silent()
     if not passed:
-        raise typer.Exit(1)
+        raise typer.Exit(int(ExitCode.FAIL))
 
 
 @app.command()
