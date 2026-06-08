@@ -552,14 +552,36 @@ def stop():
 
 @app.command()
 def hw(
-    port: str = typer.Option("/dev/ttyUSB0", "--port", help="Serial port for hardware"),
-    baud: int = typer.Option(921600, "--baud", help="Baudrate for hardware serial"),
-    build: bool = typer.Option(True, "--build/--no-build", help="Build workspace before running"),
+    port: str = typer.Option("/dev/ttyUSB0", "--port", help="Serial port for the FC"),
+    baud: int = typer.Option(921600, "--baud", help="Baudrate"),
+    vehicle: str = typer.Option("", "--vehicle", help="Vehicle overlay name (e.g. x500)"),
+    build: bool = typer.Option(True, "--build/--no-build", help="Smart-build before launch."),
+    timeout: int = typer.Option(180, "--timeout", help="Seconds to wait for readiness."),
 ):
-    """Connect to serial hardware flight controller."""
-    if build:
-        _build_workspace()
-    print(f"Connecting to hardware on port {port} at {baud} baud...")
+    """Boot the hardware stack detached, wait until ready, print a verdict, return.
+
+    Same no-terminal-capture contract as `just sim`. Watch with `just log tail`,
+    stop with `just stop`.
+    """
+    res = subprocess.run(
+        ["uv", "run", "python", "tools/preflight.py", "--mode=hw"], cwd=str(ROOT)
+    )
+    if res.returncode != 0:
+        print("Preflight failed. Aborting hardware launch.", file=sys.stderr)
+        raise typer.Exit(int(ExitCode.PRECONDITION))
+    if vehicle:
+        vehicle_path = ROOT / "vehicles" / f"{vehicle}.yaml"
+        if not vehicle_path.is_file():
+            print(f"Vehicle overlay not found: {vehicle_path}", file=sys.stderr)
+            raise typer.Exit(int(ExitCode.USAGE))
+
+    if (LOG_DIR / "sim.pid").exists():
+        print("Existing stack found — tearing it down first.")
+        _teardown()
+
+    _smart_build(build)
+
+    print(f"Connecting to hardware on {port} at {baud} baud...")
     launch_args = [
         str(ROOT / "hardware" / "launch" / "hardware.launch.py"),
         f"serial_port:={port}",
@@ -567,19 +589,30 @@ def hw(
         "use_sim_time:=false",
         "config:=hardware",
         f"log_dir:={LOG_DIR}",
+        f"vehicle:={vehicle}",
     ]
-    try:
-        argv = _ros2_launch_bash_argv(launch_args)
-        subprocess.run(
-            argv,
-            check=True,
-            env=_ros_launch_env(),
-            cwd=str(ROOT),
+    env = _ros_launch_env()
+
+    import time as _time
+
+    started = _time.monotonic()
+    proc = _spawn_stack(launch_args, env, append=False)
+    (LOG_DIR / "sim.pid").write_text(str(proc.pid))
+
+    res = subprocess.run(
+        ["uv", "run", "python", "tools/wait_ready.py", "--timeout", str(timeout)],
+        cwd=str(ROOT),
+    )
+    elapsed = _time.monotonic() - started
+    if res.returncode != 0:
+        print(
+            format_not_ready("hardware stack did not reach readiness (topics/rosbridge)", elapsed),
+            file=sys.stderr,
         )
-    except KeyboardInterrupt:
-        print("Connection stopped by user.")
-    except subprocess.CalledProcessError:
-        print("Hardware connection closed with error.", file=sys.stderr)
+        _teardown()
+        raise typer.Exit(int(ExitCode.FAIL))
+
+    print(format_ready([f"FC {port}@{baud}", "rosbridge:9090", "/fmu topics up"], elapsed))
 
 def _run_e2e_sim_group(
     vision: str,
