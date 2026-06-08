@@ -19,7 +19,9 @@ def test_pass_line_lists_detail() -> None:
 
 
 def test_fail_line_leads_with_reason() -> None:
-    line = scenario_verdict_line("03_waypoint", False, 61.0, {"reason": "timeout", "phase": "climb"})
+    line = scenario_verdict_line(
+        "03_waypoint", False, 61.0, {"reason": "timeout", "phase": "climb"}
+    )
     assert line.startswith("FAIL 03_waypoint")
     assert "timeout" in line
     assert "phase=climb" in line
