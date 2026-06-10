@@ -2,10 +2,8 @@
 
 Reads PX4's estimated VehicleLocalPosition (sim and hardware alike), anchors it
 at takeoff, and publishes takeoff-anchored ENU Odometry plus a latched effective
-NED setpoint origin. Source is selected by the `source` parameter (topic name
-only — the signal is identical):
-    sitl    -> /fmu/out/vehicle_local_position_v1
-    pixhawk -> /fmu/out/vehicle_local_position
+NED setpoint origin. Subscribes to PX4's versioned `/fmu/out/vehicle_local_position_v1`
+directly; sim and hardware both run PX4 v1.17 over uXRCE-DDS and publish it identically.
 
 An optional `/drone/pose_override` (PoseStamped, e.g. from marker_localizer) is
 applied to the published ENU pose when it is fresh (within `override_timeout_s`)
@@ -16,7 +14,7 @@ a bad fix teleport the vehicle.
 =============================================================================
 ROS 2 Interface
 Subscriptions:
-    <source topic>        [px4_msgs/VehicleLocalPosition]
+    /fmu/out/vehicle_local_position_v1  [px4_msgs/VehicleLocalPosition]
     /drone/pose_override  [geometry_msgs/PoseStamped]  — optional relocalization fix
 Publishers:
     /drone/odom          [nav_msgs/Odometry]            anchored ENU pose+yaw+twist
@@ -39,10 +37,7 @@ from ros_px4_template_core.lib.frames import enu_yaw_from_heading, ned_to_enu
 from ros_px4_template_core.lib.px4_local_frame import Px4LocalFrame
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 
-_SOURCE_TOPICS = {
-    "sitl": "/fmu/out/vehicle_local_position_v1",
-    "pixhawk": "/fmu/out/vehicle_local_position",
-}
+_POSITION_TOPIC = "/fmu/out/vehicle_local_position_v1"
 
 _PX4_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -69,19 +64,13 @@ class PositionNode(Node):
 
     def __init__(self) -> None:
         super().__init__("position_node")
-        self.declare_parameter("source", "sitl")
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("child_frame_id", "base_link")
         self.declare_parameter("log_dir", "./logs")
         self.declare_parameter("override_timeout_s", 0.5)
         self.declare_parameter("override_max_jump_m", 10.0)
 
-        source = str(self.get_parameter("source").value)
-        if source not in _SOURCE_TOPICS:
-            raise RuntimeError(
-                f"position_node: invalid source '{source}'; expected one of {list(_SOURCE_TOPICS)}"
-            )
-        self._topic = _SOURCE_TOPICS[source]
+        self._topic = _POSITION_TOPIC
         self._frame_id = str(self.get_parameter("frame_id").value)
         self._child_frame_id = str(self.get_parameter("child_frame_id").value)
         self._override_timeout_s = float(self.get_parameter("override_timeout_s").value)
@@ -99,7 +88,7 @@ class PositionNode(Node):
         self._pub_origin = self.create_publisher(
             Vector3Stamped, "/drone/local_origin", _LATCHED_QOS
         )
-        self.slog.info("position_node ready", source=source, topic=self._topic)
+        self.slog.info("position_node ready", topic=self._topic)
 
     def _override_cb(self, msg: PoseStamped) -> None:
         p = msg.pose.position

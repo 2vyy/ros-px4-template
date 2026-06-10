@@ -128,7 +128,6 @@ Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing
 | `just check` | `log/latest_build/`; confirm `src/px4_msgs` is on `release/1.17` (`just check`); ensure ROS is sourced or distrobox is available (handled automatically by `justfile` now) |
 | `just sim` hangs at Gazebo | `.env` has correct `PX4_DIR`; `${PX4_DIR}/build/px4_sitl_default/bin/px4` exists; on WSL confirm WSLg for GUI; try `just sim headless` |
 | No `/fmu/out/*` topics | PX4 SITL is running and MicroXRCEAgent is on UDP 8888 (`ss -ulnp | grep 8888`); check `logs/latest.log` (`rg src=xrce`) for the XRCE handshake |
-| `/fmu/out/vehicle_local_position` exists as `_v1` only | `px4_topic_relay` is not running; relaunch with `just sim bg` (it includes the hardware launch which spawns the relay) |
 | Scenario arm fail | `gcs_heartbeat` via `uv run`; `just stop` kills MicroXRCEAgent (session key rotates each launch); `arm_delay_s` in `config/params/sim.yaml` (default 3s) |
 | Mission stuck in `wait_arm_altitude` | Gate: effective ENU z (`max(pose, controller alt)`) >= `takeoff_altitude_m - takeoff_altitude_tolerance_m`. In sim check `sim_pose_adapter` / Gazebo pose; on hardware check `px4_pose_adapter` for `First pose published` (`xy_valid` and `z_valid`). |
 | Mission never enters `hover_marker` | `enable_vision:=true` needed; `/vision/marker_pose` valid; `marker.acquire_frames` consecutive frames must be hit |

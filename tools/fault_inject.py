@@ -2,7 +2,7 @@
 # tools/fault_inject.py
 """Fault injection node for sim testing.
 
-Subscribes to /fmu/out/vehicle_local_position, applies a configurable
+Subscribes to /fmu/out/vehicle_local_position_v1, applies a configurable
 disturbance for --duration seconds, then passes through unchanged.
 
 Publishes distorted messages to /fault/vehicle_local_position.
@@ -61,7 +61,7 @@ class FaultInjector(Node):
 
         self.create_subscription(
             VehicleLocalPosition,
-            "/fmu/out/vehicle_local_position",
+            "/fmu/out/vehicle_local_position_v1",
             self._cb,
             _PX4_QOS,
         )

@@ -27,7 +27,6 @@ setup(
             "offboard_controller = ros_px4_template_core.nodes.offboard_controller:main",
             "position_node = ros_px4_template_core.nodes.position_node:main",
             "mission_manager = ros_px4_template_core.nodes.mission_manager:main",
-            "px4_topic_relay = ros_px4_template_core.nodes.px4_topic_relay:main",
             "aruco_pose_publisher = ros_px4_template_core.nodes.aruco_pose_publisher:main",
             "marker_localizer = ros_px4_template_core.nodes.marker_localizer:main",
         ],

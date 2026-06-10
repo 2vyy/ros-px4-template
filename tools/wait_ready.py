@@ -2,8 +2,8 @@
 """Block until the full sim stack is ready for agent use.
 
 Readiness criteria (all three must pass):
-  1. /fmu/out/vehicle_local_position appears in `ros2 topic list`
-     (confirms PX4 SITL + MicroXRCEAgent + px4_topic_relay are all up).
+  1. /fmu/out/vehicle_local_position_v1 appears in `ros2 topic list`
+     (confirms PX4 SITL + MicroXRCEAgent are up and publishing telemetry).
   2. rosbridge WebSocket port 9090 is open.
   3. gcs_heartbeat has committed PX4 params (/tmp/gcs_params_flag exists),
      confirming MAVLink GCS link is established and PX4 is responsive.
@@ -27,7 +27,7 @@ import typer
 app = typer.Typer()
 
 _ROSBRIDGE_PORT = 9090
-_REQUIRED_TOPIC = "/fmu/out/vehicle_local_position"
+_REQUIRED_TOPIC = "/fmu/out/vehicle_local_position_v1"
 
 _POLL_INTERVAL_S = 0.5
 _GCS_PARAMS_FLAG = Path("/tmp/gcs_params_flag")

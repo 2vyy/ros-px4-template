@@ -34,7 +34,7 @@ class _Node(Node):
         self.x = 0.0
         self.y = 0.0
         self.create_subscription(
-            VehicleLocalPosition, "/fmu/out/vehicle_local_position", self._cb, PX4_QOS
+            VehicleLocalPosition, "/fmu/out/vehicle_local_position_v1", self._cb, PX4_QOS
         )
 
     def _cb(self, msg: VehicleLocalPosition) -> None:

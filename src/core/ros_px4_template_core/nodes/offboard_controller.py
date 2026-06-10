@@ -112,7 +112,7 @@ class OffboardController(Node):
             ),
         )
         self.create_subscription(
-            VehicleStatus, "/fmu/out/vehicle_status", self._status_cb, _PX4_QOS
+            VehicleStatus, "/fmu/out/vehicle_status_v1", self._status_cb, _PX4_QOS
         )
         self.create_subscription(
             VehicleCommandAck,

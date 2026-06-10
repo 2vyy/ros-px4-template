@@ -33,7 +33,6 @@ flowchart TD
     subgraph ros_layer ["ROS 2 Jazzy (px4_ros_core)"]
         mission["mission_manager\n(YAML to ENU Pose)"]
         offboard["offboard_controller\n(ENU to NED Transform)"]
-        relay["px4_topic_relay\n(PX4 to ROS Topic Map)"]
     end
 
     subgraph px4_layer ["PX4 v1.17 Autopilot"]
@@ -51,8 +50,7 @@ flowchart TD
 
     %% Control Flow
     mission -->|ENU Target Pose| offboard
-    XRCE -->|Raw Telemetry| relay
-    relay -->|Mapped ROS Topics| mission
+    XRCE -->|Telemetry (_v1 topics)| offboard
     offboard -->|NED Position Setpoints| XRCE
 
     %% Tooling Integration
@@ -102,7 +100,7 @@ ros-px4-template/
 ├── src/
 │   ├── core/
 │   │   └── ros_px4_template_core/   # Core nodes, lib, bridges (sim/hardware agnostic)
-│   │       ├── nodes/               # offboard_controller, mission_manager, px4_topic_relay, ...
+│   │       ├── nodes/               # offboard_controller, mission_manager, position_node, ...
 │   │       └── lib/                 # frame_transforms, mission_runtime, StructuredLogger
 │   ├── px4_ros_msgs/                # Custom msgs (ControllerStatus, MissionStatus)
 │   ├── px4_ros_sim/                 # Sim-only ROS helpers (not imported from core)

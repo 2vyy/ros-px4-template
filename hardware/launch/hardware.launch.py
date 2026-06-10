@@ -65,7 +65,9 @@ def _launch_setup(context, *args, **kwargs):
     nodes = [_rosbridge()]
     if config_name != "sim":
         nodes.append(_microxrce_serial(serial_port, baudrate))
-    executables = ("px4_topic_relay", "offboard_controller", "mission_manager")
+    # position_node is the single source of truth: it reads PX4's versioned
+    # local-position estimate directly in both sim and hardware (same v1.17 wire format).
+    executables = ("offboard_controller", "mission_manager", "position_node")
     nodes.extend(
         [
             Node(
@@ -77,18 +79,6 @@ def _launch_setup(context, *args, **kwargs):
             )
             for exe in executables
         ]
-    )
-    # Single source of truth: position_node reads PX4's local-position estimate
-    # in both sim and hardware (source param selects the topic name).
-    source = "pixhawk" if config_name != "sim" else "sitl"
-    nodes.append(
-        Node(
-            package="ros_px4_template_core",
-            executable="position_node",
-            name="position_node",
-            output="screen",
-            parameters=[*base_params, {"source": source}],
-        )
     )
 
     vision = LaunchConfiguration("vision").perform(context)

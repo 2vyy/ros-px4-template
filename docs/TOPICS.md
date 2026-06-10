@@ -2,22 +2,17 @@
 
 Validated against a running stack with `just check-topics`. The checker greps backtick-quoted topic names (e.g. the rows below) out of this file and confirms each one appears in `ros2 topic list`, so keep topic names backticked.
 
-## PX4 v1 relay
+## PX4 versioned topics
 
-PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/ros_px4_template_core/nodes/px4_topic_relay.py`) subscribes to those and republishes them under the legacy names that core nodes expect.
-
-| Source (PX4) | Republished as |
-|--------------|----------------|
-| `/fmu/out/vehicle_local_position_v1` | `/fmu/out/vehicle_local_position` |
-| `/fmu/out/vehicle_status_v1` | `/fmu/out/vehicle_status` |
+PX4 1.17 with uXRCE-DDS appends `_v1` to any message carrying `MESSAGE_VERSION` (e.g. `VehicleLocalPosition`, `VehicleStatus`). Core nodes subscribe to those `_v1` names directly; sim and hardware run the same firmware and publish them identically, so no rename shim is needed.
 
 ## Topics
 
 | Topic | Type | Dir | Owner |
 |-------|------|-----|-------|
 | `/clock` | `rosgraph_msgs/msg/Clock` | pub | clock_bridge in `sim/launch/sim_full.launch.py` |
-| `/fmu/out/vehicle_local_position` | `px4_msgs/msg/VehicleLocalPosition` | pub | `px4_topic_relay` (from `_v1`) |
-| `/fmu/out/vehicle_status` | `px4_msgs/msg/VehicleStatus` | pub | `px4_topic_relay` (from `_v1`) |
+| `/fmu/out/vehicle_local_position_v1` | `px4_msgs/msg/VehicleLocalPosition` | pub | PX4 uXRCE-DDS bridge |
+| `/fmu/out/vehicle_status_v1` | `px4_msgs/msg/VehicleStatus` | pub | PX4 uXRCE-DDS bridge |
 | `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | pub | `offboard_controller` |
 | `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | pub | `offboard_controller` |
 | `/fmu/in/vehicle_command` | `px4_msgs/msg/VehicleCommand` | pub | `offboard_controller` |
@@ -34,10 +29,10 @@ PX4 1.17 with uXRCE publishes `*_v1` topics. Node `px4_topic_relay` (`src/core/r
 
 | Topic | Subscribers |
 |-------|-------------|
-| `/fmu/out/vehicle_local_position` | `position_node` (hardware; sim reads `_v1` directly) |
+| `/fmu/out/vehicle_local_position_v1` | `position_node` |
 | `/drone/odom` | `offboard_controller`, `mission_manager` |
 | `/drone/local_origin` | `offboard_controller` |
-| `/fmu/out/vehicle_status` | `offboard_controller` |
+| `/fmu/out/vehicle_status_v1` | `offboard_controller` |
 | `/drone/target_pose` | `offboard_controller` |
 | `/drone/controller_status` | `mission_manager` |
 | `/drone/marker_detection` | `mission_manager`, `marker_localizer` |
