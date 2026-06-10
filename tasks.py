@@ -126,23 +126,6 @@ def _ros_launch_env(**extra: str) -> dict[str, str]:
     return env
 
 
-def _ros2_launch_bash_argv(launch_args: list[str], *, cwd: Path = ROOT) -> list[str]:
-    """``bash -lc`` that sources ROS + workspace, then ``exec ros2 launch ...``."""
-    ros_setup = _ros_setup_path()
-    ws_setup = cwd / "install" / "setup.bash"
-    sources = [f"source {shlex.quote(ros_setup)}"]
-    if ws_setup.exists():
-        sources.append(f"source {shlex.quote(str(ws_setup))}")
-    inner = " && ".join(
-        [
-            *sources,
-            f"cd {shlex.quote(str(cwd))}",
-            "exec ros2 launch " + " ".join(shlex.quote(a) for a in launch_args),
-        ]
-    )
-    return ["bash", "-lc", inner]
-
-
 def _ros2_launch_capture_argv(
     launch_args: list[str], out_file: Path, *, append: bool, cwd: Path = ROOT
 ) -> list[str]:
