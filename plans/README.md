@@ -18,6 +18,8 @@ row when done.
 | 004  | BACKLOG.md reflects current code (retire done/dead items) | P1 | S | — | DONE (merged to main @ 7181635) |
 | 005  | Extract gz/PX4 boot bash to `sim/launch/_start_gz_px4.sh` | P3 | M | — | DONE (merged to main @ ee86482; sim-verified no regression) |
 | 006  | Topic check enforces declared type and direction | P2 | M | — | DONE (merged to main @ 218714e; live-verified, see vision-topic note) |
+| 007  | `just scenario <name>` boots the sim config it declares (fix demo/hover mismatch) | P2 | M | — | TODO |
+| 008  | `just log topics` skips vision-conditional topics unless `--vision` | P3 | S | 006 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
