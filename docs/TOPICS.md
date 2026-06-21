@@ -1,6 +1,6 @@
 # Topic manifest
 
-Validated against a running stack with `just check-topics`. The checker greps backtick-quoted topic names (e.g. the rows below) out of this file and confirms each one appears in `ros2 topic list`, so keep topic names backticked.
+Validated against a running stack with `just log topics`. The checker greps backtick-quoted topic names (e.g. the rows below) out of this file and confirms each one appears in `ros2 topic list`, so keep topic names backticked.
 
 ## PX4 versioned topics
 
@@ -49,4 +49,8 @@ PX4 1.17 with uXRCE-DDS appends `_v1` to any message carrying `MESSAGE_VERSION` 
 
 1. Publish or subscribe in a node under `src/core/ros_px4_template_core/nodes/` and update that module's ROS 2 Interface docstring.
 2. Add a row above (backticked name, type, owner).
-3. Run `just sim` then `just check-topics` to confirm the topic shows up live.
+3. Run `just sim` then `just log topics` to confirm the topic shows up live.
+
+The Type and Dir columns are enforced by `just log topics` against the live
+graph, so they must match the node's actual publisher/subscriber and message
+type.
