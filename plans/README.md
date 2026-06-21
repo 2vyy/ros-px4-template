@@ -16,8 +16,8 @@ row when done.
 | 002  | Remove the unexercised fault-injection subsystem | P2 | S | — | DONE (merged to main @ 2e407bc) |
 | 003  | Stop shipping stale dev-plan files with the template | P3 | S | — | DONE (merged to main @ de6f668) |
 | 004  | BACKLOG.md reflects current code (retire done/dead items) | P1 | S | — | DONE (merged to main @ 7181635) |
-| 005  | Extract gz/PX4 boot bash to `sim/launch/_start_gz_px4.sh` | P3 | M | — | TODO |
-| 006  | Topic check enforces declared type and direction | P2 | M | — | TODO |
+| 005  | Extract gz/PX4 boot bash to `sim/launch/_start_gz_px4.sh` | P3 | M | — | APPROVED, awaiting sim sign-off (see below) |
+| 006  | Topic check enforces declared type and direction | P2 | M | — | DONE (merged to main @ 218714e; live `just log topics` pending) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
@@ -32,6 +32,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
 - 005 and 006 each have a sim-boot verification step that an executor without
   `PX4_DIR`/Gazebo cannot run. Both plans say so: finish the cheap gates, then
   STOP and hand the sim sign-off to the operator rather than marking done.
+- **006 merged** (cheap gates all green: 10 unit tests, dry-run, lint, TOPICS.md
+  fixed). Remaining: run `just sim` then `just log topics` once and confirm every
+  topic prints `[OK]` (type + direction match).
+- **005 held, not merged.** Static change reviewed and byte-faithful (identical
+  export set, params, speed/headless guards) but a flight-boot refactor must
+  boot before it lands. Branch `advisor/005-extract-gz-px4-stack-bash` lives in
+  worktree `.claude/worktrees/agent-a46626c5614877f0e`. To finish: `cd` there (or
+  check out the branch), run `just sim` then `just scenario 01_arm_takeoff`
+  (expect PASS, no altitude runaway), then `git merge --ff-only` it into main.
 
 ## What the audit found useful (keep — no plan needed)
 
