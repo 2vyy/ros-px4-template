@@ -12,7 +12,6 @@ Publishers:
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 import rclpy
@@ -23,7 +22,11 @@ from px4_ros_msgs.msg import MarkerDetection
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 
-from ros_px4_template_core.lib.frames import drone_pose_from_marker
+from ros_px4_template_core.lib.frames import (
+    drone_pose_from_marker,
+    enu_quaternion_from_yaw,
+    enu_yaw_from_quaternion,
+)
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 
 _RELIABLE_QOS = QoSProfile(
@@ -69,7 +72,7 @@ class MarkerLocalizer(Node):
 
     def _odom_cb(self, msg: Odometry) -> None:
         q = msg.pose.pose.orientation
-        self._yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        self._yaw = enu_yaw_from_quaternion(q.w, q.x, q.y, q.z)
 
     def _detection_cb(self, msg: MarkerDetection) -> None:
         if not msg.valid or msg.id not in self._map:
@@ -82,8 +85,11 @@ class MarkerLocalizer(Node):
         out.pose.position.x, out.pose.position.y, out.pose.position.z = x, y, z
         # Relocalization corrects position only; pass current heading through so a
         # fix never teleports yaw.
-        out.pose.orientation.z = math.sin(self._yaw / 2.0)
-        out.pose.orientation.w = math.cos(self._yaw / 2.0)
+        qw, qx, qy, qz = enu_quaternion_from_yaw(self._yaw)
+        out.pose.orientation.w = qw
+        out.pose.orientation.x = qx
+        out.pose.orientation.y = qy
+        out.pose.orientation.z = qz
         self._pub.publish(out)
         self.slog.event("POSE_OVERRIDE", marker_id=int(msg.id), x=x, y=y, z=z)
 

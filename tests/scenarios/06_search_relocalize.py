@@ -18,20 +18,20 @@ Run: just scenario 06_search_relocalize
 from __future__ import annotations
 
 import asyncio
-import math
 import sys
 import time
 
 import cv2
 import numpy as np
 import rclpy
-from _common import spin_until, write_report
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from px4_ros_msgs.msg import MissionStatus
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from ros_px4_template_core.lib.frames import enu_offset_to_body_flu, enu_yaw_from_quaternion
 from sensor_msgs.msg import CameraInfo, Image
+from tests.scenarios._common import spin_until, write_report
 
 _RELIABLE_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,
@@ -89,17 +89,12 @@ class _ScenarioNode(Node):
         z = self.drone_pose.pose.pose.position.z
 
         q = self.drone_pose.pose.pose.orientation
-        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
-        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-        yaw = math.atan2(siny_cosp, cosy_cosp)
+        yaw = enu_yaw_from_quaternion(q.w, q.x, q.y, q.z)
 
         # ENU offset drone -> marker, rotated into body FLU.
         dx_enu = _MARKER_X - x
         dy_enu = _MARKER_Y - y
-        cos_yaw = math.cos(yaw)
-        sin_yaw = math.sin(yaw)
-        dx_body = dx_enu * cos_yaw + dy_enu * sin_yaw
-        dy_body = -dx_enu * sin_yaw + dy_enu * cos_yaw
+        dx_body, dy_body = enu_offset_to_body_flu((dx_enu, dy_enu, 0.0), yaw)
         dz_body = -z
 
         # Body FLU -> camera frame (nadir alignment).

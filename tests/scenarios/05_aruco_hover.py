@@ -24,6 +24,7 @@ from nav_msgs.msg import Odometry
 from px4_ros_msgs.msg import MissionStatus
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from ros_px4_template_core.lib.frames import enu_offset_to_body_flu, enu_yaw_from_quaternion
 from sensor_msgs.msg import CameraInfo, Image
 
 _RELIABLE_QOS = QoSProfile(
@@ -79,9 +80,7 @@ class _ScenarioNode(Node):
 
         # Calculate yaw from quaternion
         q = self.drone_pose.pose.pose.orientation
-        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
-        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-        yaw = math.atan2(siny_cosp, cosy_cosp)
+        yaw = enu_yaw_from_quaternion(q.w, q.x, q.y, q.z)
 
         # Marker physical location (at the final waypoint 8.0, 0.0)
         marker_x = 8.0
@@ -92,10 +91,7 @@ class _ScenarioNode(Node):
         dy_enu = marker_y - y
 
         # 2. Rotate to body FLU (Forward-Left-Up)
-        cos_yaw = math.cos(yaw)
-        sin_yaw = math.sin(yaw)
-        dx_body = dx_enu * cos_yaw + dy_enu * sin_yaw
-        dy_body = -dx_enu * sin_yaw + dy_enu * cos_yaw
+        dx_body, dy_body = enu_offset_to_body_flu((dx_enu, dy_enu, 0.0), yaw)
         dz_body = -z
 
         # 3. Body to Camera frame (Nadir alignment)

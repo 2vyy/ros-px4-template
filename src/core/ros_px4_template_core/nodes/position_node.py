@@ -33,7 +33,12 @@ from px4_msgs.msg import VehicleLocalPosition
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
-from ros_px4_template_core.lib.frames import enu_yaw_from_heading, ned_to_enu
+from ros_px4_template_core.lib.frames import (
+    enu_quaternion_from_yaw,
+    enu_yaw_from_heading,
+    enu_yaw_from_quaternion,
+    ned_to_enu,
+)
 from ros_px4_template_core.lib.px4_local_frame import Px4LocalFrame
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 
@@ -93,10 +98,7 @@ class PositionNode(Node):
     def _override_cb(self, msg: PoseStamped) -> None:
         p = msg.pose.position
         q = msg.pose.orientation
-        yaw = math.atan2(
-            2.0 * (q.w * q.z + q.x * q.y),
-            1.0 - 2.0 * (q.y * q.y + q.z * q.z),
-        )
+        yaw = enu_yaw_from_quaternion(q.w, q.x, q.y, q.z)
         self._override = (float(p.x), float(p.y), float(p.z), float(yaw))
         self._override_time = self.get_clock().now().nanoseconds * 1e-9
 
@@ -143,7 +145,11 @@ class PositionNode(Node):
         odom.pose.pose.position.y = y_enu
         odom.pose.pose.position.z = z_enu
         odom.pose.pose.orientation.z = math.sin(yaw_enu / 2.0)
-        odom.pose.pose.orientation.w = math.cos(yaw_enu / 2.0)
+        qw, qx, qy, qz = enu_quaternion_from_yaw(yaw_enu)
+        odom.pose.pose.orientation.w = qw
+        odom.pose.pose.orientation.x = qx
+        odom.pose.pose.orientation.y = qy
+        odom.pose.pose.orientation.z = qz
         # PX4 velocity is NED; ned_to_enu maps it to ENU (vx_enu=ve, vy_enu=vn, vz_enu=-vd).
         vx_enu, vy_enu, vz_enu = ned_to_enu(float(msg.vx), float(msg.vy), float(msg.vz))
         odom.twist.twist.linear.x = vx_enu

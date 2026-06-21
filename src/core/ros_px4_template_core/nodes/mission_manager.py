@@ -28,7 +28,8 @@ from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from visualization_msgs.msg import Marker, MarkerArray
 
-from ros_px4_template_core.lib.mission.commands import GoTo, Hold
+from ros_px4_template_core.lib.frames import enu_yaw_from_quaternion
+from ros_px4_template_core.lib.mission.commands import GoTo
 from ros_px4_template_core.lib.mission.detection import Detection
 from ros_px4_template_core.lib.mission.engine import MissionContext, tick
 from ros_px4_template_core.lib.mission.loader import load_mission_file
@@ -120,9 +121,7 @@ class MissionManager(Node):
         pose = msg.pose.pose
         self._pos_enu = (pose.position.x, pose.position.y, pose.position.z)
         q = pose.orientation
-        self._yaw_enu = math.atan2(
-            2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-        )
+        self._yaw_enu = enu_yaw_from_quaternion(q.w, q.x, q.y, q.z)
         self._have_odom = True
         self._odom_time = self.get_clock().now().nanoseconds / 1e9
 
@@ -184,8 +183,6 @@ class MissionManager(Node):
 
         if isinstance(command, GoTo):
             self._last_target = (command.x, command.y, command.z)
-        elif not isinstance(command, Hold):
-            self._last_target = self._last_target
         self._publish_target(self._last_target)
         self._publish_status(inputs, now)
         self._publish_markers(self._last_target)

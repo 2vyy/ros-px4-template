@@ -51,6 +51,16 @@ def enu_yaw_from_heading(heading_ned: float) -> float:
     return math.atan2(math.sin(yaw), math.cos(yaw))
 
 
+def enu_yaw_from_quaternion(q_w: float, q_x: float, q_y: float, q_z: float) -> float:
+    """Extract ENU yaw from an ENU quaternion."""
+    return math.atan2(2.0 * (q_w * q_z + q_x * q_y), 1.0 - 2.0 * (q_y * q_y + q_z * q_z))
+
+
+def enu_quaternion_from_yaw(yaw_enu: float) -> tuple[float, float, float, float]:
+    """Create an ENU quaternion (w, x, y, z) from an ENU yaw angle."""
+    return (math.cos(yaw_enu / 2.0), 0.0, 0.0, math.sin(yaw_enu / 2.0))
+
+
 def px4_local_z_ned(
     z_ned: float,
     *,
@@ -104,6 +114,19 @@ def body_flu_to_enu_offset(
     east = forward * cos_y - left * sin_y
     north = forward * sin_y + left * cos_y
     return (east, north)
+
+
+def enu_offset_to_body_flu(
+    offset_enu: tuple[float, float, float], yaw_enu: float
+) -> tuple[float, float]:
+    """Rotate a world-ENU horizontal offset into a body-FLU offset using the drone yaw.
+    Exact complement of :func:`body_flu_to_enu_offset`."""
+    east, north, _up = offset_enu
+    cos_y = math.cos(yaw_enu)
+    sin_y = math.sin(yaw_enu)
+    forward = east * cos_y + north * sin_y
+    left = -east * sin_y + north * cos_y
+    return (forward, left)
 
 
 def marker_world_from_drone(
