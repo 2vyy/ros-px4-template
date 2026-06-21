@@ -18,8 +18,8 @@ row when done.
 | 004  | BACKLOG.md reflects current code (retire done/dead items) | P1 | S | — | DONE (merged to main @ 7181635) |
 | 005  | Extract gz/PX4 boot bash to `sim/launch/_start_gz_px4.sh` | P3 | M | — | DONE (merged to main @ ee86482; sim-verified no regression) |
 | 006  | Topic check enforces declared type and direction | P2 | M | — | DONE (merged to main @ 218714e; live-verified, see vision-topic note) |
-| 007  | `just scenario <name>` boots the sim config it declares (fix demo/hover mismatch) | P2 | M | — | TODO |
-| 008  | `just log topics` skips vision-conditional topics unless `--vision` | P3 | S | 006 | TODO |
+| 007  | `just scenario <name>` boots the sim config it declares (fix demo/hover mismatch) | P2 | M | — | DONE (merged to main @ cf5c1af; sim-verified PASS) |
+| 008  | `just log topics` skips vision-conditional topics unless `--vision` | P3 | S | 006 | DONE (merged to main @ cf5c1af; sim-verified both modes) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
@@ -45,25 +45,23 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
 - **006 verified live and merged.** `just log topics` against the running sim
   prints `[OK]` with type+direction for all 12 always-on topics.
 
-### Findings surfaced by sim verification (not 005/006 bugs)
+### Findings surfaced by sim verification (both root-caused and FIXED)
 
-- **`01_arm_takeoff` fails `position drift` on current `main`**, with AND without
-  005 (reproduced on both: holds altitude fine at ~2.96m, OFFBOARD_TRACK reached,
-  but XY drifts past the hold tolerance during the 10s hold). Pre-existing
-  scenario flakiness / sim nondeterminism, unrelated to anything in this session
-  (no flight-control code was touched). Worth a separate look: either the hold
-  tolerance is too tight or position-hold has real drift. Capability registry may
-  list 01 as passing — re-check.
-- **006 flags two vision topics on a non-vision sim.** `just log topics` reports
-  `[FAIL] /drone/marker_detection` and `/drone/pose_override` ("declared pub but
-  no publisher") on a default boot, because their publishers
-  (`aruco_pose_publisher`, `marker_localizer`) only run under `--vision aruco`.
-  The check is correct (fails closed) but the manifest declares vision topics
-  unconditionally. Options for a follow-up: run `just log topics` only against a
-  `--vision aruco` boot, or annotate vision-conditional topics in `docs/TOPICS.md`
-  so the checker can skip them when vision is off. The old name-only check passed
-  these because core nodes still *subscribe* (so the topic showed in
-  `ros2 topic list`); 006 is stricter by design.
+- **`01_arm_takeoff` "position drift" was a mission mismatch, FIXED by plan 007.**
+  Not flakiness and not a control bug: `just sim` boots `demo.yaml` (a moving
+  multi-phase mission) but `01` declares `sim_overlay = hover` in
+  `capabilities.toml`, so running it against a default sim flew the drone off the
+  anchored hold point. Plan 007 makes `just scenario <name>` boot the declared
+  config. Verified 2026-06-21: `just scenario 01_arm_takeoff` now self-boots the
+  hover sim and PASSes at origin (-0.01, 0.00, 2.98), phase=hover. Follow-up: the
+  capability can be recorded with `just cap mark arm_takeoff sim`.
+- **006 false-FAIL on vision topics, FIXED by plan 008.** `just log topics`
+  reported `[FAIL]` for `/drone/marker_detection` and `/drone/pose_override` on a
+  non-vision boot (their publishers `aruco_pose_publisher` / `marker_localizer`
+  only run under `--vision aruco`). Plan 008 marks those rows `pub (vision)` in
+  `docs/TOPICS.md` and the checker SKIPs them unless `--vision` is passed.
+  Verified 2026-06-21: non-vision boot prints 12 `[OK]` + 2 `[SKIP]` (exit 0);
+  `just sim --vision aruco` + `just log topics --vision` prints all 14 `[OK]`.
 
 ## What the audit found useful (keep — no plan needed)
 
