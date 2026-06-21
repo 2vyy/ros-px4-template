@@ -24,11 +24,15 @@ _RESERVED = {"t", "src", "level"}
 def parse_logfmt(line: str) -> dict[str, Any]:
     """Parse one logfmt line into a dict. Coerces ``t`` to float."""
     rec: dict[str, Any] = {}
-    for tok in shlex.split(line):
+    try:
+        tokens = shlex.split(line)
+    except ValueError:
+        tokens = line.split()
+    for tok in tokens:
         if "=" not in tok:
             continue
         key, _, val = tok.partition("=")
-        rec[key] = val
+        rec[key] = val.strip('"')
     if "t" in rec:
         try:
             rec["t"] = float(rec["t"])

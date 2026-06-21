@@ -19,7 +19,7 @@ class _NodeLike(Protocol):
 
 
 def _fmt_value(value: Any) -> str:
-    text = str(value)
+    text = str(value).replace("\n", "\\n")
     if text == "" or " " in text or "=" in text or '"' in text:
         return '"' + text.replace('"', '\\"') + '"'
     return text

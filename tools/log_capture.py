@@ -30,16 +30,18 @@ class Capturer:
 
     def __init__(self) -> None:
         self._t0: float | None = None
-        self._pending: str | None = None  # payload (src + body), no t=
+        self._pending_full: str | None = None
+        self._pending_dedup: str | None = None
         self._pending_t: float = 0.0
         self._count = 0
 
     def _emit_pending(self) -> list[str]:
-        if self._pending is None:
+        if self._pending_full is None:
             return []
         suffix = f" (x{self._count})" if self._count > 1 else ""
-        line = f"t={self._pending_t:.3f} {self._pending}{suffix}"
-        self._pending = None
+        line = f"t={self._pending_t:.3f} {self._pending_full}{suffix}"
+        self._pending_full = None
+        self._pending_dedup = None
         self._count = 0
         return [line]
 
@@ -57,15 +59,17 @@ class Capturer:
         if self._t0 is None:
             self._t0 = epoch
         t_rel = max(0.0, epoch - self._t0)
-        payload = f"src={src or 'unknown'} {rest}".rstrip()
+        payload_full = f"src={src or 'unknown'} {rest}".rstrip()
+        payload_dedup = re.sub(r"\bsim_t=\S+\s*", "", payload_full).strip()
 
         out: list[str] = []
-        if payload == self._pending:
+        if payload_dedup == self._pending_dedup:
             self._count += 1
             # _pending_t stays at the first occurrence's timestamp
         else:
             out = self._emit_pending()
-            self._pending = payload
+            self._pending_full = payload_full
+            self._pending_dedup = payload_dedup
             self._pending_t = t_rel
             self._count = 1
         return out

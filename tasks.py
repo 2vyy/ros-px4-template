@@ -127,10 +127,10 @@ def _ros_launch_env(**extra: str) -> dict[str, str]:
 
 
 def _ros2_launch_capture_argv(
-    launch_args: list[str], out_file: Path, *, append: bool, cwd: Path = ROOT
+    launch_args: list[str], cwd: Path = ROOT
 ) -> list[str]:
     """``bash -lc`` that sources ROS, then pipes ``ros2 launch`` stdout through the
-    live capture filter into ``out_file`` (logfmt session log). Not ``exec`` because
+    live capture filter into stdout. Not ``exec`` because
     a pipeline cannot be exec'd; the whole pipeline lives in the caller's setsid group.
     """
     ros_setup = _ros_setup_path()
@@ -138,14 +138,13 @@ def _ros2_launch_capture_argv(
     sources = [f"source {shlex.quote(ros_setup)}"]
     if ws_setup.exists():
         sources.append(f"source {shlex.quote(str(ws_setup))}")
-    redirect = ">>" if append else ">"
     launch = "ros2 launch " + " ".join(shlex.quote(a) for a in launch_args)
     capture = "uv run python tools/log_capture.py"
     inner = " && ".join(
         [
             *sources,
             f"cd {shlex.quote(str(cwd))}",
-            f"{launch} 2>&1 | {capture} {redirect} {shlex.quote(str(out_file))}",
+            f"{launch} 2>&1 | {capture}",
         ]
     )
     return ["bash", "-lc", "set -o pipefail; " + inner]
@@ -191,10 +190,11 @@ def _spawn_stack(launch_args: list[str], env: dict[str, str], *, append: bool) -
     for sim, hw, and e2e groups. Caller owns readiness checking and teardown.
     """
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    out_fh = (LOG_DIR / "latest.log").open("a" if append else "w", encoding="utf-8")
     return subprocess.Popen(
-        _ros2_launch_capture_argv(launch_args, LOG_DIR / "latest.log", append=append),
+        _ros2_launch_capture_argv(launch_args),
         env=env,
-        stdout=subprocess.DEVNULL,
+        stdout=out_fh,
         stderr=subprocess.STDOUT,
         preexec_fn=os.setsid,
         cwd=str(ROOT),
