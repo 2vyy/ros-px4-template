@@ -56,7 +56,7 @@ _CMDLINE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"gcs_heartbeat"), "gcs_heartbeat"),
     (re.compile(r"wait_ready"), "wait_ready"),
     (re.compile(r"ruby.*\b(?:gz|sim)\b"), "gz_ruby"),
-    (re.compile(r"tests/scenarios/"), "scenario"),
+    (re.compile(r"python.*tests/scenarios/"), "scenario"),
     (re.compile(r"install/ros_px4_template_core/lib/ros_px4_template_core/"), "node"),
 ]
 

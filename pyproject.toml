@@ -23,6 +23,7 @@ dev = [
     "ruff>=0.4",
     "ty>=0.0.1a8",
     "hypothesis>=6.100",
+    "lark>=1.1.9",
 ]
 
 [tool.ruff]
