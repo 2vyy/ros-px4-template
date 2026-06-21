@@ -16,8 +16,8 @@ row when done.
 | 002  | Remove the unexercised fault-injection subsystem | P2 | S | — | DONE (merged to main @ 2e407bc) |
 | 003  | Stop shipping stale dev-plan files with the template | P3 | S | — | DONE (merged to main @ de6f668) |
 | 004  | BACKLOG.md reflects current code (retire done/dead items) | P1 | S | — | DONE (merged to main @ 7181635) |
-| 005  | Extract gz/PX4 boot bash to `sim/launch/_start_gz_px4.sh` | P3 | M | — | APPROVED, awaiting sim sign-off (see below) |
-| 006  | Topic check enforces declared type and direction | P2 | M | — | DONE (merged to main @ 218714e; live `just log topics` pending) |
+| 005  | Extract gz/PX4 boot bash to `sim/launch/_start_gz_px4.sh` | P3 | M | — | DONE (merged to main @ ee86482; sim-verified no regression) |
+| 006  | Topic check enforces declared type and direction | P2 | M | — | DONE (merged to main @ 218714e; live-verified, see vision-topic note) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
@@ -32,15 +32,36 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
 - 005 and 006 each have a sim-boot verification step that an executor without
   `PX4_DIR`/Gazebo cannot run. Both plans say so: finish the cheap gates, then
   STOP and hand the sim sign-off to the operator rather than marking done.
-- **006 merged** (cheap gates all green: 10 unit tests, dry-run, lint, TOPICS.md
-  fixed). Remaining: run `just sim` then `just log topics` once and confirm every
-  topic prints `[OK]` (type + direction match).
-- **005 held, not merged.** Static change reviewed and byte-faithful (identical
-  export set, params, speed/headless guards) but a flight-boot refactor must
-  boot before it lands. Branch `advisor/005-extract-gz-px4-stack-bash` lives in
-  worktree `.claude/worktrees/agent-a46626c5614877f0e`. To finish: `cd` there (or
-  check out the branch), run `just sim` then `just scenario 01_arm_takeoff`
-  (expect PASS, no altitude runaway), then `git merge --ff-only` it into main.
+### Sim verification (2026-06-21, both 005 and 006 run on the live stack)
+
+- **005 verified equivalent and merged.** Booted the extracted-script branch:
+  `just sim` -> READY 15.5s with `Physics at realtime (set_physics skipped)`
+  (the runaway-prevention behavior the CRITICAL comment protects), full
+  arm/takeoff/land flight, altitude pinned at ~2.97m, no runaway. Compared
+  against `main` without 005 (inline bash): identical boot time and flight, so
+  the refactor introduces zero behavioral change.
+- **006 verified live and merged.** `just log topics` against the running sim
+  prints `[OK]` with type+direction for all 12 always-on topics.
+
+### Findings surfaced by sim verification (not 005/006 bugs)
+
+- **`01_arm_takeoff` fails `position drift` on current `main`**, with AND without
+  005 (reproduced on both: holds altitude fine at ~2.96m, OFFBOARD_TRACK reached,
+  but XY drifts past the hold tolerance during the 10s hold). Pre-existing
+  scenario flakiness / sim nondeterminism, unrelated to anything in this session
+  (no flight-control code was touched). Worth a separate look: either the hold
+  tolerance is too tight or position-hold has real drift. Capability registry may
+  list 01 as passing — re-check.
+- **006 flags two vision topics on a non-vision sim.** `just log topics` reports
+  `[FAIL] /drone/marker_detection` and `/drone/pose_override` ("declared pub but
+  no publisher") on a default boot, because their publishers
+  (`aruco_pose_publisher`, `marker_localizer`) only run under `--vision aruco`.
+  The check is correct (fails closed) but the manifest declares vision topics
+  unconditionally. Options for a follow-up: run `just log topics` only against a
+  `--vision aruco` boot, or annotate vision-conditional topics in `docs/TOPICS.md`
+  so the checker can skip them when vision is off. The old name-only check passed
+  these because core nodes still *subscribe* (so the topic showed in
+  `ros2 topic list`); 006 is stricter by design.
 
 ## What the audit found useful (keep — no plan needed)
 
