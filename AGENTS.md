@@ -155,3 +155,31 @@ Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing
 - Match the README's terse, table-heavy tone.
 - No em dashes, no Unicode arrows. Use `to`, `becomes`, plain hyphens, or punctuation.
 - Prefer linking back to a doc over duplicating it.
+
+
+## Rules
+For any file search or grep in the current git-indexed directory, use fff search mcp.
+For anything relating to viewing or searching for technical information, docs, issues, or projects on GitHub, use the rich `gh` cli tool.
+Use rtk (rust-token-killer) for trimmed-down common unix / dev commands.
+
+# Codebase Knowledge Graph (codebase-memory-mcp)
+
+Optional: when a repo is indexed, prefer graph tools for structural code questions (callers, definitions, architecture).
+
+## Priority Order
+1. `search_graph` — find functions, classes, routes, variables by pattern
+2. `trace_path` — trace who calls a function or what it calls
+3. `get_code_snippet` — read specific function/class source code
+4. `query_graph` — run Cypher queries for complex patterns
+5. `get_architecture` — high-level project summary
+
+## When to fall back to grep/glob/Read/Write
+- Searching for string literals, error messages, config values
+- Searching non-code files (Dockerfiles, shell scripts, configs)
+- Editing files (use Read + StrReplace/Write, not shell redirects)
+- When MCP tools return insufficient results
+
+## Examples
+- Find a handler: `search_graph(name_pattern=".*OrderHandler.*")`
+- Who calls it: `trace_path(function_name="OrderHandler", direction="inbound")`
+- Read source: `get_code_snippet(qualified_name="pkg/orders.OrderHandler")`
