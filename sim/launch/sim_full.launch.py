@@ -99,19 +99,7 @@ def _clock_bridge(context, *args, **kwargs):
 
 
 def _gz_px4_stack(context, *args, **kwargs):
-    """Run PX4 (non-standalone); PX4's own rcS starts Gazebo and spawns the model.
-
-    We do NOT pre-start `gz sim`. PX4 runs WITHOUT PX4_GZ_STANDALONE, so its rcS
-    starts Gazebo late in boot via `${PX4_GZ_WORLDS}/${world}.sdf` (PX4_GZ_WORLDS
-    points at our sim/worlds dir) and immediately attaches gz_bridge — giving a clean
-    lockstep boot. Pre-starting gz ourselves let it free-run ~7-9 s before PX4 attached,
-    corrupting IMU/baro timing → EKF2 divergence → phantom altitude runaway. Headless is
-    controlled by the HEADLESS env; sensor systems come from PX4_GZ_SERVER_CONFIG. Flight
-    uses stock thrust calibration (no SIM_GZ_EC_MIN / MPC_THR overrides) — verified to
-    hold altitude. PX4_SIM_SPEED_FACTOR is exported ONLY for speed != 1.0 (see the
-    critical note below the env block) — exporting it at all breaks physics at default
-    speed.
-    """
+    """Run PX4 (non-standalone); see sim/launch/_start_gz_px4.sh for the full boot rationale."""
     world = LaunchConfiguration("world").perform(context)
     model = LaunchConfiguration("model").perform(context)
     headless = LaunchConfiguration("headless").perform(context).lower() == "true"
@@ -128,65 +116,25 @@ def _gz_px4_stack(context, *args, **kwargs):
     plugins = f"{build}/src/modules/simulation/gz_plugins"
     server_config = f"{px4_dir}/Tools/simulation/gz/server.config"
 
-    # CRITICAL: only export PX4_SIM_SPEED_FACTOR for non-realtime runs. Setting it at
-    # all makes PX4's rcS (px4-rc.gzsim) call the gz set_physics service, which sends
-    # real_time_factor but leaves max_step_size unset → protobuf defaults it to 0,
-    # overwriting the world's 0.004 step. The zero step makes physics integration blow
-    # up: after arming the vehicle climbs away uncontrollably (the altitude "runaway").
-    # At the default speed=1.0 we simply omit it and the world's own real-time settings
-    # apply, giving stable flight. (verified: omitting it → clean 3 m offboard hold.)
-    speed_export = f"export PX4_SIM_SPEED_FACTOR={speed}; " if speed != 1.0 else ""
-
-    common_env = (
-        "set -e; "
-        "export GZ_IP=127.0.0.1; " + speed_export + f'export GZ_SIM_RESOURCE_PATH="{gz_paths}"; '
-        f'export PX4_GZ_WORLDS="{px4_gz_worlds}"; '
-        f'export PX4_GZ_PLUGINS="{plugins}"; '
-        f'export PX4_GZ_SERVER_CONFIG="{server_config}"; '
-        f'export GZ_SIM_SERVER_CONFIG_PATH="{server_config}"; '
-        f'export GZ_SIM_SYSTEM_PLUGIN_PATH="{plugins}"; '
-        f'export LD_LIBRARY_PATH="{plugins}:${{LD_LIBRARY_PATH}}"; '
-        # Applied at STARTUP (reliable) rather than via gcs_heartbeat over lossy UDP.
-        # Arming/EKF reliability: allow GPS fusion without strict SITL checks, arm w/o GPS.
-        "export PX4_PARAM_COM_ARM_WO_GPS=1; "
-        "export PX4_PARAM_CBRK_SUPPLY_CHK=894281; "
-        "export PX4_PARAM_COM_SPOOLUP_TIME=0.0; "
-        "export PX4_PARAM_EKF2_GPS_CHECK=0; "
-        "export PX4_PARAM_EKF2_GPS_CTRL=7; "
-        # NOTE: do NOT override SIM_GZ_EC_MIN / MPC_THR_HOVER / MPC_THR_MIN here.
-        # Stock x500 airframe defaults (EC_MIN=150, MPC_THR_HOVER=0.60) produce stable
-        # offboard altitude hold — verified against bare PX4 SITL. The earlier overrides
-        # (EC_MIN=0, MPC_THR_HOVER=0.15) came from a debunked "idle≈hover" theory and
-        # actually broke flight (no liftoff / runaway). Keep stock thrust calibration.
-    )
-
-    print(
-        f"[sim_full] Starting PX4 (it starts Gazebo in lockstep) world='{world}' model='{model}'",
-        flush=True,
-    )
-    headless_export = "export HEADLESS=1; " if headless else ""
-
-    # Let PX4's own rcS start Gazebo (stock non-standalone path). PX4 boots its modules
-    # first and only then runs `gz sim -r -s ${PX4_GZ_WORLDS}/${world}.sdf` and
-    # immediately attaches gz_bridge, so Gazebo free-runs for only a fraction of a second
-    # before the EKF is fed sensors — a clean lockstep boot. Pre-starting gz ourselves let
-    # it free-run ~7-9 s before PX4 attached, which corrupted IMU/baro timing and made
-    # EKF2 diverge (attitude + height), producing a phantom altitude runaway even while
-    # disarmed. PX4_GZ_WORLDS (exported above) points at our sim/worlds dir so PX4 picks
-    # up our custom world; sensor systems come from PX4_GZ_SERVER_CONFIG. The clock bridge
-    # waits for the world to exist (see _clock_bridge) so it cannot make PX4 mis-detect a
-    # "running" world during its own startup check.
-    cmd = (
-        common_env + headless_export + f'cd "{build}"; '
-        # Boot from stock airframe defaults every time (determinism): clear any params
-        # persisted by a prior run so flight behaviour never drifts between launches.
-        # Arming-enabler params come from the PX4_PARAM_* env above; everything else
-        # (thrust calibration, EKF tuning) stays at the proven-stable stock defaults.
-        "rm -f rootfs/parameters*.bson 2>/dev/null; "
-        + f'exec env PX4_GZ_WORLD="{world}" PX4_SIM_MODEL=gz_{model} ./bin/px4'
-    )
-
-    return [ExecuteProcess(cmd=["bash", "-c", cmd], name="gz_px4_stack", output="screen")]
+    script = Path(__file__).resolve().parent / "_start_gz_px4.sh"
+    return [
+        ExecuteProcess(
+            cmd=["bash", str(script)],
+            additional_env={
+                "PX4_BUILD": build,
+                "GZ_PATHS": gz_paths,
+                "PX4_GZ_WORLDS_DIR": px4_gz_worlds,
+                "PX4_GZ_PLUGINS_DIR": plugins,
+                "PX4_GZ_SERVER_CFG": server_config,
+                "SIM_WORLD": world,
+                "SIM_MODEL": model,
+                "SIM_SPEED": f"{speed}",
+                "HEADLESS_FLAG": "1" if headless else "",
+            },
+            name="gz_px4_stack",
+            output="screen",
+        )
+    ]
 
 
 def _vision_bridge(context, *args, **kwargs):
