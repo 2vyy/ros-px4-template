@@ -15,7 +15,7 @@ row when done.
 | 001  | Single-source agent docs (CLAUDE.md symlink + fix AGENTS/README drift) | P1 | S | — | DONE (merged to main @ 5ec8a1e) |
 | 002  | Remove the unexercised fault-injection subsystem | P2 | S | — | DONE (merged to main @ 2e407bc) |
 | 003  | Stop shipping stale dev-plan files with the template | P3 | S | — | DONE (merged to main @ de6f668) |
-| 004  | BACKLOG.md reflects current code (retire done/dead items) | P1 | S | — | TODO |
+| 004  | BACKLOG.md reflects current code (retire done/dead items) | P1 | S | — | DONE (merged to main @ 7181635) |
 | 005  | Extract gz/PX4 boot bash to `sim/launch/_start_gz_px4.sh` | P3 | M | — | TODO |
 | 006  | Topic check enforces declared type and direction | P2 | M | — | TODO |
 
