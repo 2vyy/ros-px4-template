@@ -12,17 +12,26 @@ row when done.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001  | Single-source agent docs (CLAUDE.md symlink + fix AGENTS/README drift) | P1 | S | — | DONE (advisor/improve-batch-001-003 @ 5ec8a1e) |
-| 002  | Remove the unexercised fault-injection subsystem | P2 | S | — | DONE (advisor/improve-batch-001-003 @ 2e407bc) |
-| 003  | Stop shipping stale dev-plan files with the template | P3 | S | — | DONE (advisor/improve-batch-001-003 @ de6f668) |
+| 001  | Single-source agent docs (CLAUDE.md symlink + fix AGENTS/README drift) | P1 | S | — | DONE (merged to main @ 5ec8a1e) |
+| 002  | Remove the unexercised fault-injection subsystem | P2 | S | — | DONE (merged to main @ 2e407bc) |
+| 003  | Stop shipping stale dev-plan files with the template | P3 | S | — | DONE (merged to main @ de6f668) |
+| 004  | BACKLOG.md reflects current code (retire done/dead items) | P1 | S | — | TODO |
+| 005  | Extract gz/PX4 boot bash to `sim/launch/_start_gz_px4.sh` | P3 | M | — | TODO |
+| 006  | Topic check enforces declared type and direction | P2 | M | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
 ## Dependency notes
 
-- All three plans are independent and can run in any order or in parallel.
-  001 is highest leverage (the agent loads `CLAUDE.md` every session and it is
-  currently wrong). 002 and 003 are pure cleanup.
+- 001-003 are DONE and merged to `main`.
+- The second batch (004-006, from the BACKLOG.md audit) are independent and can
+  run in any order or in parallel. Recommended order by leverage: **004** first
+  (trivial docs accuracy, the maintainer's explicit ask), then **006** (enforces
+  the manifest contract; unit-testable so cheaply verified), then **005** (launch
+  refactor whose decisive verification needs a sim boot — heaviest gate).
+- 005 and 006 each have a sim-boot verification step that an executor without
+  `PX4_DIR`/Gazebo cannot run. Both plans say so: finish the cheap gates, then
+  STOP and hand the sim sign-off to the operator rather than marking done.
 
 ## What the audit found useful (keep — no plan needed)
 
@@ -51,3 +60,31 @@ verified and deliberately left alone:
   invariants/BACKLOG as a future autopilot-abstraction seam (B51) that does not
   yet exist — plan 001 stops describing it as current structure but does not
   build it.
+
+### BACKLOG.md audit (2026-06-21, against `21cbe3d`)
+
+Vetted every open `docs/BACKLOG.md` item against current code. Outcomes:
+
+- **B27 — already done, not planned.** `lib/offboard_fsm.py` is a pure
+  `tick(FsmInputs)` state machine, imported by `offboard_controller`, with 7
+  unit tests in `test_offboard_fsm.py`. Plan 004 retires it into the
+  "Verified done" table.
+- **B53 / B55 — drift, folded into plan 004.** B53 referenced the deleted
+  `tools/fault_inject.py` (twice); B55's premise (replace `mission_runtime.tick`
+  if/elif) was already done by the `lib/mission/` engine. Both are reworded, not
+  removed — the underlying ideas stay open.
+- **B7 — mostly addressed, not planned.** Ports 8888/9090 are now documented in
+  README + `docs/MCP.md`; the remaining "document uv at repo root" sliver is low
+  value. Skipped.
+- **B1 — too vague to plan.** "Auto-debug guidance / more env invariants" is an
+  `explore` item with no concrete shape yet. Left in the backlog for the owner
+  to scope.
+- **B51, B52, B54, B56, B57 — strategic, kept as backlog direction.** These are
+  L-effort design work (autopilot abstraction, multi-vehicle namespacing, real
+  hardware bring-up, config-overlay expansion, param hot-reload). Handing
+  "build the abstraction layer" to a cheap executor is a mistake; they become
+  design/spike plans only if the owner asks. Not planned here.
+- **Planned (executor-ready):** 004 (B53/B55/B27 backlog drift), 005 (B44 bash
+  blob extraction), 006 (B58 topic type/direction enforcement). 006 also fixes a
+  stray `check-topics` -> `log topics` drift in `docs/TOPICS.md:3,52` that plan
+  001 missed.
