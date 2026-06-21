@@ -201,6 +201,16 @@ def _spawn_stack(launch_args: list[str], env: dict[str, str], *, append: bool) -
     )
 
 
+def _resolve_scenario_config(name: str) -> dict | None:
+    """Return the declared ``{"scenario", "vision", "overlay"}`` config for a
+    scenario name from ``tests/capabilities.toml``, or ``None`` if not declared.
+    """
+    for cfg in scenario_sim_configs("sim"):
+        if cfg["scenario"] == name:
+            return cfg
+    return None
+
+
 def _resolve_scenario_script(name: str) -> Path:
     """Return scenario script path or exit with available names."""
     script = ROOT / "tests" / "scenarios" / f"{name}.py"
@@ -784,19 +794,50 @@ def test(
 def scenario(
     name: str = typer.Argument(..., help="Scenario name (e.g. 01_arm_takeoff)"),
 ) -> None:
-    """Run a live scenario test directly by name."""
+    """Run a live scenario test directly by name.
+
+    Boots the sim config (vision/overlay) the scenario declares in
+    ``tests/capabilities.toml``, runs it in isolation, and tears the sim down
+    afterward — matching the e2e harness so a manual single run can't be
+    silently tested against the wrong mission. Scenarios with no declared
+    config fall back to running against whatever sim is already up.
+    """
     _smart_build(True)
-    script = _resolve_scenario_script(name)
-    print(f"Running scenario test: {name}...")
-    passed = False
-    try:
-        result = subprocess.run(
-            ["uv", "run", "python", str(script)], cwd=str(ROOT)
+    cfg = _resolve_scenario_config(name)
+    if cfg is None:
+        _resolve_scenario_script(name)
+        print(
+            f"No declared sim config for '{name}' in tests/capabilities.toml — "
+            "running against the existing sim (start one with `just sim` first)."
         )
-        passed = result.returncode == 0
+        print(f"Running scenario test: {name}...")
+        passed = False
+        try:
+            result = subprocess.run(
+                ["uv", "run", "python", str(ROOT / "tests" / "scenarios" / f"{name}.py")],
+                cwd=str(ROOT),
+            )
+            passed = result.returncode == 0
+        finally:
+            _summarize_logs_silent()
+        if not passed:
+            raise typer.Exit(int(ExitCode.FAIL))
+        return
+
+    _resolve_scenario_script(name)
+    print(f"Tearing down any existing stack before booting {name}'s declared sim...")
+    _teardown()
+
+    gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    (LOG_DIR / "latest.log").write_text("", encoding="utf-8")
+    try:
+        fails = _run_e2e_sim_group(
+            cfg["vision"], cfg["overlay"], [cfg["scenario"]], gz_resource=gz_resource
+        )
     finally:
         _summarize_logs_silent()
-    if not passed:
+    if fails > 0:
         raise typer.Exit(int(ExitCode.FAIL))
 
 
