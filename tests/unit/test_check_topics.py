@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from check_topics import TopicSpec, _topics_in_source, check_spec, parse_manifest
+from check_topics import TopicSpec, _topics_in_source, check_spec, parse_manifest, should_enforce
 
 
 def test_finds_topic_in_source(tmp_path: Path) -> None:
@@ -98,3 +98,41 @@ def test_check_spec_observed_type_none_is_not_present() -> None:
     spec = TopicSpec("/clock", "rosgraph_msgs/msg/Clock", "pub")
     problems = check_spec(spec, None, pub=0, sub=0)
     assert problems == ["not present on the live graph"]
+
+
+_VISION_MANIFEST = """\
+## Topics
+
+| Topic | Type | Dir | Owner |
+|-------|------|-----|-------|
+| `/clock` | `rosgraph_msgs/msg/Clock` | pub | clock_bridge |
+| `/drone/marker_detection` | `px4_ros_msgs/msg/MarkerDetection` | pub (vision) | aruco_pub |
+"""
+
+
+def test_parse_manifest_marks_vision_row_as_conditional() -> None:
+    specs = parse_manifest(_VISION_MANIFEST)
+    vision_spec = next(s for s in specs if s.name == "/drone/marker_detection")
+    assert vision_spec.direction == "pub"
+    assert vision_spec.conditional is True
+
+
+def test_parse_manifest_plain_row_is_not_conditional() -> None:
+    specs = parse_manifest(_VISION_MANIFEST)
+    plain_spec = next(s for s in specs if s.name == "/clock")
+    assert plain_spec.conditional is False
+
+
+def test_should_enforce_skips_conditional_topic_when_vision_off() -> None:
+    spec = TopicSpec("/drone/marker_detection", "px4_ros_msgs/msg/MarkerDetection", "pub", True)
+    assert should_enforce(spec, vision=False) is False
+
+
+def test_should_enforce_enforces_conditional_topic_when_vision_on() -> None:
+    spec = TopicSpec("/drone/marker_detection", "px4_ros_msgs/msg/MarkerDetection", "pub", True)
+    assert should_enforce(spec, vision=True) is True
+
+
+def test_should_enforce_always_enforces_plain_topic() -> None:
+    spec = TopicSpec("/clock", "rosgraph_msgs/msg/Clock", "pub")
+    assert should_enforce(spec, vision=False) is True

@@ -22,8 +22,8 @@ PX4 1.17 with uXRCE-DDS appends `_v1` to any message carrying `MESSAGE_VERSION` 
 | `/drone/controller_status` | `px4_ros_msgs/msg/ControllerStatus` | pub | `offboard_controller` |
 | `/drone/mission_status` | `px4_ros_msgs/msg/MissionStatus` | pub | `mission_manager` |
 | `/drone/mission_markers` | `visualization_msgs/msg/MarkerArray` | pub | `mission_manager` (RViz waypoint visualization) |
-| `/drone/marker_detection` | `px4_ros_msgs/msg/MarkerDetection` | pub | `aruco_pose_publisher` |
-| `/drone/pose_override` | `geometry_msgs/msg/PoseStamped` | pub | `marker_localizer` (known-marker relocalization fix) |
+| `/drone/marker_detection` | `px4_ros_msgs/msg/MarkerDetection` | pub (vision) | `aruco_pose_publisher` |
+| `/drone/pose_override` | `geometry_msgs/msg/PoseStamped` | pub (vision) | `marker_localizer` (known-marker relocalization fix) |
 
 ### Subscriptions
 
@@ -44,6 +44,10 @@ PX4 1.17 with uXRCE-DDS appends `_v1` to any message carrying `MESSAGE_VERSION` 
 - `/drone/odom`: `RELIABLE`. Single source of truth published by `position_node` from PX4's local-position estimate (anchored ENU), in both sim and hardware. `/drone/local_origin`: latched (`TRANSIENT_LOCAL`) effective NED setpoint origin.
 - `/drone/marker_detection`: `RELIABLE`, `KEEP_LAST` depth 10.
 - Other `/drone/*` status and setpoint topics: `RELIABLE`, `KEEP_LAST` depth 10.
+
+A `(vision)` suffix on the Dir marks a topic published only under
+`--vision aruco`; `just log topics` skips its presence check unless run with
+`--vision`.
 
 ## Adding a topic
 

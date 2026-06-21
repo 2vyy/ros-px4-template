@@ -21,6 +21,7 @@ class TopicSpec:
     name: str
     msg_type: str
     direction: str  # "pub" | "sub" | "pub/sub"
+    conditional: bool = False  # True when Dir carries a "(vision)" marker
 
 
 def parse_manifest(text: str) -> list[TopicSpec]:
@@ -37,13 +38,20 @@ def parse_manifest(text: str) -> list[TopicSpec]:
             continue
         name_m = _CELL_BACKTICK.search(cells[0])
         type_m = _CELL_BACKTICK.search(cells[1])
-        direction = cells[2].lower()
+        dir_cell = cells[2].lower()
+        conditional = "(vision)" in dir_cell
+        direction = dir_cell.replace("(vision)", "").strip()
         if not name_m or not type_m or direction not in _VALID_DIRS:
             continue
         if not name_m.group(1).startswith("/"):
             continue
-        specs.append(TopicSpec(name_m.group(1), type_m.group(1), direction))
+        specs.append(TopicSpec(name_m.group(1), type_m.group(1), direction, conditional))
     return specs
+
+
+def should_enforce(spec: TopicSpec, vision: bool) -> bool:
+    """A conditional (vision) topic is only enforced when vision is on."""
+    return vision or not spec.conditional
 
 
 def check_spec(spec: TopicSpec, observed_type: str | None, pub: int, sub: int) -> list[str]:
@@ -110,6 +118,11 @@ def main(
         "--source-dir",
         help="Root to search for .py files in dry-run mode (default: repo root)",
     ),
+    vision: bool = typer.Option(
+        False,
+        "--vision",
+        help="Enforce vision-conditional topics too (default: skip them)",
+    ),
 ) -> None:
     text = manifest.read_text(encoding="utf-8")
     expected = sorted(set(TOPIC_RE.findall(text)))
@@ -132,7 +145,12 @@ def main(
 
     specs = parse_manifest(text)
     failed_count = 0
+    checked_count = 0
     for spec in specs:
+        if not should_enforce(spec, vision):
+            typer.echo(f"  [SKIP] {spec.name} (vision off)")
+            continue
+        checked_count += 1
         observed_type, pub, sub = _live_topic_info(spec.name)
         problems = check_spec(spec, observed_type, pub, sub)
         if problems:
@@ -143,7 +161,7 @@ def main(
     if failed_count:
         typer.echo(f"{failed_count} topic(s) failed", err=True)
         raise typer.Exit(1)
-    typer.echo(f"All {len(specs)} documented topics match (type + direction).")
+    typer.echo(f"All {checked_count} checked topics match (type + direction).")
 
 
 if __name__ == "__main__":

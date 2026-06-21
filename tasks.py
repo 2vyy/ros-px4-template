@@ -848,12 +848,16 @@ def status():
 
 
 @log_app.command()
-def topics():
+def topics(
+    vision: bool = typer.Option(
+        False, "--vision", help="Also enforce vision-conditional topics (default: skip them)"
+    ),
+):
     """Audit live topics against docs/TOPICS.md."""
-    subprocess.run(
-        ["uv", "run", "python", "tools/check_topics.py", "--manifest", "docs/TOPICS.md"],
-        cwd=str(ROOT),
-    )
+    cmd = ["uv", "run", "python", "tools/check_topics.py", "--manifest", "docs/TOPICS.md"]
+    if vision:
+        cmd.append("--vision")
+    subprocess.run(cmd, cwd=str(ROOT))
 
 
 if __name__ == "__main__":
