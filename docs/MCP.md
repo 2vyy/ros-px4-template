@@ -6,7 +6,7 @@
 
 **ROS (apt):** `ros-jazzy-rosbridge-suite` in the same environment that runs `just sim` (distrobox `ubuntu` on CachyOS). Project Python tools use **`uv sync`**, not pip.
 
-Rosbridge WebSocket on port **9090**. It is launched by `hardware/launch/hardware.launch.py`, which is included by `sim/launch/sim_full.launch.py`. So both `just sim` and `just hardware` bring it up.
+Rosbridge WebSocket on port **9090**. It is launched by `hardware/launch/hardware.launch.py`, which is included by `sim/launch/sim_full.launch.py`. So both `just sim` and `just hw` bring it up.
 
 Check the port (do not point HTTP `curl` at the WebSocket endpoint):
 

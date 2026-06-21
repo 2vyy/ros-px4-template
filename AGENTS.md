@@ -6,7 +6,7 @@ Operating notes for an AI agent driving this repo. Optimized for debugging, runn
 
 ## Initial setup
 
-Complete [README quick start](README.md#quick-start) (through `just sim` or `just hardware`). For MCP and rosbridge checks, see [docs/MCP.md](docs/MCP.md).
+Complete [README quick start](README.md#quick-start) (through `just sim` or `just hw`). For MCP and rosbridge checks, see [docs/MCP.md](docs/MCP.md).
 
 ## Where to run
 
@@ -25,7 +25,7 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 2. Frames: [docs/FRAMES.md](docs/FRAMES.md). All `src/` code uses ENU; convert only at the PX4 boundary in `offboard_controller` and `mission_manager`.
 3. Never edit files inside `PX4_DIR`. Gazebo worlds and models belong in `sim/worlds` and `sim/models`.
 4. `src/px4_msgs` stays on branch `release/1.17`. Enforced by `tools/check_invariants.py`.
-5. Pure logic in `lib/`, nodes in `nodes/`, PX4 specific glue in `bridges/`.
+5. Pure logic in `lib/`, nodes in `nodes/`. ENU/NED conversion stays at the PX4 boundary in `nodes/offboard_controller.py` and `nodes/mission_manager.py`.
 6. `sim/launch/sim_full.launch.py` is the full sim. `hardware/launch/hardware.launch.py` is rosbridge plus core nodes only, included by the sim launch with `config:=sim`.
 
 ## Tooling
@@ -146,7 +146,7 @@ Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing
   4. `just check` then verify with `just status` or `ros2 node list`.
 - New libraries go in `src/core/ros_px4_template_core/lib/`. Add unit tests in `tests/unit/`. `lib/` must remain `rclpy` free where possible (see `StructuredLogger` Protocol pattern).
 - Always use `StructuredLogger` for agent-facing diagnostics. Call `self.slog.close()` from `destroy_node`.
-- New mission phases go in `lib/mission_runtime.py` (add a `PHASE_*` constant and a branch in `tick`). Do not embed phase logic in `nodes/mission_manager.py`.
+- Missions are data-driven YAML state graphs. New behaviors/guards go in `lib/mission/` and are registered in `lib/mission/registry.py`; missions are loaded by `lib/mission/loader.py`. Do not embed phase logic in `nodes/mission_manager.py`.
 - New scenarios go in `tests/scenarios/<NN>_<name>.py` using `_common.spin_until` and `PX4_QOS`. Each must end by calling `_common.write_report`, which prints a rich one-line verdict (`PASS`/`FAIL <name> <detail> <Ns>`); pass a real `detail` (waypoint error, hold time, or the fail reason), never a bare pass. Add a capability entry in `tests/capabilities.toml` and record via `just cap mark <id> sim` when passing.
 - Do not commit `.env`, `logs/`, `build/`, `install/`, or `log/`.
 

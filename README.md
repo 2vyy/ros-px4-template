@@ -18,8 +18,8 @@ This repository provides a pre-configured template for rapid drone software deve
 - All `src/` code is sim/hardware agnostic. Nothing under `src/` imports from `sim/` or `hardware/`.
 - All internal coordinates follow [ROS REP-103](https://www.ros.org/reps/rep-0103.html) ENU frame. Conversion to and from PX4 NED happens only at the PX4 boundary in `offboard_controller` and `mission_manager`.
 - Scenario integration tests in `tests/scenarios/` validate the capabilities of the current codebase. Verified milestones are recorded in `tests/capabilities.toml`.
-- Live topics are checked against the defined topic manifest in [docs/TOPICS.md](docs/TOPICS.md) with `just check-topics` to prevent interface drift.
-- Each node writes logs to `logs/<node>.jsonl`. After a run, `just log merge` produces the compressed logs at `logs/latest.log`, `logs/latest.jsonl`, and a summary at `logs/latest_summary.json`.
+- Live topics are checked against the defined topic manifest in [docs/TOPICS.md](docs/TOPICS.md) with `just log topics` to prevent interface drift.
+- All processes stream to one logfmt session log, `logs/latest.log` (every line `t=<rel_s> src=<source> ...`). `just log summary` regenerates `logs/latest_summary.json` (run arc, errors, per-scenario pass/fail).
 
 ## Runtime architecture
 
@@ -99,11 +99,10 @@ just sim stop
 ros-px4-template/
 ├── src/
 │   ├── core/
-│   │   └── ros_px4_template_core/   # Core nodes, lib, bridges (sim/hardware agnostic)
+│   │   └── ros_px4_template_core/   # Core nodes + lib (sim/hardware agnostic)
 │   │       ├── nodes/               # offboard_controller, mission_manager, position_node, ...
-│   │       └── lib/                 # frame_transforms, mission_runtime, StructuredLogger
+│   │       └── lib/                 # frames, mission/ engine, StructuredLogger
 │   ├── px4_ros_msgs/                # Custom msgs (ControllerStatus, MissionStatus)
-│   ├── px4_ros_sim/                 # Sim-only ROS helpers (not imported from core)
 │   └── px4_msgs/                    # Upstream PX4 micro XRCE defs (release/1.17)
 ├── sim/                             # Gazebo worlds, models, sim_full.launch.py
 ├── hardware/                        # Serial FC + rosbridge; no Gazebo
@@ -116,7 +115,7 @@ ros-px4-template/
 │   ├── scenarios/                   # Live acceptance tests on a running graph
 │   ├── unit/                        # Pure logic (no ROS graph)
 │   └── capabilities.toml            # Verified capability registry
-├── tools/                           # capabilities CLI, log merger, topic checker, ...
+├── tools/                           # capabilities CLI, log summarizer, topic checker, ...
 ├── docs/                            # FRAMES, TOPICS, MCP, MISSIONS, ...
 ├── AGENTS.md                        # Agent operating guide (this repo)
 ├── justfile
@@ -136,7 +135,7 @@ just sim gui                      # start sim with Gazebo GUI
 just sim bg                       # start headless sim in background and wait until ready
 just status                       # JSON status snapshot of running sim
 just scenario <name>              # live scenario (e.g. 01_arm_takeoff)
-just log merge                    # merge logs into latest.log
+just log summary                  # regenerate latest_summary.json
 just log topics                   # audit live topics vs docs/TOPICS.md
 ```
 
