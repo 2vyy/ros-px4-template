@@ -23,7 +23,7 @@ row when done.
 | 009  | Record a ROS 2 MCAP bag during `just sim`, stopped gracefully at teardown | P1 | M | — | DONE (merged @ 462dae3; 7 unit tests; **sim-verified 2026-06-22** — see live-verification note) |
 | 010  | Retrieve the matching PX4 SITL ULog into `logs/runs/<id>/session.ulg` at teardown | P1 | M | 009 | DONE (merged @ 34932bb; 6 unit tests; **sim-verified 2026-06-22** — fresh ULog copied, 0 survivors) |
 | 011  | `just analyze [<run>]` — overlay + query the run's bag+ULog via skein | P2 | M | 009, 010 | DONE (merged @ a5582ad; 13 unit tests + skein smoke; **sim-verified 2026-06-22** — aligned.mcap, px4_boot conf 0.907) |
-| 012  | Fix `just` arg forwarding so `analyze --query '<expr>'` survives `<`/spaces | P2 | S | — | TODO (fixes finding #1 from the 011 live run) |
+| 012  | Fix `just` arg forwarding so `analyze --query '<expr>'` survives `<`/spaces | P2 | S | — | DONE (merged @ e4cdcb5; **distrobox-verified 2026-06-22** — `just analyze latest --query 'z < -1' --stats` runs overlay+query; fixes finding #1) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
@@ -108,12 +108,10 @@ Ran the full pipeline in the `ubuntu` distrobox (headless), run `20260622_112924
 Two minor findings surfaced (neither blocks; candidates for a small follow-up /
 the 012 runbook):
 
-1. **`just analyze --query '<expr>'` mangles shell metacharacters.** A predicate
-   like `--query 'z < -1'` fails because `just _run` forwards `{{args}}` into
-   `bash -lc`, so the `<` is parsed as a redirect. Invoking `skein query … --where
-   'z < -1'` directly works fine. Fix options: quote/escape args in the `analyze`
-   recipe, accept the predicate via a file/stdin, or document `--where` predicates
-   that avoid `<`/`>` through `just`.
+1. ~~**`just analyze --query '<expr>'` mangles shell metacharacters.**~~ **FIXED by
+   plan 012** (merged @ e4cdcb5, distrobox-verified): `set positional-arguments` +
+   `"$@"` forwarding at every hop, distrobox re-entry via `bash -lc` positional
+   params. `just analyze latest --query 'z < -1' --stats` now runs overlay+query.
 2. **skein venv thrash across host vs container.** `uv run --project <skein>`
    rebuilds skein's `.venv` when the interpreter differs (host CPython vs the
    distrobox's). Harmless and self-correcting, and the template path always runs
