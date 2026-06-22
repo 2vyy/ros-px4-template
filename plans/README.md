@@ -20,6 +20,8 @@ row when done.
 | 006  | Topic check enforces declared type and direction | P2 | M | — | DONE (merged to main @ 218714e; live-verified, see vision-topic note) |
 | 007  | `just scenario <name>` boots the sim config it declares (fix demo/hover mismatch) | P2 | M | — | DONE (merged to main @ cf5c1af; sim-verified PASS) |
 | 008  | `just log topics` skips vision-conditional topics unless `--vision` | P3 | S | 006 | DONE (merged to main @ cf5c1af; sim-verified both modes) |
+| 009  | Record a ROS 2 MCAP bag during `just sim`, stopped gracefully at teardown | P1 | M | — | DONE (merged to main @ 462dae3; unit-verified, 7 new tests; colcon build + live SITL still deferred — no ROS in executor env) |
+| 010  | Retrieve the matching PX4 SITL ULog into `logs/runs/<id>/session.ulg` at teardown | P1 | M | 009 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
@@ -62,6 +64,22 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   `docs/TOPICS.md` and the checker SKIPs them unless `--vision` is passed.
   Verified 2026-06-21: non-vision boot prints 12 `[OK]` + 2 `[SKIP]` (exit 0);
   `just sim --vision aruco` + `just log topics --vision` prints all 14 `[OK]`.
+
+### skein integration epic (2026-06-22)
+
+- **009 is follow-up #1** of the integration design at
+  `/home/ivy/Projects/skein/docs/template-integration-design.md` (a sibling repo).
+  The template records nothing skein can ingest today; 009 makes `just sim`
+  produce a per-run MCAP bag. It is **independent** of the 001–008 batch and can
+  run any time. **010** (retrieve the matching PX4 SITL ULog into
+  `logs/runs/<id>/session.ulg` at teardown) is written and **depends on 009 being
+  merged first** — it imports `bag_recorder` and reuses the run layout + the
+  `bag.pid` "was-recording" signal. Still **not yet written**: 011 (`just analyze`
+  wiring over skein `overlay`/`query`). After 009+010 land, each `just sim` run
+  leaves a complete `logs/runs/<id>/{bag/<mcap>,session.ulg}` skein input pair.
+  009's `logs/runs/<id>/` layout and `logs/runs/latest` symlink are the contract
+  010/011 build on. The graded skein surface (`delta`/`reports`/`live --grade`)
+  is deferred to a later, hardware-gated phase.
 
 ## What the audit found useful (keep — no plan needed)
 
