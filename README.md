@@ -137,6 +137,7 @@ just status                       # JSON status snapshot of running sim
 just scenario <name>              # live scenario (e.g. 01_arm_takeoff)
 just log summary                  # regenerate latest_summary.json
 just log topics                   # audit live topics vs docs/TOPICS.md
+just analyze                      # overlay+query the latest recorded run via skein
 ```
 
 ## Docs
@@ -146,4 +147,5 @@ just log topics                   # audit live topics vs docs/TOPICS.md
 - [Topic owners and types](docs/TOPICS.md)
 - [rosbridge and ros-mcp-server](docs/MCP.md)
 - [Mission phases and YAML schema](docs/MISSIONS.md)
+- [Record & analyze a run with skein](docs/SKEIN.md)
 
