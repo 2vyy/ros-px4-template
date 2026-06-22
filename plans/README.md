@@ -21,7 +21,8 @@ row when done.
 | 007  | `just scenario <name>` boots the sim config it declares (fix demo/hover mismatch) | P2 | M | — | DONE (merged to main @ cf5c1af; sim-verified PASS) |
 | 008  | `just log topics` skips vision-conditional topics unless `--vision` | P3 | S | 006 | DONE (merged to main @ cf5c1af; sim-verified both modes) |
 | 009  | Record a ROS 2 MCAP bag during `just sim`, stopped gracefully at teardown | P1 | M | — | DONE (merged to main @ 462dae3; unit-verified, 7 new tests; colcon build + live SITL still deferred — no ROS in executor env) |
-| 010  | Retrieve the matching PX4 SITL ULog into `logs/runs/<id>/session.ulg` at teardown | P1 | M | 009 | TODO |
+| 010  | Retrieve the matching PX4 SITL ULog into `logs/runs/<id>/session.ulg` at teardown | P1 | M | 009 | DONE (merged to main @ 34932bb; unit-verified, 6 new tests; colcon build + live SITL still deferred — no ROS in executor env) |
+| 011  | `just analyze [<run>]` — overlay + query the run's bag+ULog via skein | P2 | M | 009, 010 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
@@ -74,12 +75,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   run any time. **010** (retrieve the matching PX4 SITL ULog into
   `logs/runs/<id>/session.ulg` at teardown) is written and **depends on 009 being
   merged first** — it imports `bag_recorder` and reuses the run layout + the
-  `bag.pid` "was-recording" signal. Still **not yet written**: 011 (`just analyze`
-  wiring over skein `overlay`/`query`). After 009+010 land, each `just sim` run
-  leaves a complete `logs/runs/<id>/{bag/<mcap>,session.ulg}` skein input pair.
-  009's `logs/runs/<id>/` layout and `logs/runs/latest` symlink are the contract
-  010/011 build on. The graded skein surface (`delta`/`reports`/`live --grade`)
-  is deferred to a later, hardware-gated phase.
+  `bag.pid` "was-recording" signal. **011** (`just analyze [<run>]`) wires skein's
+  stable `overlay` + `query` over a run's pair, invoking skein as a separate `uv`
+  project (`uv run --project <skein_dir> skein …`, default sibling `../skein`,
+  `SKEIN_DIR` override) — no skein dependency added to the template. 009+010 are
+  merged; 011 is written (TODO), depends on both. After 009+010 land, each
+  `just sim` run leaves a complete `logs/runs/<id>/{bag/<mcap>,session.ulg}` skein
+  input pair; 011 turns it into `aligned.mcap` + queries. Remaining: 012 (SITL
+  integration runbook, doc). The graded skein surface (`delta`/`reports`/`parity`/
+  `live --grade`) is deferred to a later, hardware-gated phase (design §5/§6).
 
 ## What the audit found useful (keep — no plan needed)
 
