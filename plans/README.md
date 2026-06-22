@@ -24,7 +24,7 @@ row when done.
 | 010  | Retrieve the matching PX4 SITL ULog into `logs/runs/<id>/session.ulg` at teardown | P1 | M | 009 | DONE (merged @ 34932bb; 6 unit tests; **sim-verified 2026-06-22** — fresh ULog copied, 0 survivors) |
 | 011  | `just analyze [<run>]` — overlay + query the run's bag+ULog via skein | P2 | M | 009, 010 | DONE (merged @ a5582ad; 13 unit tests + skein smoke; **sim-verified 2026-06-22** — aligned.mcap, px4_boot conf 0.907) |
 | 012  | Fix `just` arg forwarding so `analyze --query '<expr>'` survives `<`/spaces | P2 | S | — | DONE (merged @ e4cdcb5; **distrobox-verified 2026-06-22** — `just analyze latest --query 'z < -1' --stats` runs overlay+query; fixes finding #1) |
-| 013  | SITL integration runbook (`docs/SKEIN.md` — `just sim` → `just analyze`) | P3 | S | 009-012 | TODO |
+| 013  | SITL integration runbook (`docs/SKEIN.md` — `just sim` → `just analyze`) | P3 | S | 009-012 | DONE (merged @ e1088d2; `docs/SKEIN.md` + README links; doc-only) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
@@ -120,6 +120,13 @@ the 012 runbook):
 
 Evidence left in gitignored `logs/runs/20260622_112924/` (bag + session.ulg +
 aligned.mcap); `just clean` removes it.
+
+**Epic closed (2026-06-22):** plans 009–013 all merged to `main` and verified
+(009–012 on live SITL, 013 doc-only). The full pipeline ships: `just sim` →
+`logs/runs/<id>/{bag/<mcap>,session.ulg}` → `just analyze` → `aligned.mcap` +
+query, documented in `docs/SKEIN.md`. Remaining/optional: finding #2 (skein
+`.venv` host↔container thrash — harmless, unaddressed); the graded skein surface
+(`delta`/`reports`/`parity`/`live --grade`) deferred to a hardware-gated phase.
 
 ## What the audit found useful (keep — no plan needed)
 
