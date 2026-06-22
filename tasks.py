@@ -156,6 +156,7 @@ from capabilities import app as cap_app, scenario_sim_configs
 from log_summary import build_run_summary
 from cli_verdict import ExitCode, format_not_ready, format_ready, format_stopped
 import sim_cleanup
+import bag_recorder
 from log_query import app as log_app
 
 # Register sub-apps
@@ -180,6 +181,7 @@ def _teardown() -> bool:
     Returns True if nothing survived. Used by `stop`, by failed launches, and at
     every e2e group boundary.
     """
+    bag_recorder.stop()  # graceful SIGINT first; finalizes the MCAP. Non-fatal.
     result = sim_cleanup.teardown()
     print(format_stopped(result["killed"], result["survivors"]))
     return not result["survivors"]
@@ -529,9 +531,18 @@ def sim(
         _teardown()
         raise typer.Exit(int(ExitCode.FAIL))
 
+    # readiness confirmed past this point
+    run_dir = bag_recorder.new_run_dir()
+    bag_proc = bag_recorder.start(run_dir, env)
+    rec_detail = (
+        f"recording -> {run_dir.relative_to(ROOT)}/bag"
+        if bag_proc is not None
+        else "recording: DISABLED (recorder failed to start)"
+    )
     print(
         format_ready(
-            ["/fmu topics up", "rosbridge:9090", "GCS params committed"], elapsed
+            ["/fmu topics up", "rosbridge:9090", "GCS params committed", rec_detail],
+            elapsed,
         )
     )
 
