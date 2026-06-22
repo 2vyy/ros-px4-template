@@ -20,9 +20,9 @@ row when done.
 | 006  | Topic check enforces declared type and direction | P2 | M | — | DONE (merged to main @ 218714e; live-verified, see vision-topic note) |
 | 007  | `just scenario <name>` boots the sim config it declares (fix demo/hover mismatch) | P2 | M | — | DONE (merged to main @ cf5c1af; sim-verified PASS) |
 | 008  | `just log topics` skips vision-conditional topics unless `--vision` | P3 | S | 006 | DONE (merged to main @ cf5c1af; sim-verified both modes) |
-| 009  | Record a ROS 2 MCAP bag during `just sim`, stopped gracefully at teardown | P1 | M | — | DONE (merged to main @ 462dae3; unit-verified, 7 new tests; colcon build + live SITL still deferred — no ROS in executor env) |
-| 010  | Retrieve the matching PX4 SITL ULog into `logs/runs/<id>/session.ulg` at teardown | P1 | M | 009 | DONE (merged to main @ 34932bb; unit-verified, 6 new tests; colcon build + live SITL still deferred — no ROS in executor env) |
-| 011  | `just analyze [<run>]` — overlay + query the run's bag+ULog via skein | P2 | M | 009, 010 | DONE (merged to main @ a5582ad; unit-verified 13 tests + live skein smoke; live SITL `just sim→analyze` pending below) |
+| 009  | Record a ROS 2 MCAP bag during `just sim`, stopped gracefully at teardown | P1 | M | — | DONE (merged @ 462dae3; 7 unit tests; **sim-verified 2026-06-22** — see live-verification note) |
+| 010  | Retrieve the matching PX4 SITL ULog into `logs/runs/<id>/session.ulg` at teardown | P1 | M | 009 | DONE (merged @ 34932bb; 6 unit tests; **sim-verified 2026-06-22** — fresh ULog copied, 0 survivors) |
+| 011  | `just analyze [<run>]` — overlay + query the run's bag+ULog via skein | P2 | M | 009, 010 | DONE (merged @ a5582ad; 13 unit tests + skein smoke; **sim-verified 2026-06-22** — aligned.mcap, px4_boot conf 0.907) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
@@ -84,6 +84,42 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   input pair; 011 turns it into `aligned.mcap` + queries. Remaining: 012 (SITL
   integration runbook, doc). The graded skein surface (`delta`/`reports`/`parity`/
   `live --grade`) is deferred to a later, hardware-gated phase (design §5/§6).
+
+### Live SITL end-to-end verification (2026-06-22) — 009+010+011 PASS
+
+Ran the full pipeline in the `ubuntu` distrobox (headless), run `20260622_112924`:
+
+- **009** — `just sim --overlay auto_arm` reached READY in 16s; verdict showed
+  `recording -> logs/runs/20260622_112924/bag`. The bag grew 3.3 MB → 7.6 MB over
+  ~24 s of flight (recorder live).
+- **010** — `just stop` printed `Copied PX4 ULog 16_29_22.ulg -> …/session.ulg`
+  (28.1 MB) and `STOPPED: 1 processes killed, 0 survivors`; `logs/bag.pid` removed.
+  The freshness guard correctly picked the run's ULog (mtime today) over a stale
+  2026-06-21 one.
+- **011** — `just analyze latest` ran `skein overlay` (skein re-synced its own
+  venv for the container Python — env separation working) and wrote
+  `aligned.mcap` (316,082 records, 32.9 MB) with clock reconciliation:
+  `wall_epoch` 1.000, `sim_elapsed` 1.000, **`px4_boot` signal_match 0.907** —
+  high-confidence cross-correlation of the bag's vs the ULog's
+  `vehicle_local_position` on freshly recorded SITL data. `skein query` over the
+  aligned MCAP returned `vehicle_local_position` 12,600 rows @ 125 Hz, gap 0.012s.
+
+Two minor findings surfaced (neither blocks; candidates for a small follow-up /
+the 012 runbook):
+
+1. **`just analyze --query '<expr>'` mangles shell metacharacters.** A predicate
+   like `--query 'z < -1'` fails because `just _run` forwards `{{args}}` into
+   `bash -lc`, so the `<` is parsed as a redirect. Invoking `skein query … --where
+   'z < -1'` directly works fine. Fix options: quote/escape args in the `analyze`
+   recipe, accept the predicate via a file/stdin, or document `--where` predicates
+   that avoid `<`/`>` through `just`.
+2. **skein venv thrash across host vs container.** `uv run --project <skein>`
+   rebuilds skein's `.venv` when the interpreter differs (host CPython vs the
+   distrobox's). Harmless and self-correcting, and the template path always runs
+   inside distrobox so it's consistent there; only ad-hoc host invocations thrash.
+
+Evidence left in gitignored `logs/runs/20260622_112924/` (bag + session.ulg +
+aligned.mcap); `just clean` removes it.
 
 ## What the audit found useful (keep — no plan needed)
 
