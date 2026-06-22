@@ -157,6 +157,7 @@ from log_summary import build_run_summary
 from cli_verdict import ExitCode, format_not_ready, format_ready, format_stopped
 import sim_cleanup
 import bag_recorder
+import ulog_retrieve
 from log_query import app as log_app
 
 # Register sub-apps
@@ -181,8 +182,12 @@ def _teardown() -> bool:
     Returns True if nothing survived. Used by `stop`, by failed launches, and at
     every e2e group boundary.
     """
+    was_recording = bag_recorder.BAG_PIDFILE.exists()
     bag_recorder.stop()  # graceful SIGINT first; finalizes the MCAP. Non-fatal.
     result = sim_cleanup.teardown()
+    if was_recording:
+        # PX4 is dead now, so its ULog is final. Best-effort, SITL-only.
+        ulog_retrieve.retrieve(bag_recorder.RUNS_DIR / "latest")
     print(format_stopped(result["killed"], result["survivors"]))
     return not result["survivors"]
 
