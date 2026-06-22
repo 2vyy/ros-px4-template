@@ -22,7 +22,7 @@ row when done.
 | 008  | `just log topics` skips vision-conditional topics unless `--vision` | P3 | S | 006 | DONE (merged to main @ cf5c1af; sim-verified both modes) |
 | 009  | Record a ROS 2 MCAP bag during `just sim`, stopped gracefully at teardown | P1 | M | — | DONE (merged to main @ 462dae3; unit-verified, 7 new tests; colcon build + live SITL still deferred — no ROS in executor env) |
 | 010  | Retrieve the matching PX4 SITL ULog into `logs/runs/<id>/session.ulg` at teardown | P1 | M | 009 | DONE (merged to main @ 34932bb; unit-verified, 6 new tests; colcon build + live SITL still deferred — no ROS in executor env) |
-| 011  | `just analyze [<run>]` — overlay + query the run's bag+ULog via skein | P2 | M | 009, 010 | TODO |
+| 011  | `just analyze [<run>]` — overlay + query the run's bag+ULog via skein | P2 | M | 009, 010 | DONE (merged to main @ a5582ad; unit-verified 13 tests + live skein smoke; live SITL `just sim→analyze` pending below) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
