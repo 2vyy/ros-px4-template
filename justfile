@@ -35,6 +35,10 @@ sim *args:
 stop:
     @just _run stop
 
+# Analyze a recorded run with skein (overlay bag+ULog; optional --query)
+analyze *args:
+    @just _run analyze {{args}}
+
 # Connect to serial hardware flight controller
 hw *args:
     @just _run hw {{args}}

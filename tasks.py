@@ -158,6 +158,7 @@ from cli_verdict import ExitCode, format_not_ready, format_ready, format_stopped
 import sim_cleanup
 import bag_recorder
 import ulog_retrieve
+import skein_analyze
 from log_query import app as log_app
 
 # Register sub-apps
@@ -557,6 +558,64 @@ def stop():
     """Exhaustive cold teardown of the whole stack (no process survives)."""
     ok = _teardown()
     raise typer.Exit(int(ExitCode.OK) if ok else int(ExitCode.FAIL))
+
+
+@app.command()
+def analyze(
+    run: str = typer.Argument("latest", help="Run id under logs/runs/, or 'latest'."),
+    query: str = typer.Option("", "--query", "-q", help="Run `skein query --where <expr>` on the aligned MCAP after overlay."),
+    channel: str = typer.Option("vehicle_local_position", "--channel", "-c", help="Channel for --query."),
+    stats: bool = typer.Option(False, "--stats", help="Per-channel aggregates for --query."),
+):
+    """Overlay a recorded run's bag + ULog onto one timeline with skein, writing
+    logs/runs/<run>/aligned.mcap. With --query, also query that aligned MCAP.
+
+    skein is invoked as a separate uv project (uv run --project). Override its
+    location with SKEIN_DIR (default: ../skein beside this repo).
+    """
+    try:
+        skein_dir = skein_analyze.resolve_skein_dir()
+        run_dir = skein_analyze.resolve_run_dir(run)
+    except skein_analyze.AnalyzeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        raise typer.Exit(int(ExitCode.USAGE)) from None
+
+    bag = skein_analyze.find_bag_mcap(run_dir)
+    ulog = run_dir / "session.ulg"
+    ulog = ulog if ulog.is_file() else None
+    if bag is None and ulog is None:
+        print(
+            f"Error: run {run_dir.name} has neither a bag (logs/runs/<id>/bag/*.mcap) "
+            "nor a session.ulg — did it record? (see plans 009/010)",
+            file=sys.stderr,
+        )
+        raise typer.Exit(int(ExitCode.USAGE))
+    if ulog is None:
+        print("Warning: no session.ulg for this run — overlaying bag only.", file=sys.stderr)
+    if bag is None:
+        print("Warning: no bag for this run — overlaying ULog only.", file=sys.stderr)
+
+    out = run_dir / "aligned.mcap"
+    env = _get_clean_env()
+    print(f"Overlaying {run_dir.name} -> {out.relative_to(ROOT)}")
+    res = subprocess.run(
+        skein_analyze.overlay_argv(skein_dir, bag=bag, ulog=ulog, out=out),
+        cwd=str(ROOT),
+        env=env,
+    )
+    if res.returncode != 0:
+        print("skein overlay failed.", file=sys.stderr)
+        raise typer.Exit(int(ExitCode.FAIL))
+
+    if query:
+        res = subprocess.run(
+            skein_analyze.query_argv(skein_dir, out, channel=channel, where=query, stats=stats),
+            cwd=str(ROOT),
+            env=env,
+        )
+        if res.returncode != 0:
+            print("skein query failed.", file=sys.stderr)
+            raise typer.Exit(int(ExitCode.FAIL))
 
 
 @app.command()
