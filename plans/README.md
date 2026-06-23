@@ -39,7 +39,7 @@ row when done.
 | 020  | `mission_manager` builds its input snapshot under a lock (race-free, as docs claim) | P2 | M | — | TODO |
 | 021  | Extract + unit-test marker-map parsing; skip malformed entries instead of crashing | P2 | M | — | DONE (merged to main; `lib/marker_map.py` pure `parse_marker_map` never raises + 6 unit tests, `marker_localizer` calls it and logs warnings instead of crashing in __init__. Well-formed path byte-identical) |
 | 022  | Generate a JSON Schema for mission YAML (editor autocomplete/validation) | P3 | S | 016 | DONE (merged to main; `build_schema()`+`just mission schema` generate `schemas/mission.schema.json` with registry-derived enums, `$schema` directive in all 4 missions, 5 tests incl. real-mission validation + drift guard via dev-only `jsonschema`, docs/MISSIONS.md "Editor schema". Direction plan — additive, maintainer may revert) |
-| 023  | `just scenario-new <name>` scaffolds a runnable `Scenario` stub | P3 | M | — | TODO |
+| 023  | `just scenario-new <name>` scaffolds a runnable `Scenario` stub | P3 | M | — | DONE (merged to main; `tools/scenario_scaffold.py` pure `render_scenario`/`class_name` + 3 tests, `scenario-new` command in tasks.py, `justfile` recipe added so `just scenario-new` works as documented, AGENTS.md note. Generated stub is ruff-clean + ast-parseable; re-run exits 2; smoke file not committed. Direction plan) |
 | 024  | `just scenario-status [name]` prints one scenario's last verdict | P3 | S | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)

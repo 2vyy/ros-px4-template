@@ -161,6 +161,7 @@ import ulog_retrieve
 import skein_analyze
 from log_query import app as log_app
 from mission_cli import app as mission_app
+from scenario_scaffold import render_scenario
 
 # Register sub-apps
 app.add_typer(log_app, name="log", help="Query, merge, tail, or view logs/status/topics.")
@@ -922,6 +923,36 @@ def scenario(
         _summarize_logs_silent()
     if fails > 0:
         raise typer.Exit(int(ExitCode.FAIL))
+
+
+@app.command("scenario-new")
+def scenario_new(
+    name: str = typer.Argument(..., help="Scenario name, e.g. 04_my_check"),
+) -> None:
+    """Scaffold a runnable Scenario stub at tests/scenarios/<name>.py.
+
+    Writes a stub modeled on 03_waypoint.py (a `_Node` plus a `Scenario`
+    subclass); edit the `done()` predicate, add a tests/capabilities.toml entry,
+    then run `just scenario <name>`.
+    """
+    target = ROOT / "tests" / "scenarios" / f"{name}.py"
+    if target.exists():
+        print(f"refusing to overwrite existing {target}", file=sys.stderr)
+        raise typer.Exit(int(ExitCode.USAGE))
+    target.write_text(render_scenario(name), encoding="utf-8")
+    cap_id = re.sub(r"^\d+_", "", name) or name
+    print(f"Wrote {target}")
+    print("Next steps:")
+    print(f"  1. Edit the done() / report_detail() predicate in {target}")
+    print("  2. Register it in tests/capabilities.toml, e.g.:\n")
+    print(f"[capabilities.{cap_id}]")
+    print('description = "TODO: what this scenario verifies"')
+    print('status = "unverified"')
+    print("platforms = []")
+    print(f'scenario_file = "{name}.py"')
+    print('sim_vision = "none"')
+    print('sim_overlay = "auto_arm"\n')
+    print(f"  3. Run it:  just scenario {name}")
 
 
 @app.command()
