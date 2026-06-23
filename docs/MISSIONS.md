@@ -45,6 +45,22 @@ The loader (`lib/mission/loader.py`) validates the document up front and raises
 `MissionError` for an unknown behavior, guard, initial state, or transition
 target — a malformed mission fails fast at startup, not mid-flight.
 
+## Validate from the CLI
+
+The loader is `rclpy`-free, so the same validation is reachable without booting
+anything. `just mission` runs in under a second on a bare checkout (no ROS, no
+build, no sim):
+
+```bash
+just mission list                 # every config/missions/*.yaml with its description
+just mission validate <name>      # OK / FAIL with the exact loader error; exit 2 on failure
+just mission show <name>          # states, transitions, and terminal set of a loaded mission
+```
+
+`just mission validate hover` runs the identical loader `mission_manager` uses at
+runtime, so a misspelled behavior or a transition to a nonexistent state surfaces
+here instead of after a ~16-30s Gazebo + PX4 SITL boot.
+
 ## FSM semantics (this is a real FSM, not a switch statement)
 
 Each tick (`tick_rate_hz`, default 10 Hz) the engine:

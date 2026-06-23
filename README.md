@@ -135,6 +135,7 @@ just sim --gui                    # same, with the Gazebo GUI
 just stop                         # exhaustive cold teardown of the whole stack
 just status                       # JSON status snapshot of running sim
 just scenario <name>              # live scenario (e.g. 01_arm_takeoff)
+just mission validate <name>      # validate a mission YAML in <1s, no sim
 just log summary                  # regenerate latest_summary.json
 just log topics                   # audit live topics vs docs/TOPICS.md
 just analyze                      # overlay+query the latest recorded run via skein
