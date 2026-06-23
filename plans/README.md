@@ -27,9 +27,49 @@ row when done.
 | 013  | SITL integration runbook (`docs/SKEIN.md` — `just sim` → `just analyze`) | P3 | S | 009-012 | DONE (merged @ e1088d2; `docs/SKEIN.md` + README links; doc-only) |
 | 014  | Per-environment skein venv (no host↔container `uv` rebuild thrash) | P3 | S | 011 | DONE (merged @ f45f1de; 8 new tests, 20 pass; resolves finding #2 — the venv-thrash follow-up). Two ruff done-criteria waived as pre-existing baseline debt (PT018 + an f-string in pre-existing code, identical on `main` — ruff version drift, see below). |
 
+### Round 2 (2026-06-22, against `0f93f0e`) — mission-defining + e2e ergonomics
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 015  | Remove the stale `missions/` dir that contradicts `config/missions/` | P1 | S | — | DONE (merged to main; `missions/README.md` deleted, README structure table now lists `config/missions/`. Note: historical `docs/superpowers/plans/*.md` archives still mention `missions/` conceptually — left untouched, out of scope) |
+| 016  | `just mission` validate/list/show — validate a mission without booting the sim | P1 | M | — | TODO |
+| 017  | README command examples match the real `just` interface (`just sim stop`→`just stop`, `just sim gui`→`just sim --gui`) | P1 | S | — | TODO |
+| 018  | E2E gate fails when the topic audit or report fails (stop swallowing exit codes) | P1 | S | — | TODO |
+| 019  | Add a committed `.env.example` for first-run onboarding | P2 | S | — | TODO |
+| 020  | `mission_manager` builds its input snapshot under a lock (race-free, as docs claim) | P2 | M | — | TODO |
+| 021  | Extract + unit-test marker-map parsing; skip malformed entries instead of crashing | P2 | M | — | TODO |
+| 022  | Generate a JSON Schema for mission YAML (editor autocomplete/validation) | P3 | S | 016 | TODO |
+| 023  | `just scenario-new <name>` scaffolds a runnable `Scenario` stub | P3 | M | — | TODO |
+| 024  | `just scenario-status [name]` prints one scenario's last verdict | P3 | S | — | TODO |
+
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
 ## Dependency notes
+
+### Round 2 (2026-06-22)
+
+- **015–019 are independent** and can run in any order or in parallel.
+  Recommended by leverage: **015** (delete the misleading `missions/` dir),
+  **017** (README command drift), **018** (e2e exit-code swallow) first — all S,
+  pure-text or pure-Python, no sim needed — then **016** (the `just mission` CLI,
+  the highest-value item) and **019** (`.env.example`).
+- **015 and 017 both edit `README.md` but different sections** (015: the
+  project-structure table; 017: quick-start + everyday-commands). Land them in
+  either order; each plan's Scope/STOP notes the other's section so they do not
+  collide. If both run in parallel, expect a trivial merge.
+- **016 before 022**: the JSON-Schema plan reuses `tools/mission_cli.py` and its
+  registry access created by 016.
+- **020 and 021** touch the runtime nodes. 020 (`mission_manager` lock) is the
+  only MED-risk plan in this round and needs a live-scenario re-verification
+  (operator/distrobox) before it can be marked DONE — its done-criteria say so.
+  021 (marker-map parse) is verifiable entirely with `pytest` (no sim).
+- **023 and 024** are independent CLI-ergonomics adds, verifiable with `pytest`.
+- Verification note: `just check` lints/typechecks `tools/`, `tests`, and
+  `src/core/.../lib`, but **not** `tasks.py` — so plans that edit `tasks.py`
+  (016/018/019/023/024) verify behavior by running `uv run python tasks.py <cmd>`
+  directly (and `uv run ruff check tasks.py` manually), as each plan specifies.
+
+### Round 1
 
 - 001-003 are DONE and merged to `main`.
 - The second batch (004-006, from the BACKLOG.md audit) are independent and can
@@ -141,6 +181,43 @@ verified and deliberately left alone:
 - `tests/capabilities.toml` + `cap mark` — load-bearing: `scenario_sim_configs()`
   drives e2e group scheduling (`tasks.py:734`), not just a registry.
 - `tools/status.py`, `tools/e2e_report.py`, the detached-sim contract.
+
+## Findings considered and rejected — Round 2 (2026-06-22)
+
+Vetted against the live code; these were surfaced by the audit but are not worth
+plans:
+
+- **"Path traversal" in mission `path_file`** (`lib/mission/loader.py:20-22`) —
+  REJECTED. The mission YAML is author-controlled local config; whoever can write
+  the mission you run can already run arbitrary missions, so reading an arbitrary
+  file via `path_file` is not a privilege boundary crossing. Not a real
+  vulnerability for a local dev template.
+- **Float tolerance `sqrt`-vs-squared "jitter"** (`lib/waypoint_mission.py:75`,
+  `lib/mission/behaviors.py`) — REJECTED. Mechanism misdiagnosed: `sqrt` is
+  well-conditioned and physical position noise dominates any rounding; there is no
+  evidence of boundary oscillation. The genuine concept (reach hysteresis) has no
+  grounding signal behind it here.
+- **Marker-stability counter continuity after a brief dropout**
+  (`mission_manager.py:140,153-156`) — DEFERRED. Subtle, niche (only affects
+  `marker_stable` with strict N), MED confidence. Plan 020 makes the existing
+  semantics race-free; redefining "N consecutive fresh frames" is a separate
+  behavior-change discussion, not bundled here.
+- **Marker-map crash on malformed YAML** (HARDENING-07) — FOLDED into plan 021
+  (the extracted `parse_marker_map` skips bad entries), not a standalone plan.
+- **Terminal-state behavior validation** (CORRECTNESS-05) — covered in spirit by
+  plan 016's `just mission validate`; a hard "terminal states must be safe"
+  assertion is deferred (requires a malformed mission to matter, and missions are
+  author-controlled).
+- **Scenario number 04 gap** — NOT PLANNED. Cosmetic; 04 was simply never
+  authored. Reserve it for a future scenario when one is added.
+- **`tasks.py` god-module / package-rename ergonomics** — NOT PLANNED. At 940
+  lines `tasks.py` is well-factored (shared `_spawn_stack`/`_ros_launch_env`/
+  `_smart_build`); no refactor justified. Package rename via `sed` is already
+  low-friction.
+- **Strategic backlog B51–B57** (autopilot abstraction, multi-vehicle, real HW
+  bring-up, more mission types, config-overlay expansion, param hot-reload) —
+  unchanged: L-effort design work, owner's roadmap call, not handed to an
+  executor. Tracked in `docs/BACKLOG.md`.
 
 ## Findings considered and deferred / rejected
 
