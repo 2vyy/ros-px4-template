@@ -961,6 +961,18 @@ def status():
     subprocess.run(["uv", "run", "python", "tools/status.py"], cwd=str(ROOT))
 
 
+@app.command("scenario-status")
+def scenario_status(
+    name: str = typer.Argument("", help="Scenario name; default: the most recent run."),
+) -> None:
+    """Print the verdict of one scenario's last run from logs/scenario_<name>.json."""
+    args = ["uv", "run", "python", "tools/scenario_status.py"]
+    if name:
+        args.append(name)
+    res = subprocess.run(args, cwd=str(ROOT))
+    raise typer.Exit(res.returncode)
+
+
 @log_app.command()
 def topics(
     vision: bool = typer.Option(

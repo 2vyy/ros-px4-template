@@ -111,6 +111,7 @@ All processes (our nodes plus PX4 / Gazebo / XRCE) stream to one session log, `l
 1. **Grep it directly**: `rg src=px4 logs/latest.log` (one source), `rg event= logs/latest.log` (state transitions), `rg ERROR logs/latest.log`, `rg -C 5 "t=42\." logs/latest.log` (everything around t=42). Field extraction needs no tool: `rg event=WAYPOINT_REACHED logs/latest.log | grep -o "err_m=[0-9.]*"`.
 2. **Arc summary**: `just log summary` (re)generates and prints `logs/latest_summary.json` (run arc, errors, per-scenario pass/fail). E2E prints it automatically at the end.
 3. **Live tail**: `just log tail` follows `logs/latest.log`.
+4. **One scenario's verdict**: `just scenario-status [name]` prints the PASS/FAIL line for a single run from `logs/scenario_<name>.json` (default: the most recent), exit 0 pass / 1 fail / 2 missing. No `jq`.
 
 Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing else is filtered, so a smoking gun is never hidden.
 
