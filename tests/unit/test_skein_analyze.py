@@ -24,8 +24,10 @@ def test_overlay_argv_both_bag_and_ulog() -> None:
 
     assert argv[:7] == ["uv", "run", "--project", str(skein_dir), "skein", "overlay", "--out"]
     assert argv[7] == str(out)
-    assert "--bag" in argv and str(bag) in argv
-    assert "--ulog" in argv and str(ulog) in argv
+    assert "--bag" in argv
+    assert str(bag) in argv
+    assert "--ulog" in argv
+    assert str(ulog) in argv
 
 
 def test_overlay_argv_bag_only() -> None:
@@ -35,7 +37,8 @@ def test_overlay_argv_bag_only() -> None:
 
     argv = skein_analyze.overlay_argv(skein_dir, bag=bag, ulog=None, out=out)
 
-    assert "--bag" in argv and str(bag) in argv
+    assert "--bag" in argv
+    assert str(bag) in argv
     assert "--ulog" not in argv
 
 
@@ -46,7 +49,8 @@ def test_overlay_argv_ulog_only() -> None:
 
     argv = skein_analyze.overlay_argv(skein_dir, bag=None, ulog=ulog, out=out)
 
-    assert "--ulog" in argv and str(ulog) in argv
+    assert "--ulog" in argv
+    assert str(ulog) in argv
     assert "--bag" not in argv
 
 
@@ -70,8 +74,10 @@ def test_query_argv_with_all_options() -> None:
         skein_dir, artifact, channel="vehicle_local_position", where="z < -2", stats=True
     )
 
-    assert "-c" in argv and "vehicle_local_position" in argv
-    assert "--where" in argv and "z < -2" in argv
+    assert "-c" in argv
+    assert "vehicle_local_position" in argv
+    assert "--where" in argv
+    assert "z < -2" in argv
     assert "--stats" in argv
 
 

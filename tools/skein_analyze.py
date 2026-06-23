@@ -61,8 +61,7 @@ def resolve_skein_dir(skein_dir: str | None = None) -> Path:
     path = Path(raw) if raw else ROOT.parent / "skein"
     if not (path / "pyproject.toml").is_file():
         raise AnalyzeError(
-            f"skein project not found at {path} "
-            "(set SKEIN_DIR or place skein beside this repo)."
+            f"skein project not found at {path} (set SKEIN_DIR or place skein beside this repo)."
         )
     return path
 

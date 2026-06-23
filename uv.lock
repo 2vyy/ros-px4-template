@@ -317,7 +317,7 @@ dev = [
     { name = "hypothesis", specifier = ">=6.100" },
     { name = "lark", specifier = ">=1.1.9" },
     { name = "pytest", specifier = ">=8.2" },
-    { name = "ruff", specifier = ">=0.4" },
+    { name = "ruff", specifier = ">=0.15,<0.16" },
     { name = "ty", specifier = ">=0.0.1a8" },
 ]
 
