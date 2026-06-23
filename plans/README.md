@@ -25,6 +25,7 @@ row when done.
 | 011  | `just analyze [<run>]` — overlay + query the run's bag+ULog via skein | P2 | M | 009, 010 | DONE (merged @ a5582ad; 13 unit tests + skein smoke; **sim-verified 2026-06-22** — aligned.mcap, px4_boot conf 0.907) |
 | 012  | Fix `just` arg forwarding so `analyze --query '<expr>'` survives `<`/spaces | P2 | S | — | DONE (merged @ e4cdcb5; **distrobox-verified 2026-06-22** — `just analyze latest --query 'z < -1' --stats` runs overlay+query; fixes finding #1) |
 | 013  | SITL integration runbook (`docs/SKEIN.md` — `just sim` → `just analyze`) | P3 | S | 009-012 | DONE (merged @ e1088d2; `docs/SKEIN.md` + README links; doc-only) |
+| 014  | Per-environment skein venv (no host↔container `uv` rebuild thrash) | P3 | S | 011 | DONE (merged @ f45f1de; 8 new tests, 20 pass; resolves finding #2 — the venv-thrash follow-up). Two ruff done-criteria waived as pre-existing baseline debt (PT018 + an f-string in pre-existing code, identical on `main` — ruff version drift, see below). |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
