@@ -27,6 +27,7 @@ from ros_px4_template_core.lib.frames import (
     enu_quaternion_from_yaw,
     enu_yaw_from_quaternion,
 )
+from ros_px4_template_core.lib.marker_map import parse_marker_map
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 
 _RELIABLE_QOS = QoSProfile(
@@ -57,10 +58,10 @@ class MarkerLocalizer(Node):
         if not p.is_absolute():
             p = _project_root() / p
         doc = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        self._map: dict[int, tuple[float, float, float]] = {
-            int(k): (float(v["x"]), float(v["y"]), float(v["z"]))
-            for k, v in (doc.get("markers") or {}).items()
-        }
+        self._map: dict[int, tuple[float, float, float]]
+        self._map, warnings = parse_marker_map(doc)
+        for w in warnings:
+            self.slog.info("marker_map: skipped malformed entry", detail=w)
         self._yaw = 0.0
 
         self.create_subscription(Odometry, "/drone/odom", self._odom_cb, _RELIABLE_QOS)
