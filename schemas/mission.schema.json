@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ros-px4-template mission",
+  "type": "object",
+  "required": [
+    "mission"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "mission": {
+      "type": "object",
+      "required": [
+        "initial",
+        "states"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "initial": {
+          "type": "string"
+        },
+        "states": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "behavior"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "behavior": {
+                "enum": [
+                  "center_on_marker",
+                  "follow_waypoints",
+                  "goto_origin",
+                  "hold",
+                  "search_lawnmower"
+                ]
+              },
+              "params": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "safety": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "guard",
+              "to"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "guard": {
+                "enum": [
+                  "armed_at_altitude",
+                  "estimate_invalid",
+                  "geofence_breach",
+                  "hold_complete",
+                  "inputs_stale",
+                  "marker_fresh",
+                  "marker_lost",
+                  "marker_stable",
+                  "reached",
+                  "search_complete",
+                  "waypoints_done"
+                ]
+              },
+              "params": {
+                "type": "object"
+              },
+              "to": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "transitions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "from",
+              "guard",
+              "to"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "guard": {
+                "enum": [
+                  "armed_at_altitude",
+                  "estimate_invalid",
+                  "geofence_breach",
+                  "hold_complete",
+                  "inputs_stale",
+                  "marker_fresh",
+                  "marker_lost",
+                  "marker_stable",
+                  "reached",
+                  "search_complete",
+                  "waypoints_done"
+                ]
+              },
+              "params": {
+                "type": "object"
+              },
+              "to": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "terminal": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

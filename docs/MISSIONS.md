@@ -61,6 +61,17 @@ just mission show <name>          # states, transitions, and terminal set of a l
 runtime, so a misspelled behavior or a transition to a nonexistent state surfaces
 here instead of after a ~16-30s Gazebo + PX4 SITL boot.
 
+## Editor schema
+
+Each `config/missions/*.yaml` starts with a `# yaml-language-server: $schema=...`
+directive pointing at `schemas/mission.schema.json`, so a schema-aware editor
+(VS Code / Neovim / Cursor YAML extensions) gives autocomplete for `behavior` and
+`guard` names and flags structural mistakes as you type. The schema is generated
+from the registry (`known_behaviors()` / `known_guards()`), never hand-edited:
+regenerate it with `just mission schema > schemas/mission.schema.json` whenever a
+behavior or guard is added or removed. A unit test fails if the committed file
+drifts from the registry.
+
 ## FSM semantics (this is a real FSM, not a switch statement)
 
 Each tick (`tick_rate_hz`, default 10 Hz) the engine:

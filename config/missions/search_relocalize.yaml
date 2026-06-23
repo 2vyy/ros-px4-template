@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schemas/mission.schema.json
 # Search a lawnmower pattern, relocalize on a KNOWN marker, then return to origin.
 #
 # Demonstrates a real (non-linear) FSM: the global `safety` tier runs every tick
