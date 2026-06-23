@@ -10,6 +10,7 @@ bare checkout — no ROS, no colcon build, no Gazebo/PX4 boot.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -21,6 +22,7 @@ import typer
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "core"))
 
 from ros_px4_template_core.lib.mission.loader import MissionError, load_mission_file
+from ros_px4_template_core.lib.mission.registry import known_behaviors, known_guards
 from ros_px4_template_core.lib.mission.types import Mission
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -93,6 +95,72 @@ def describe_mission(m: Mission) -> str:
     return "\n".join(lines)
 
 
+def build_schema() -> dict:
+    """Build a draft 2020-12 JSON Schema for a mission document.
+
+    The ``behavior`` and ``guard`` enums are generated from the live registry
+    (`known_behaviors()` / `known_guards()`), not hardcoded, so the schema never
+    drifts from the code. The structure mirrors `docs/MISSIONS.md`.
+    """
+    behaviors = sorted(known_behaviors())
+    guards = sorted(known_guards())
+    state_def = {
+        "type": "object",
+        "required": ["behavior"],
+        "additionalProperties": False,
+        "properties": {
+            "behavior": {"enum": behaviors},
+            "params": {"type": "object"},
+        },
+    }
+    safety_edge = {
+        "type": "object",
+        "required": ["guard", "to"],
+        "additionalProperties": False,
+        "properties": {
+            "guard": {"enum": guards},
+            "params": {"type": "object"},
+            "to": {"type": "string"},
+        },
+    }
+    transition_edge = {
+        "type": "object",
+        "required": ["from", "guard", "to"],
+        "additionalProperties": False,
+        "properties": {
+            "from": {"type": "string"},
+            "guard": {"enum": guards},
+            "params": {"type": "object"},
+            "to": {"type": "string"},
+        },
+    }
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ros-px4-template mission",
+        "type": "object",
+        "required": ["mission"],
+        "additionalProperties": False,
+        "properties": {
+            "mission": {
+                "type": "object",
+                "required": ["initial", "states"],
+                "additionalProperties": False,
+                "properties": {
+                    "initial": {"type": "string"},
+                    "states": {
+                        "type": "object",
+                        "minProperties": 1,
+                        "additionalProperties": state_def,
+                    },
+                    "safety": {"type": "array", "items": safety_edge},
+                    "transitions": {"type": "array", "items": transition_edge},
+                    "terminal": {"type": "array", "items": {"type": "string"}},
+                },
+            }
+        },
+    }
+
+
 @app.command("list")
 def list_cmd() -> None:
     """List every mission in config/missions/ with its description."""
@@ -128,6 +196,12 @@ def show_cmd(
         typer.echo(f"cannot load {name}: {type(e).__name__}: {e}", err=True)
         raise typer.Exit(2) from None
     typer.echo(describe_mission(m))
+
+
+@app.command("schema")
+def schema_cmd() -> None:
+    """Print a JSON Schema for mission YAML (behavior/guard enums from the registry)."""
+    typer.echo(json.dumps(build_schema(), indent=2))
 
 
 if __name__ == "__main__":

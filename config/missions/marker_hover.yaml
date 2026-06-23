@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schemas/mission.schema.json
 # Fly the path, then center over the (unknown) marker and hold. Used by 05_aruco_hover.
 mission:
   initial: takeoff

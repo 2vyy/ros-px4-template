@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schemas/mission.schema.json
 # Waypoint demo: arm+climb, fly the demo path, then done. Used by 03_waypoint.
 mission:
   initial: takeoff

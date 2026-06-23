@@ -24,6 +24,9 @@ dev = [
     "ty>=0.0.1a8",
     "hypothesis>=6.100",
     "lark>=1.1.9",
+    # Dev-only: validates config/missions/*.yaml against schemas/mission.schema.json
+    # in tests. NOT a runtime dep — editors consume the static schema file.
+    "jsonschema>=4.0",
 ]
 
 [tool.ruff]
