@@ -147,7 +147,7 @@ Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing
 - New libraries go in `src/core/ros_px4_template_core/lib/`. Add unit tests in `tests/unit/`. `lib/` must remain `rclpy` free where possible (see `StructuredLogger` Protocol pattern).
 - Always use `StructuredLogger` for agent-facing diagnostics. Call `self.slog.close()` from `destroy_node`.
 - Missions are data-driven YAML state graphs. New behaviors/guards go in `lib/mission/` and are registered in `lib/mission/registry.py`; missions are loaded by `lib/mission/loader.py`. Do not embed phase logic in `nodes/mission_manager.py`.
-- New scenarios go in `tests/scenarios/<NN>_<name>.py` using `_common.spin_until` and `PX4_QOS`. Each must end by calling `_common.write_report`, which prints a rich one-line verdict (`PASS`/`FAIL <name> <detail> <Ns>`); pass a real `detail` (waypoint error, hold time, or the fail reason), never a bare pass. Add a capability entry in `tests/capabilities.toml` and record via `just cap mark <id> sim` when passing.
+- New scenarios go in `tests/scenarios/<NN>_<name>.py` using `_common.spin_until` and `PX4_QOS`. Scaffold a runnable stub with `just scenario-new <NN>_<name>` (writes the `Scenario` boilerplate and prints the `capabilities.toml` snippet to add), then edit the `done()` predicate. Each must end by calling `_common.write_report`, which prints a rich one-line verdict (`PASS`/`FAIL <name> <detail> <Ns>`); pass a real `detail` (waypoint error, hold time, or the fail reason), never a bare pass. Add a capability entry in `tests/capabilities.toml` and record via `just cap mark <id> sim` when passing.
 - Do not commit `.env`, `logs/`, `build/`, `install/`, or `log/`.
 
 ## House style

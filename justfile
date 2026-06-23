@@ -52,6 +52,10 @@ test *args:
 scenario name:
     @just _run scenario "{{name}}"
 
+# Scaffold a runnable Scenario stub at tests/scenarios/<name>.py
+scenario-new *args:
+    @just _run scenario-new "$@"
+
 # View JSON workspace status snapshot (nodes, live status, capabilities)
 status:
     @just _run status
