@@ -63,3 +63,7 @@ cap *args:
 # Observability hub (merge logs, watch/tail logs, or validate live topic graph)
 log *args:
     @just _run log "$@"
+
+# List, validate, or describe mission YAML graphs (no sim needed)
+mission *args:
+    @just _run mission "$@"

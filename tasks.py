@@ -160,10 +160,12 @@ import bag_recorder
 import ulog_retrieve
 import skein_analyze
 from log_query import app as log_app
+from mission_cli import app as mission_app
 
 # Register sub-apps
 app.add_typer(log_app, name="log", help="Query, merge, tail, or view logs/status/topics.")
 app.add_typer(cap_app, name="cap", help="Manage verified capabilities registry.")
+app.add_typer(mission_app, name="mission", help="List, validate, and describe mission YAML.")
 
 
 def _summarize_logs_silent() -> None:
