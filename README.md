@@ -62,10 +62,10 @@ flowchart TD
 
 ## Quick start
 
-1. Add PX4, ROS, and version paths to `.env` (adjust paths if yours differ):
+1. Copy the environment template and edit paths for your machine:
 
 ```bash
-echo -e 'PX4_DIR=/path/to/PX4-Autopilot\nROS_SETUP=/opt/ros/jazzy/setup.bash\nPX4_VERSION=v1.17.0\n' >> .env
+cp .env.example .env       # then edit .env: PX4_DIR, ROS_SETUP, PX4_VERSION
 ```
 
 1. Initialize and build:
