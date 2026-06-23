@@ -56,6 +56,10 @@ scenario name:
 scenario-new *args:
     @just _run scenario-new "$@"
 
+# Print one scenario's last verdict (default: most recent run)
+scenario-status *args:
+    @just _run scenario-status "$@"
+
 # View JSON workspace status snapshot (nodes, live status, capabilities)
 status:
     @just _run status
