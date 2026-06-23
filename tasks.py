@@ -597,6 +597,7 @@ def analyze(
 
     out = run_dir / "aligned.mcap"
     env = _get_clean_env()
+    env.setdefault("UV_PROJECT_ENVIRONMENT", str(skein_analyze.skein_venv_dir()))
     print(f"Overlaying {run_dir.name} -> {out.relative_to(ROOT)}")
     res = subprocess.run(
         skein_analyze.overlay_argv(skein_dir, bag=bag, ulog=ulog, out=out),

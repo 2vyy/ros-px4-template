@@ -10,10 +10,43 @@ the argv and resolve paths; tasks.py runs them.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = ROOT / "logs" / "runs"
+
+# distrobox/podman create this file inside a container; absent on the host.
+_CONTAINERENV = Path("/run/.containerenv")
+
+
+def _env_tag() -> str:
+    """A short, filesystem-safe label for the current execution environment.
+
+    skein is invoked via ``uv run --project <skein>``; its venv records ONE
+    interpreter. The host and the ``ubuntu`` distrobox have different Pythons,
+    so a shared venv is rebuilt on every host<->container switch. Tagging the
+    venv per environment stops that. distrobox sets ``CONTAINER_ID`` (the
+    container name) and creates ``/run/.containerenv``; on the host neither is
+    present, so the tag is ``host``.
+    """
+    cid = os.environ.get("CONTAINER_ID", "").strip()
+    if not cid and _CONTAINERENV.exists():
+        cid = "container"
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", cid) or "host"
+
+
+def skein_venv_dir(tag: str | None = None) -> Path:
+    """Per-environment uv venv directory for skein, outside both repos.
+
+    Used as ``UV_PROJECT_ENVIRONMENT`` when spawning skein so the host
+    (e.g. Python 3.14) and the distrobox container (Python 3.12) keep separate
+    venvs instead of rebuilding the shared ``<skein>/.venv`` on every switch.
+    Lives under the user cache (honors ``XDG_CACHE_HOME``).
+    """
+    base = os.environ.get("XDG_CACHE_HOME", "").strip()
+    root = Path(base) if base else Path.home() / ".cache"
+    return root / "ros-px4-template" / "skein-venv" / (tag or _env_tag())
 
 
 class AnalyzeError(Exception):

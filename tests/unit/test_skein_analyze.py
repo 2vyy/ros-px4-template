@@ -11,7 +11,6 @@ import pytest
 
 import skein_analyze
 
-
 # --- overlay_argv -----------------------------------------------------------
 
 
@@ -161,3 +160,70 @@ def test_find_bag_mcap_returns_none_when_no_mcap_present(tmp_path) -> None:
     result = skein_analyze.find_bag_mcap(run_dir)
 
     assert result is None
+
+
+# --- _env_tag ------------------------------------------------------------------
+
+
+def test_env_tag_returns_sanitized_container_id(monkeypatch) -> None:
+    monkeypatch.setenv("CONTAINER_ID", "ubuntu")
+
+    result = skein_analyze._env_tag()
+
+    assert result == "ubuntu"
+
+
+def test_env_tag_sanitizes_unsafe_characters(monkeypatch) -> None:
+    monkeypatch.setenv("CONTAINER_ID", "a/b c")
+
+    result = skein_analyze._env_tag()
+
+    assert result == "a_b_c"
+
+
+def test_env_tag_returns_host_when_unset_and_no_containerenv(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("CONTAINER_ID", raising=False)
+    monkeypatch.setattr(skein_analyze, "_CONTAINERENV", tmp_path / "nope")
+
+    result = skein_analyze._env_tag()
+
+    assert result == "host"
+
+
+def test_env_tag_returns_container_when_containerenv_present(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("CONTAINER_ID", raising=False)
+    marker = tmp_path / "containerenv"
+    marker.write_text("")
+    monkeypatch.setattr(skein_analyze, "_CONTAINERENV", marker)
+
+    result = skein_analyze._env_tag()
+
+    assert result == "container"
+
+
+# --- skein_venv_dir --------------------------------------------------------------
+
+
+def test_skein_venv_dir_honors_xdg_cache_home(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+
+    result = skein_analyze.skein_venv_dir("ubuntu")
+
+    assert result == tmp_path / "ros-px4-template" / "skein-venv" / "ubuntu"
+
+
+def test_skein_venv_dir_falls_back_to_home_cache(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.setattr(skein_analyze.Path, "home", lambda: tmp_path)
+
+    result = skein_analyze.skein_venv_dir("host")
+
+    assert result == tmp_path / ".cache" / "ros-px4-template" / "skein-venv" / "host"
+
+
+def test_skein_venv_dir_uses_env_tag_when_no_tag_given(monkeypatch) -> None:
+    monkeypatch.setenv("CONTAINER_ID", "ubuntu")
+
+    result = skein_analyze.skein_venv_dir()
+
+    assert result.name == "ubuntu"
