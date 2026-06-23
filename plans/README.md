@@ -34,7 +34,7 @@ row when done.
 | 015  | Remove the stale `missions/` dir that contradicts `config/missions/` | P1 | S | — | DONE (merged to main; `missions/README.md` deleted, README structure table now lists `config/missions/`. Note: historical `docs/superpowers/plans/*.md` archives still mention `missions/` conceptually — left untouched, out of scope) |
 | 016  | `just mission` validate/list/show — validate a mission without booting the sim | P1 | M | — | TODO |
 | 017  | README command examples match the real `just` interface (`just sim stop`→`just stop`, `just sim gui`→`just sim --gui`) | P1 | S | — | DONE (merged to main; quick-start stop block + everyday-commands corrected: `just stop`, `just sim --gui`, removed `just sim bg`/foreground claim) |
-| 018  | E2E gate fails when the topic audit or report fails (stop swallowing exit codes) | P1 | S | — | TODO |
+| 018  | E2E gate fails when the topic audit or report fails (stop swallowing exit codes) | P1 | S | — | DONE (merged to main; topic-audit returncode now increments `fails`, report returncode gates the success message. Step-3 test already present — `test_e2e_report.py` covers empty→FAIL/all-pass→OK/one-fail→FAIL — no new test needed. Topic-audit wiring is review-verified; live `just test e2e` is operator sign-off) |
 | 019  | Add a committed `.env.example` for first-run onboarding | P2 | S | — | TODO |
 | 020  | `mission_manager` builds its input snapshot under a lock (race-free, as docs claim) | P2 | M | — | TODO |
 | 021  | Extract + unit-test marker-map parsing; skip malformed entries instead of crashing | P2 | M | — | TODO |
