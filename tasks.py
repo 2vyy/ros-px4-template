@@ -753,10 +753,13 @@ def _run_e2e_sim_group(
 
         if audit_topics:
             print("Auditing topic graph...")
-            subprocess.run(
+            res_topics = subprocess.run(
                 ["uv", "run", "python", "tools/check_topics.py", "--manifest", "docs/TOPICS.md"],
                 cwd=str(ROOT),
             )
+            if res_topics.returncode != 0:
+                print("  [FAIL] topic graph violates docs/TOPICS.md", file=sys.stderr)
+                fails += 1
     finally:
         print(f"Tearing down sim group (vision={vision} overlay={overlay})...")
         _teardown()
@@ -852,9 +855,11 @@ def test(
             _summarize_logs_silent()
 
             print("Generating E2E Report...")
-            subprocess.run(["uv", "run", "python", "tools/e2e_report.py"], cwd=str(ROOT))
+            res_report = subprocess.run(
+                ["uv", "run", "python", "tools/e2e_report.py"], cwd=str(ROOT)
+            )
 
-            if fails > 0:
+            if fails > 0 or res_report.returncode != 0:
                 raise typer.Exit(int(ExitCode.FAIL))
             print("E2E cycle finished successfully (all scenarios passed).")
 
