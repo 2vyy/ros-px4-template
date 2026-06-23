@@ -108,8 +108,8 @@ ros-px4-template/
 ├── hardware/                        # Serial FC + rosbridge; no Gazebo
 ├── config/
 │   ├── params/                      # sim/hardware overlays; path_file, enable_marker_hover
-│   └── paths/                       # ENU waypoint lists only
-├── missions/                        # per-mission launch recipes (e.g. inspect)
+│   ├── paths/                       # ENU waypoint lists only
+│   └── missions/                    # data-driven mission YAML state graphs (see docs/MISSIONS.md)
 ├── vehicles/                        # vehicle configurations (e.g. x500.yaml)
 ├── tests/
 │   ├── scenarios/                   # Live acceptance tests on a running graph
