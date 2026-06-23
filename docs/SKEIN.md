@@ -154,6 +154,12 @@ The bag records this minimum useful topic set (defined in
 
 - `SKEIN_DIR` — path to the skein checkout. Default: `../skein` (sibling of
   this repo). Override if skein lives elsewhere.
+- `UV_PROJECT_ENVIRONMENT` — where skein's uv venv lives. By default `just
+  analyze` picks a per-environment path under your cache
+  (`~/.cache/ros-px4-template/skein-venv/<env>`, keyed on host vs. the distrobox
+  container) so the host (e.g. Python 3.14) and the container (Python 3.12)
+  don't rebuild a shared `<skein>/.venv` on every switch. Export it yourself to
+  override.
 - `--query` / `-q` — a `skein query --where` expression to run against the
   aligned MCAP.
 - `--channel` / `-c` — which channel `--query` applies to (default
