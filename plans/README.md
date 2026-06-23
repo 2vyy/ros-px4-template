@@ -33,7 +33,7 @@ row when done.
 |------|-------|----------|--------|------------|--------|
 | 015  | Remove the stale `missions/` dir that contradicts `config/missions/` | P1 | S | — | DONE (merged to main; `missions/README.md` deleted, README structure table now lists `config/missions/`. Note: historical `docs/superpowers/plans/*.md` archives still mention `missions/` conceptually — left untouched, out of scope) |
 | 016  | `just mission` validate/list/show — validate a mission without booting the sim | P1 | M | — | TODO |
-| 017  | README command examples match the real `just` interface (`just sim stop`→`just stop`, `just sim gui`→`just sim --gui`) | P1 | S | — | TODO |
+| 017  | README command examples match the real `just` interface (`just sim stop`→`just stop`, `just sim gui`→`just sim --gui`) | P1 | S | — | DONE (merged to main; quick-start stop block + everyday-commands corrected: `just stop`, `just sim --gui`, removed `just sim bg`/foreground claim) |
 | 018  | E2E gate fails when the topic audit or report fails (stop swallowing exit codes) | P1 | S | — | TODO |
 | 019  | Add a committed `.env.example` for first-run onboarding | P2 | S | — | TODO |
 | 020  | `mission_manager` builds its input snapshot under a lock (race-free, as docs claim) | P2 | M | — | TODO |

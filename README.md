@@ -90,7 +90,7 @@ just cap mark arm_takeoff sim
 1. Stop everything:
 
 ```bash
-just sim stop
+just stop
 ```
 
 ## Project structure
@@ -130,9 +130,9 @@ ros-px4-template/
 just                              # list all workflows
 just setup                        # one-time setup (px4_msgs, uv, rosdep, build)
 just check                        # format, lint, typecheck, build, unit tests
-just sim                          # start headless sim (foreground)
-just sim gui                      # start sim with Gazebo GUI
-just sim bg                       # start headless sim in background and wait until ready
+just sim                          # boot headless sim detached, wait until ready, return
+just sim --gui                    # same, with the Gazebo GUI
+just stop                         # exhaustive cold teardown of the whole stack
 just status                       # JSON status snapshot of running sim
 just scenario <name>              # live scenario (e.g. 01_arm_takeoff)
 just log summary                  # regenerate latest_summary.json
