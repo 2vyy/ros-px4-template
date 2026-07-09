@@ -70,6 +70,36 @@ def test_start_returns_none_and_does_not_raise_when_spawn_fails(monkeypatch, tmp
     assert not pidfile.exists()
 
 
+def test_start_closes_log_file_handle_in_parent(monkeypatch, tmp_path) -> None:
+    pidfile = tmp_path / "bag.pid"
+    monkeypatch.setattr(bag_recorder, "BAG_PIDFILE", pidfile)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    opened_file_handles = []
+    original_open = Path.open
+
+    def wrapped_open(self, *args, **kwargs):
+        fh = original_open(self, *args, **kwargs)
+        if self.name == "bag_record.log":
+            opened_file_handles.append(fh)
+        return fh
+
+    monkeypatch.setattr(Path, "open", wrapped_open)
+
+    class FakeProc:
+        pid = 4242
+
+    def fake_spawn(argv, **kwargs):
+        return FakeProc()
+
+    proc = bag_recorder.start(run_dir, {"PATH": "/usr/bin"}, spawn=fake_spawn)
+
+    assert proc is not None
+    assert len(opened_file_handles) == 1
+    assert opened_file_handles[0].closed is True
+
+
 def test_stop_returns_true_immediately_when_no_pidfile(monkeypatch, tmp_path) -> None:
     pidfile = tmp_path / "bag.pid"
     monkeypatch.setattr(bag_recorder, "BAG_PIDFILE", pidfile)

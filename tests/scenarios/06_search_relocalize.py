@@ -24,6 +24,7 @@ import time
 import cv2
 import numpy as np
 import rclpy
+from _common import spin_until, write_report
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from px4_ros_msgs.msg import MissionStatus
@@ -31,7 +32,6 @@ from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from ros_px4_template_core.lib.frames import enu_offset_to_body_flu, enu_yaw_from_quaternion
 from sensor_msgs.msg import CameraInfo, Image
-from tests.scenarios._common import spin_until, write_report
 
 _RELIABLE_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,

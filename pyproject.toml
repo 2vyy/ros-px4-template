@@ -17,12 +17,14 @@ dependencies = [
     "opencv-python-headless>=4.7.0",
 ]
 
+# tasks.py runs in uv script mode with its own smaller inline dep list (see tasks.py:1-12).
 [dependency-groups]
 dev = [
     "pytest>=8.2",
     "ruff>=0.15,<0.16",
     "ty>=0.0.1a8",
     "hypothesis>=6.100",
+    # ROS Jazzy's launch_testing pytest plugin imports launch.frontend, which imports lark.
     "lark>=1.1.9",
     # Dev-only: validates config/missions/*.yaml against schemas/mission.schema.json
     # in tests. NOT a runtime dep — editors consume the static schema file.

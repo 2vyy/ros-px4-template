@@ -26,8 +26,8 @@ PX4_QOS = QoSProfile(
 _LOG_DIR = Path(__file__).resolve().parents[2] / "logs"
 
 
-def _ros2(*args: str, timeout: float = 5.0) -> None:
-    """Run a ros2 CLI command, sourcing the ROS2 setup if ros2 is not already on PATH."""
+def _ros2(*args: str, timeout: float = 5.0) -> bool:
+    """Run a ros2 CLI command; return True only when the command exits cleanly."""
     import shutil
     import subprocess
 
@@ -37,20 +37,26 @@ def _ros2(*args: str, timeout: float = 5.0) -> None:
         ros2_args = " ".join(f'"{a}"' for a in args)
         cmd = ["bash", "-c", f"source /opt/ros/jazzy/setup.bash 2>/dev/null && ros2 {ros2_args}"]
     try:
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+        res = subprocess.run(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout
+        )
+        return res.returncode == 0
     except Exception:
-        pass
+        return False
 
 
-def trigger_auto_arm() -> None:
+def trigger_auto_arm() -> bool:
     """Dynamically enable auto-arming on the running offboard_controller for scenario execution."""
-    _ros2("param", "set", "/offboard_controller", "auto_arm", "true")
+    ok = _ros2("param", "set", "/offboard_controller", "auto_arm", "true")
+    if not ok:
+        print("[scenario] WARN: auto_arm trigger failed (ros2 param set)", flush=True)
+    return ok
 
 
 def trigger_cleanup() -> None:
     """Disable auto-arming and command the drone to land."""
-    _ros2("param", "set", "/offboard_controller", "auto_arm", "false")
-    _ros2(
+    param_ok = _ros2("param", "set", "/offboard_controller", "auto_arm", "false")
+    land_ok = _ros2(
         "topic",
         "pub",
         "--once",
@@ -59,6 +65,8 @@ def trigger_cleanup() -> None:
         "{command: 21, target_system: 1, target_component: 1, "
         "source_system: 1, source_component: 1, from_external: true}",
     )
+    if not param_ok or not land_ok:
+        print("[scenario] WARN: cleanup trigger failed", flush=True)
 
 
 async def spin_until(

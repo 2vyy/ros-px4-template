@@ -68,22 +68,45 @@ def check_spec(spec: TopicSpec, observed_type: str | None, pub: int, sub: int) -
     return problems
 
 
-def _live_topic_info(topic: str) -> tuple[str | None, int, int]:
-    """(msg_type, publisher_count, subscription_count) from `ros2 topic info`."""
-    result = subprocess.run(["ros2", "topic", "info", topic], capture_output=True, text=True)
+_TOPIC_LIST_VERBOSE_RE = re.compile(
+    r"^\*\s+(\S+)\s+\[([^\]]+)\]\s+(\d+)\s+(?:publisher|subscriber)s?$"
+)
+
+
+def _query_live_topics() -> dict[str, tuple[str | None, int, int]]:
+    """Live graph info from one `ros2 topic list --verbose` call."""
+    result = subprocess.run(["ros2", "topic", "list", "--verbose"], capture_output=True, text=True)
     if result.returncode != 0:
-        return None, 0, 0
-    msg_type: str | None = None
-    pub = sub = 0
+        return {}
+
+    topics_info: dict[str, tuple[str | None, int, int]] = {}
+    current_section: str | None = None
     for raw in result.stdout.splitlines():
         ln = raw.strip()
-        if ln.startswith("Type:"):
-            msg_type = ln.split(":", 1)[1].strip()
-        elif ln.startswith("Publisher count:"):
-            pub = int(ln.split(":", 1)[1].strip() or 0)
-        elif ln.startswith("Subscription count:"):
-            sub = int(ln.split(":", 1)[1].strip() or 0)
-    return msg_type, pub, sub
+        if not ln:
+            continue
+        if ln.startswith("Published topics:"):
+            current_section = "pub"
+            continue
+        if ln.startswith("Subscribed topics:"):
+            current_section = "sub"
+            continue
+
+        match = _TOPIC_LIST_VERBOSE_RE.match(ln)
+        if match is None or current_section is None:
+            continue
+
+        name = match.group(1)
+        msg_type = match.group(2)
+        count = int(match.group(3))
+        existing_type, pub, sub = topics_info.get(name, (msg_type, 0, 0))
+        if current_section == "pub":
+            pub = count
+        else:
+            sub = count
+        topics_info[name] = (existing_type, pub, sub)
+
+    return topics_info
 
 
 def _topics_in_source(topics: list[str], source_roots: list[Path]) -> set[str]:
@@ -146,12 +169,13 @@ def main(
     specs = parse_manifest(text)
     failed_count = 0
     checked_count = 0
+    live_topics = _query_live_topics()
     for spec in specs:
         if not should_enforce(spec, vision):
             typer.echo(f"  [SKIP] {spec.name} (vision off)")
             continue
         checked_count += 1
-        observed_type, pub, sub = _live_topic_info(spec.name)
+        observed_type, pub, sub = live_topics.get(spec.name, (None, 0, 0))
         problems = check_spec(spec, observed_type, pub, sub)
         if problems:
             failed_count += 1

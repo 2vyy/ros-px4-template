@@ -168,7 +168,7 @@ async def run(timeout_s: float = _TIMEOUT_S) -> bool:
     rclpy.init()
     from _common import trigger_auto_arm, trigger_cleanup
 
-    trigger_auto_arm()
+    arm_trigger_ok = trigger_auto_arm()
     node = _ScenarioNode()
     started = time.monotonic()
     passed = False
@@ -189,7 +189,19 @@ async def run(timeout_s: float = _TIMEOUT_S) -> bool:
         except TimeoutError:
             elapsed = time.monotonic() - started
             console.print(f"[red]✗ FAIL — timeout after {timeout_s}s[/red]")
-            write_report("05_aruco_hover", False, elapsed, {"reason": "timeout"})
+            write_report(
+                "05_aruco_hover",
+                False,
+                elapsed,
+                {
+                    "reason": "timeout",
+                    "entered_marker_hover": node.entered_marker_hover,
+                    "target_pose_seen": node.target_pose is not None,
+                    "mission_done": node.mission_done,
+                    "drone_pose_seen": node.drone_pose is not None,
+                    "arm_trigger_ok": arm_trigger_ok,
+                },
+            )
             return False
 
         elapsed = time.monotonic() - started

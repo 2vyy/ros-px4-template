@@ -20,6 +20,7 @@ from px4_msgs.msg import (
     VehicleStatus,
 )
 from px4_ros_msgs.msg import ControllerStatus
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
@@ -78,13 +79,14 @@ class OffboardController(Node):
         self.slog = StructuredLogger(self)
         self._state = "IDLE"
         self._start_time_ns = self.get_clock().now().nanoseconds
-        self._setpoints_sent = 0
+        self._offboard_heartbeats_sent = 0
         self._last_arm_try = 0.0
         self._last_offboard_try = 0.0
         self._current_pos_enu = (0.0, 0.0, 0.0)
         self._setpoint_enu = (0.0, 0.0, self._target_alt)
         self._armed = False
         self._nav_state = 0
+        self._disarm_latched = False
         self._arm_failed = False
         self._arm_fail_reason = ""
         self._px4_ever_disarmed = False
@@ -95,6 +97,16 @@ class OffboardController(Node):
         self._initial_pos_enu: tuple[float, float, float] | None = None
         self._have_odom = False
         self._setpoint_origin_ned: tuple[float, float, float] | None = None
+
+        def _on_set_params(params) -> SetParametersResult:
+            for p in params:
+                if p.name == "auto_arm" and bool(p.value):
+                    if self._disarm_latched:
+                        self._disarm_latched = False
+                        self.slog.event("AUTO_ARM_LATCH_CLEARED_BY_PARAM")
+            return SetParametersResult(successful=True)
+
+        self.add_on_set_parameters_callback(_on_set_params)
 
         self.create_subscription(
             PoseStamped, "/drone/target_pose", self._target_pose_cb, _RELIABLE_QOS
@@ -193,7 +205,7 @@ class OffboardController(Node):
         self._armed = msg.arming_state == VehicleStatus.ARMING_STATE_ARMED
         self._nav_state = int(msg.nav_state)
         if was_armed and not self._armed:
-            self._auto_arm = False
+            self._disarm_latched = True
             self.slog.event("AUTO_ARM_DISABLED_ON_DISARM")
         if (
             not self._px4_ever_disarmed
@@ -229,7 +241,7 @@ class OffboardController(Node):
         return (self.get_clock().now().nanoseconds - self._start_time_ns) / 1e9
 
     def _update_state_machine(self) -> None:
-        self._auto_arm = bool(self.get_parameter("auto_arm").value)
+        self._auto_arm = bool(self.get_parameter("auto_arm").value) and not self._disarm_latched
         xrce_elapsed = (
             (self.get_clock().now().nanoseconds / 1e9 - self._xrce_connect_time)
             if self._xrce_connect_time is not None
@@ -243,7 +255,7 @@ class OffboardController(Node):
                 arm_failed=self._arm_failed,
                 xrce_connected=self._xrce_connect_time is not None,
                 xrce_elapsed_s=xrce_elapsed,
-                setpoints_sent=self._setpoints_sent,
+                offboard_heartbeats_sent=self._offboard_heartbeats_sent,
                 px4_ever_disarmed=self._px4_ever_disarmed,
                 nav_state=self._nav_state,
                 arm_delay_s=self._arm_delay_s,
@@ -287,7 +299,7 @@ class OffboardController(Node):
     def _control_loop(self) -> None:
         if not self._have_odom or self._setpoint_origin_ned is None:
             self._publish_offboard_mode()
-            self._setpoints_sent += 1
+            self._offboard_heartbeats_sent += 1
             self._update_state_machine()
             return
 
@@ -297,7 +309,7 @@ class OffboardController(Node):
             # uXRCE writes trajectory_setpoint directly; do not publish before OFFBOARD
             # (PX4/PX4-Autopilot#25273) or setpoints fight mc_pos_control.
             self._publish_position_setpoint(self._ramped_setpoint_enu(mission_active))
-        self._setpoints_sent += 1
+        self._offboard_heartbeats_sent += 1
         self._update_state_machine()
 
         status = ControllerStatus()

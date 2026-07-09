@@ -13,6 +13,7 @@ import struct
 import sys
 import time
 from pathlib import Path
+from typing import Any, cast
 
 from pymavlink import mavutil
 
@@ -31,14 +32,19 @@ _PARAMS: tuple[tuple[str, float, str], ...] = (
 _CONNECT_TIMEOUT_S = 120.0
 
 
+def _mavlink() -> Any:
+    return cast(Any, mavutil.mavlink)
+
+
 def _send_params(conn: mavutil.mavudp) -> None:
+    mavlink = _mavlink()
     for name, value, type_str in _PARAMS:
         if type_str == "INT32":
-            type_id = mavutil.mavlink.MAV_PARAM_TYPE_INT32
+            type_id = mavlink.MAV_PARAM_TYPE_INT32
             vstr = struct.pack(">i", int(value))
             (numeric_value,) = struct.unpack(">f", vstr)
         else:
-            type_id = mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+            type_id = mavlink.MAV_PARAM_TYPE_REAL32
             numeric_value = float(value)
 
         conn.mav.param_set_send(
@@ -53,6 +59,7 @@ def _send_params(conn: mavutil.mavudp) -> None:
 def main() -> None:
     print("[gcs_heartbeat] Connecting to PX4 SITL on UDP 18570...", flush=True)
     conn = mavutil.mavlink_connection("udpout:127.0.0.1:18570")
+    mavlink = _mavlink()
 
     # Send our GCS heartbeat immediately so PX4 sees us and starts replying.
     # Then poll for PX4's reply with a short timeout loop.
@@ -60,8 +67,8 @@ def main() -> None:
     got_heartbeat = False
     while time.monotonic() < deadline:
         conn.mav.heartbeat_send(
-            mavutil.mavlink.MAV_TYPE_GCS,  # type: ignore[unresolved-attribute]
-            mavutil.mavlink.MAV_AUTOPILOT_INVALID,  # type: ignore[unresolved-attribute]
+            mavlink.MAV_TYPE_GCS,
+            mavlink.MAV_AUTOPILOT_INVALID,
             0,
             0,
             0,
@@ -95,8 +102,8 @@ def main() -> None:
 
     while True:
         conn.mav.heartbeat_send(
-            mavutil.mavlink.MAV_TYPE_GCS,  # type: ignore[unresolved-attribute]
-            mavutil.mavlink.MAV_AUTOPILOT_INVALID,  # type: ignore[unresolved-attribute]
+            mavlink.MAV_TYPE_GCS,
+            mavlink.MAV_AUTOPILOT_INVALID,
             0,
             0,
             0,

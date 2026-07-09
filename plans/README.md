@@ -36,15 +36,92 @@ row when done.
 | 017  | README command examples match the real `just` interface (`just sim stop`→`just stop`, `just sim gui`→`just sim --gui`) | P1 | S | — | DONE (merged to main; quick-start stop block + everyday-commands corrected: `just stop`, `just sim --gui`, removed `just sim bg`/foreground claim) |
 | 018  | E2E gate fails when the topic audit or report fails (stop swallowing exit codes) | P1 | S | — | DONE (merged to main; topic-audit returncode now increments `fails`, report returncode gates the success message. Step-3 test already present — `test_e2e_report.py` covers empty→FAIL/all-pass→OK/one-fail→FAIL — no new test needed. Topic-audit wiring is review-verified; live `just test e2e` is operator sign-off) |
 | 019  | Add a committed `.env.example` for first-run onboarding | P2 | S | — | DONE (merged to main; `.env.example` with placeholder PX4_DIR/ROS_SETUP/PX4_VERSION + per-key comments, README quick-start step 1 now `cp .env.example .env`. `.gitignore` only matches exact `.env`, so the example is tracked) |
-| 020  | `mission_manager` builds its input snapshot under a lock (race-free, as docs claim) | P2 | M | — | TODO |
+| 020  | `mission_manager` builds its input snapshot under a lock (race-free, as docs claim) | P2 | M | — | DONE (`mission_manager.py` ruff clean; `ty check src/core/.../lib tests/unit tools/`; `just check`: 243 passed; scenarios 03/05/06 PASS) |
 | 021  | Extract + unit-test marker-map parsing; skip malformed entries instead of crashing | P2 | M | — | DONE (merged to main; `lib/marker_map.py` pure `parse_marker_map` never raises + 6 unit tests, `marker_localizer` calls it and logs warnings instead of crashing in __init__. Well-formed path byte-identical) |
 | 022  | Generate a JSON Schema for mission YAML (editor autocomplete/validation) | P3 | S | 016 | DONE (merged to main; `build_schema()`+`just mission schema` generate `schemas/mission.schema.json` with registry-derived enums, `$schema` directive in all 4 missions, 5 tests incl. real-mission validation + drift guard via dev-only `jsonschema`, docs/MISSIONS.md "Editor schema". Direction plan — additive, maintainer may revert) |
 | 023  | `just scenario-new <name>` scaffolds a runnable `Scenario` stub | P3 | M | — | DONE (merged to main; `tools/scenario_scaffold.py` pure `render_scenario`/`class_name` + 3 tests, `scenario-new` command in tasks.py, `justfile` recipe added so `just scenario-new` works as documented, AGENTS.md note. Generated stub is ruff-clean + ast-parseable; re-run exits 2; smoke file not committed. Direction plan) |
 | 024  | `just scenario-status [name]` prints one scenario's last verdict | P3 | S | — | DONE (merged to main; `tools/scenario_status.py` pure `format_scenario_status` reusing `format_scenario`+`_detail_str` + 5 tests, `scenario-status` command in tasks.py, `justfile` recipe, AGENTS.md Logs note. Smoke-verified exit 0/1/2. Direction plan) |
 
+### Round 3 (2026-06-29, against `ead4cc6`) — correctness + package relocatability + query batching
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 025  | Stabilize marker centering timer in behaviors.py (CORRECTNESS-01) | P1 | S | — | DONE (verified in worktree: grace period prevents reset on dropouts, all tests pass) |
+| 026  | Close parent file descriptor in bag recorder (CORRECTNESS-02) | P2 | S | — | DONE (`test_bag_recorder.py`: 8 tests; `ty check tools/ tests/unit/`; `just check`: 240 passed) |
+| 027  | Standardize resource resolution to make package relocatable (ARCH-01) | P1 | S | — | DONE (`just check`: 241 passed; installed config files verified with `find -L`; `01_arm_takeoff` PASS; no `parents[4]` in `src/`) |
+| 028  | Align package dependencies in setup.py and package.xml (DEP-01) | P2 | S | 027 | DONE (`package.xml`/`setup.py` aligned; new rosdep keys resolve on Jazzy. Full rosdep simulate needs `--skip-keys ament_python`, a pre-existing buildtool key quirk) |
+| 029  | Batch live topic validation queries to avoid O(N) subprocesses (PERF-03) | P2 | S | — | DONE (`test_check_topics.py`: 17 tests; `just check`: 243 passed; live `just log topics` PASS. Batched `ros2 topic list --verbose` measured 0.44s; full `just` wrapper measured ~1.2s) |
+
+### Round 4 (2026-07-06, against `ead4cc6`) — agent-debug hardening + competition direction
+
+Audit lens: (a) fix everything that costs an autonomous agent a debugging
+round-trip; (b) add the highest-leverage competition capabilities that fit the
+"clean template" identity (explicitly excluded: sim-stack abstraction).
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 030  | Make the auto_arm disarm latch actually latch (no silent auto-rearm) | P1 | S | — | DONE (`just check`; `just test e2e`; forced-disarm latch check: latch_t=34.052, no later ARM_COMMAND_SENT) |
+| 031  | `wait_ready` physics call is world-aware (`--world` flag; unbreaks non-default worlds at speed != 1.0) | P1 | S | — | DONE (`just check`; wait_ready unit coverage; sim path passes `--world`) |
+| 032  | Scenario failure reporting: `_ros2` stops swallowing, rich FAIL detail dicts (02/05) | P1 | S | — | DONE (`just scenario 02_hover_hold`; `just test e2e`; failure detail exercised during blocker triage) |
+| 033  | A failed scenario/e2e run prints a diagnostic digest automatically | P1 | S | — | DONE (`just check`; failed e2e printed digest with errors/px4/last events; final `just test e2e` pass) |
+| 034  | PX4's own failure reasons (arming denied, failsafe) reach `log summary` + digest | P2 | M | 033 | DONE (`just check`; failed e2e digest included PX4 events; final `just test e2e` pass) |
+| 035  | Agent docs stop naming dead identifiers (AGENTS.md failure table, FRAMES.md) | P1 | S | — | DONE (`just check`; stale identifier greps cleared) |
+| 036  | Characterization tests for `tools/preflight.py` | P2 | S | — | DONE (`test_preflight.py`: 6 tests; `just check`: 237 passed) |
+| 037  | Tests for `tools/gcs_heartbeat.py` + re-enable its typecheck | P2 | M | — | DONE (`test_gcs_heartbeat.py`: 5 tests; `ty check tools/gcs_heartbeat.py`; `just check`: 237 passed) |
+| 038  | Cache the ArUco detector per dictionary id (vision hot path) | P2 | S | — | DONE (`test_aruco_detector.py`: 8 tests; `just check`: 239 passed) |
+| 039  | Cache the workspace env sourcing that runs on every `just` command | P3 | S | — | DONE (cache create/hit/invalidate/corrupt-recover checks; cold `mission list` 0.74s, warm 0.49s; `just check`: 243 passed) |
+| 040  | Rename the miscounted `setpoints_sent` FSM gate; delete a dead quat write | P3 | S | — | DONE (`test_offboard_fsm.py`: 7 tests; old-name grep clean; `just check`: 239 passed) |
+| 041  | Yaw control end to end (mission YAML to `TrajectorySetpoint.yaw`) | P1 | M | — | TODO |
+| 042  | Precision landing on a marker (`center_land`, `Land` executed end to end) | P1 | M/L | 030 | TODO |
+| 043  | Competition practice worlds + committed ArUco marker assets | P2 | M | soft: 031 | TODO |
+| 044  | Battery/failsafe in mission `Inputs` (`battery_low` / `failsafe_active` guards) | P2 | M | — | TODO |
+
+#### Round 4b — toolchain/meta vetting follow-ups (2026-07-06, same base `ead4cc6`)
+
+From a meta-level audit of the just/tasks.py/uv/ruff/ty decisions (requested
+by the maintainer). Overall verdict on record: the stack is current, nothing
+is superseded; these four close the real gaps found.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 045  | Bring `tasks.py` under the quality gate it enforces (import-clean via app callback; add to ruff/ty) | P1 | M | soft: after 037, 039 | DONE (`tasks.py` import-clean; `ruff check tasks.py`; `ty check tasks.py`; command sweep; `just check` now gates `tasks.py`) |
+| 046  | Dependency hygiene: dead `lark`/`tomli`, cross-referenced dual dep lists, `just scenario` arg forwarding | P2 | S | — | DONE (`tomli` and inline task-runner `lark` removed; dev `lark` kept because ROS Jazzy `launch_testing` imports it; dual-list comments added; `scenario *args`; `just check`: 243 passed) |
+| 047  | Machine-check AGENTS.md backticked identifiers exist (end the doc-drift bug class) | P2 | M | 035 | DONE (`check_docs.py`; 11 unit tests; kill-test flagged `sim_pose_adapter`; `just check`: 254 passed with docs step) |
+| 048  | Make bag/ULog recording opt-in (`just sim --record`, default off) | P3 | S | — | DONE (`--record` help; default `just sim` kept run count unchanged and stopped without ULog copy; `just sim --record` + `just analyze latest`; `just check`: 254 passed; `just test e2e`: 5 PASS) |
+
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
 ## Dependency notes
+
+### Round 4 (2026-07-06)
+
+- **Recommended order.** Problem fixes first: 035 (doc-only, instant), 032,
+  033 then 034 (034 builds on 033's digest), 030, 031, 036, 037, 038, 040,
+  039 (the one MED-risk perf change). Then direction: 041 (yaw), 042
+  (precision landing — REQUIRES 030's latch), 043 (worlds; only soft-needs
+  031 when running non-default worlds at `--speed != 1.0`), 044 (battery/
+  failsafe; independent but merge after 041/042 to avoid `mission_manager.py`
+  conflicts).
+- **File-collision clusters** (land sequentially, not in parallel):
+  `offboard_controller.py` is touched by 030, 040, 041, 042 (in that order);
+  `mission_manager.py` by 041, 042, 044; `tools/log_summary.py` by 033 then
+  034; `tasks.py` by 031, 033, 037, 039 (disjoint regions, trivial merges).
+- **Live-verification gates**: 030, 041, 042, 043, 044 need a sim-capable
+  operator sign-off before DONE (each plan says exactly what to run); 032-040
+  are verifiable with pytest/direct commands alone.
+- Round 3 leftovers 020 and 026-029 are now DONE in this worktree.
+- **Round 4b sequencing**: 046 and 048 are independent, any time. 045 goes
+  AFTER 037 (same ty argv in `check`) and AFTER 039 (same
+  `_source_workspace_env`; 039 rewrites the body, 045 moves the call site).
+  047 goes AFTER 035 (else the checker flags the known-stale rows on day
+  one) and, once landed, is the regression net for 035's fixes. 045 and 033
+  both add steps around `check`/failure paths in `tasks.py` - disjoint
+  regions, trivial merge.
+
+### Round 3 (2026-06-29)
+
+- **025, 026, 027, and 029 are independent** and can run in any order.
+- **028 depends on 027**: Standardizing resource resolution in plan 027 introduces the dependency on `ament_index_python`, which is then formally declared and aligned in plan 028.
 
 ### Round 2 (2026-06-22)
 
@@ -64,10 +141,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rational
   (operator/distrobox) before it can be marked DONE — its done-criteria say so.
   021 (marker-map parse) is verifiable entirely with `pytest` (no sim).
 - **023 and 024** are independent CLI-ergonomics adds, verifiable with `pytest`.
-- Verification note: `just check` lints/typechecks `tools/`, `tests`, and
-  `src/core/.../lib`, but **not** `tasks.py` — so plans that edit `tasks.py`
-  (016/018/019/023/024) verify behavior by running `uv run python tasks.py <cmd>`
-  directly (and `uv run ruff check tasks.py` manually), as each plan specifies.
+- Verification note: before plan 045, `tasks.py` was outside the `just check`
+  ruff/ty paths, so older plans that edited it verified behavior directly.
+  Plan 045 closed that gap; `just check` now gates `tasks.py`.
 
 ### Round 1
 
@@ -181,6 +257,69 @@ verified and deliberately left alone:
 - `tests/capabilities.toml` + `cap mark` — load-bearing: `scenario_sim_configs()`
   drives e2e group scheduling (`tasks.py:734`), not just a registry.
 - `tools/status.py`, `tools/e2e_report.py`, the detached-sim contract.
+
+## Findings considered and rejected / deferred — Round 4 (2026-07-06)
+
+Vetted personally against the code at `ead4cc6`; surfaced by the audit but
+not planned this round:
+
+- **SECURITY-01 — predictable `/tmp` flag files** (`/tmp/gcs_params_flag` and
+  friends shared by `gcs_heartbeat`/`wait_ready`/`sim_cleanup`) — DEFERRED.
+  Real but low severity: local single-user dev machines, no privilege
+  boundary; the path is load-bearing across 3 tools so the fix (per-user
+  runtime dir) needs a coordinated change. Plan 037 pins the constant so a
+  one-sided rename cannot happen silently.
+- **DX-06 — scenario timeouts are wall-clock and break under `--speed`** —
+  NOT PLANNED (not selected). e2e pins speed 1.0, and the sim-speed machinery
+  is already known-fragile (see the runaway-altitude memory); revisit if
+  slower-than-realtime runs become routine.
+- **DX-09 — bag-replay scenario evaluation** (re-run a scenario predicate
+  over a recorded run without a sim) — NOT PLANNED. Genuinely attractive for
+  agent debugging but it is a design spike (predicates read live QoS-shaped
+  topics), not an executor task. Owner's call to scope.
+- **TEST-10 — `tools/check_invariants.py` has no tests** — NOT PLANNED.
+  Low churn, low blast radius; 036/037 cover the two untested tools that
+  gate every launch instead.
+- **CORRECTNESS-03 — "setpoints_sent counts non-setpoints"** — DOWNGRADED to
+  the rename in plan 040. The auditor's proposed fix (count only real
+  `TrajectorySetpoint` publishes) would deadlock the FSM in PREARM:
+  trajectory setpoints are deliberately not published before OFFBOARD
+  (PX4-Autopilot#25273). The counter's behavior is correct; only its name
+  lies.
+- **"Vacuous `ros_time_us > 0` guard"** (offboard_controller `_odom_cb`) —
+  REJECTED after verification. `sim_full.launch.py:225` sets
+  `use_sim_time: true`, so the ROS clock reads 0 until `/clock` arrives; the
+  guard prevents latching `_xrce_connect_time` at t=0. Load-bearing, not
+  vacuous. Recorded in plan 040's "do NOT touch" note.
+- **Stretch direction items — user chose "None of these"**: D-03
+  velocity/speed control, D-04 scored/graded runs, D-07 payload/actuator
+  command vocabulary, D-08 sub-mission composition. Revisit next round if a
+  competition needs them.
+
+### Toolchain vetting outcomes recorded as policy, not plans (Round 4b)
+
+- **ty posture**: keep ty (correct Astral-aligned bet; not superseded by
+  anything), but treat `--exclude` entries as bugs with a linked plan (037
+  removes the only one) and bump the `0.0.1a8` pin as releases land.
+  basedpyright is the documented fallback if ty ever blocks structurally;
+  migration cost at this repo size is trivial in either direction.
+- **Double env sourcing** (justfile `_run` sources ROS+workspace AND
+  tasks.py sources the workspace again): DEFERRED. Plan 039 caches the
+  second one, plan 045 moves it to a callback; deciding which layer owns
+  sourcing outright is a design change with direct-invocation
+  (`uv run tasks.py ...` without just) implications. Revisit after 039+045.
+- **Endorsed as-is after audit** (looked like candidates, are not):
+  the 19-file `tools/` layout (keeps tasks.py thin, each unit-tested);
+  the custom logfmt pipeline (structlog/OTel correctly rejected - one
+  rg-able file is the agent-right design; 033/034 patch its real gap);
+  the custom scenario harness + `capabilities.toml` over `launch_testing`
+  (registry is load-bearing for e2e grouping); the hand-rolled 15-line
+  dotenv parser; the phased ruff hardening config; the `numpy<2` and
+  Python 3.12 pins (ROS Jazzy ABI/system-Python constraints, documented at
+  the pin sites); typer (cyclopts exists; migration buys nothing).
+- **`hypothesis` and `websocket-client` audited as live deps** (property
+  tests in `test_frames.py`; rosbridge probes in `wait_ready`/`status`) -
+  do not remove with 046's dead ones.
 
 ## Findings considered and rejected — Round 2 (2026-06-22)
 

@@ -52,6 +52,7 @@ def test_retrieve_copies_fresh_ulog_to_session_ulg(tmp_path) -> None:
     dest = ulog_retrieve.retrieve(run_dir, px4_dir=str(px4_dir))
 
     assert dest == run_dir / "session.ulg"
+    assert dest is not None
     assert dest.exists()
     assert dest.read_bytes() == ulg.read_bytes()
 

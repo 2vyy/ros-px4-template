@@ -6,6 +6,9 @@ Sequence when auto_arm is enabled:
 
 Position-only: stream setpoints first, switch to OFFBOARD, then arm. Mission
 waypoints on ``/drone/target_pose`` drive climb and cruise once OFFBOARD is active.
+``offboard_heartbeats_sent`` counts OffboardControlMode publishes, not
+TrajectorySetpoint publishes; trajectory setpoints intentionally do not flow
+before OFFBOARD (PX4-Autopilot#25273), so do not use them for PREARM readiness.
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ class FsmInputs:
     arm_failed: bool
     xrce_connected: bool
     xrce_elapsed_s: float
-    setpoints_sent: int
+    offboard_heartbeats_sent: int
     px4_ever_disarmed: bool
     nav_state: int
     arm_delay_s: float
@@ -54,7 +57,7 @@ def tick(inputs: FsmInputs) -> FsmResult:
     xrce_ready = (
         inputs.xrce_connected
         and inputs.xrce_elapsed_s >= inputs.arm_delay_s
-        and inputs.setpoints_sent > 5
+        and inputs.offboard_heartbeats_sent > 5
         and inputs.px4_ever_disarmed
     )
 

@@ -43,7 +43,7 @@ class _Node(Node):
 
 async def run() -> bool:
     rclpy.init()
-    trigger_auto_arm()
+    arm_trigger_ok = trigger_auto_arm()
     node = _Node()
     started = time.monotonic()
     passed = False
@@ -60,7 +60,16 @@ async def run() -> bool:
         except TimeoutError:
             console.print("[red]✗ FAIL — never reached target altitude[/red]")
             write_report(
-                "02_hover_hold", False, time.monotonic() - started, {"reason": "climb_timeout"}
+                "02_hover_hold",
+                False,
+                time.monotonic() - started,
+                {
+                    "reason": "climb_timeout",
+                    "z_enu_m": round(node.z, 2),
+                    "xy_enu_m": [round(node.x, 2), round(node.y, 2)],
+                    "climb_threshold_m": _CLIMB_THRESHOLD,
+                    "arm_trigger_ok": arm_trigger_ok,
+                },
             )
             return False
 

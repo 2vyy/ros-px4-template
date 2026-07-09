@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 
 from typer.testing import CliRunner
 
+import wait_ready
 from wait_ready import app
 
 
@@ -57,6 +58,36 @@ def test_timeout_reports_standby_state():
         result = runner.invoke(app, ["--timeout", "1"])
     assert result.exit_code == 1
     assert "standby=False" in result.output
+
+
+def test_set_physics_uses_world_arg():
+    calls = []
+
+    class Result:
+        stdout = "data: true"
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return Result()
+
+    with patch("wait_ready.subprocess.run", fake_run):
+        assert wait_ready._set_physics_speed(0.5, "marker_field") is True
+
+    assert "/world/marker_field/set_physics" in calls[0]
+
+
+def test_speed_below_one_passes_world_through():
+    runner = CliRunner()
+    with (
+        patch("wait_ready._topic_live", return_value=True),
+        patch("wait_ready._rosbridge_ws_ok", return_value=True),
+        patch("wait_ready._px4_standby", return_value=True),
+        patch("wait_ready._set_physics_speed", return_value=True) as set_physics,
+    ):
+        result = runner.invoke(app, ["--timeout", "5", "--speed", "0.5", "--world", "foo"])
+
+    assert result.exit_code == 0
+    set_physics.assert_called_once_with(0.5, "foo")
 
 
 # ── _px4_standby unit tests ──────────────────────────────────────────────────

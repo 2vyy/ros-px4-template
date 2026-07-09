@@ -16,6 +16,7 @@ from pathlib import Path
 
 import rclpy
 import yaml
+from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from px4_ros_msgs.msg import MarkerDetection
@@ -35,10 +36,6 @@ _RELIABLE_QOS = QoSProfile(
 )
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[4]
-
-
 class MarkerLocalizer(Node):
     def __init__(self) -> None:
         super().__init__("marker_localizer")
@@ -56,7 +53,7 @@ class MarkerLocalizer(Node):
 
         p = Path(str(self.get_parameter("marker_map_file").value))
         if not p.is_absolute():
-            p = _project_root() / p
+            p = Path(get_package_share_directory("ros_px4_template_core")) / p
         doc = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
         self._map: dict[int, tuple[float, float, float]]
         self._map, warnings = parse_marker_map(doc)

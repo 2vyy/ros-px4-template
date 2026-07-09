@@ -28,6 +28,14 @@ setup:
 check:
     @just _run check
 
+# Compile the workspace using colcon build
+build:
+    @just _run build
+
+# Wipe build artifacts, build logs, and per-run logs
+clean:
+    @just _run clean
+
 # Boot the sim stack detached, wait until ready, print a verdict, and return
 sim *args:
     @just _run sim "$@"
@@ -49,8 +57,8 @@ test *args:
     @just _run test "$@"
 
 # Run a specific scenario test directly by name (e.g. just scenario 01_arm_takeoff)
-scenario name:
-    @just _run scenario "{{name}}"
+scenario *args:
+    @just _run scenario "$@"
 
 # Scaffold a runnable Scenario stub at tests/scenarios/<name>.py
 scenario-new *args:

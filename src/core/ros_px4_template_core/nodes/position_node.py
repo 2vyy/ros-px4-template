@@ -144,7 +144,6 @@ class PositionNode(Node):
         odom.pose.pose.position.x = x_enu
         odom.pose.pose.position.y = y_enu
         odom.pose.pose.position.z = z_enu
-        odom.pose.pose.orientation.z = math.sin(yaw_enu / 2.0)
         qw, qx, qy, qz = enu_quaternion_from_yaw(yaw_enu)
         odom.pose.pose.orientation.w = qw
         odom.pose.pose.orientation.x = qx

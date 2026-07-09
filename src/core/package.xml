@@ -7,13 +7,21 @@
   <maintainer email="dev@example.com">Developer</maintainer>
   <license>BSD-3-Clause</license>
   <buildtool_depend>ament_python</buildtool_depend>
+  <depend>ament_index_python</depend>
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
   <depend>px4_msgs</depend>
   <depend>px4_ros_msgs</depend>
+  <depend>python3-numpy</depend>
+  <depend>python3-yaml</depend>
+  <depend>python3-opencv</depend>
   <exec_depend>ros2launch</exec_depend>
+  <exec_depend>rosbridge_server</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
   <export>
     <build_type>ament_python</build_type>
   </export>

@@ -32,8 +32,8 @@ def test_every_real_mission_validates() -> None:
     validator = Draft202012Validator(build_schema())
     for f in sorted(_MISSIONS.glob("*.yaml")):
         doc = yaml.safe_load(f.read_text(encoding="utf-8"))
-        errors = sorted(validator.iter_errors(doc), key=str)
-        assert not errors, f"{f.name}: {[e.message for e in errors]}"
+        errors = sorted(str(error) for error in validator.iter_errors(doc))
+        assert not errors, f"{f.name}: {errors}"
 
 
 def test_unknown_behavior_rejected() -> None:

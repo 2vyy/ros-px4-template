@@ -16,9 +16,11 @@ Publishers:
 from __future__ import annotations
 
 import math
+import threading
 from pathlib import Path
 
 import rclpy
+from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from px4_ros_msgs.msg import ControllerStatus, MarkerDetection, MissionStatus
@@ -43,15 +45,12 @@ _STABLE_FRESH_S = 0.3  # a detection counts toward stability if newer than this
 _DEFAULT_MISSION = "config/missions/hover.yaml"
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[4]
-
-
 class MissionManager(Node):
     def __init__(self) -> None:
         super().__init__("mission_manager")
         self._tick_group = MutuallyExclusiveCallbackGroup()
         self._sub_group = ReentrantCallbackGroup()
+        self._state_lock = threading.Lock()
         self.declare_parameter("log_dir", "./logs")
         self.declare_parameter("mission_file", _DEFAULT_MISSION)
         self.declare_parameter("tick_rate_hz", 10.0)
@@ -63,7 +62,7 @@ class MissionManager(Node):
         mission_file = str(self.get_parameter("mission_file").value).strip() or _DEFAULT_MISSION
         p = Path(mission_file)
         if not p.is_absolute():
-            p = _project_root() / p
+            p = Path(get_package_share_directory("ros_px4_template_core")) / p
         self._mission = load_mission_file(p)
         self._ctx = MissionContext(state=self._mission.initial)
         self._takeoff_alt = float(self.get_parameter("takeoff_altitude_m").value)
@@ -114,57 +113,79 @@ class MissionManager(Node):
         self.slog.info("MissionManager ready", mission=str(p), initial=self._mission.initial)
 
     def _controller_cb(self, msg: ControllerStatus) -> None:
-        self._armed = msg.armed
-        self._ctrl_alt = float(msg.altitude_enu_m)
+        with self._state_lock:
+            self._armed = msg.armed
+            self._ctrl_alt = float(msg.altitude_enu_m)
 
     def _odom_cb(self, msg: Odometry) -> None:
         pose = msg.pose.pose
-        self._pos_enu = (pose.position.x, pose.position.y, pose.position.z)
         q = pose.orientation
-        self._yaw_enu = enu_yaw_from_quaternion(q.w, q.x, q.y, q.z)
-        self._have_odom = True
-        self._odom_time = self.get_clock().now().nanoseconds / 1e9
+        pos_enu = (pose.position.x, pose.position.y, pose.position.z)
+        yaw_enu = enu_yaw_from_quaternion(q.w, q.x, q.y, q.z)
+        odom_time = self.get_clock().now().nanoseconds / 1e9
+        with self._state_lock:
+            self._pos_enu = pos_enu
+            self._yaw_enu = yaw_enu
+            self._have_odom = True
+            self._odom_time = odom_time
 
     def _detection_cb(self, msg: MarkerDetection) -> None:
-        if not msg.valid:
-            self._marker_offset_body = None
-            self._marker_stability = 0
-            return
-        self._marker_id_seen = int(msg.id)
-        self._marker_offset_body = (
+        marker_offset_body = (
             msg.offset_body_flu.x,
             msg.offset_body_flu.y,
             msg.offset_body_flu.z,
         )
-        self._marker_time = self.get_clock().now().nanoseconds / 1e9
-        self._marker_stability += 1
+        marker_time = self.get_clock().now().nanoseconds / 1e9
+        with self._state_lock:
+            if not msg.valid:
+                self._marker_offset_body = None
+                self._marker_stability = 0
+                return
+            self._marker_id_seen = int(msg.id)
+            self._marker_offset_body = marker_offset_body
+            self._marker_time = marker_time
+            self._marker_stability += 1
 
     def _snapshot(self, now: float) -> Inputs:
         dets: tuple[Detection, ...] = ()
         stability: dict[int, int] = {}
-        if self._marker_offset_body is not None and now - self._marker_time <= 1.0:
+        with self._state_lock:
+            pos_enu = self._pos_enu
+            yaw_enu = self._yaw_enu
+            have_odom = self._have_odom
+            odom_time = self._odom_time
+            armed = self._armed
+            ctrl_alt = self._ctrl_alt
+            estimate_ok = self._estimate_ok
+            marker_offset_body = self._marker_offset_body
+            marker_id_seen = self._marker_id_seen
+            marker_time = self._marker_time
+            marker_stability = self._marker_stability
+            if marker_offset_body is None or now - marker_time > 1.0:
+                self._marker_stability = 0
+                marker_stability = 0
+
+        if marker_offset_body is not None and now - marker_time <= 1.0:
             dets = (
                 Detection(
-                    id=self._marker_id_seen,
-                    offset_body_flu=self._marker_offset_body,
-                    stamp=self._marker_time,
+                    id=marker_id_seen,
+                    offset_body_flu=marker_offset_body,
+                    stamp=marker_time,
                 ),
             )
-            if now - self._marker_time <= _STABLE_FRESH_S:
-                stability = {self._marker_id_seen: self._marker_stability}
-        else:
-            self._marker_stability = 0
-        z_eff = max(self._pos_enu[2], self._ctrl_alt)
+            if now - marker_time <= _STABLE_FRESH_S:
+                stability = {marker_id_seen: marker_stability}
+        z_eff = max(pos_enu[2], ctrl_alt)
         return Inputs(
             now=now,
-            pose_enu=(self._pos_enu[0], self._pos_enu[1], z_eff),
-            yaw_enu=self._yaw_enu,
-            armed=self._armed,
+            pose_enu=(pos_enu[0], pos_enu[1], z_eff),
+            yaw_enu=yaw_enu,
+            armed=armed,
             altitude_ok=z_eff >= self._takeoff_alt - self._takeoff_alt_tol,
-            estimate_ok=self._estimate_ok,
+            estimate_ok=estimate_ok,
             detections=dets,
             detection_stability=stability,
-            input_ages={"odom": (now - self._odom_time) if self._have_odom else float("inf")},
+            input_ages={"odom": (now - odom_time) if have_odom else float("inf")},
         )
 
     def _tick(self) -> None:

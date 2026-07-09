@@ -6,6 +6,7 @@ Camera frame convention: X right, Y down, Z forward (into scene).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 import cv2
 import numpy as np
@@ -17,6 +18,14 @@ class MarkerDetection:
     center_x_px: float
     center_y_px: float
     tvec_cam: np.ndarray
+
+
+@lru_cache(maxsize=8)
+def _get_detector(dictionary_id: int) -> cv2.aruco.ArucoDetector:
+    """One detector per dictionary; construction is pure and parameters are defaults."""
+    aruco_dict = cv2.aruco.getPredefinedDictionary(dictionary_id)
+    params = cv2.aruco.DetectorParameters()
+    return cv2.aruco.ArucoDetector(aruco_dict, params)
 
 
 def detect_markers(
@@ -36,9 +45,7 @@ def detect_markers(
     if camera_matrix is None or not np.any(camera_matrix):
         return []
 
-    aruco_dict = cv2.aruco.getPredefinedDictionary(dictionary_id)
-    params = cv2.aruco.DetectorParameters()
-    detector = cv2.aruco.ArucoDetector(aruco_dict, params)
+    detector = _get_detector(dictionary_id)
     corners, ids, _ = detector.detectMarkers(image)
 
     if ids is None or len(ids) == 0:

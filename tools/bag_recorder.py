@@ -100,11 +100,13 @@ def start(
             preexec_fn=os.setsid,
             cwd=str(ROOT),
         )
+        BAG_PIDFILE.write_text(str(proc.pid))
+        return proc
     except Exception as e:
         print(f"Warning: bag recorder failed to start: {e}", file=sys.stderr)
         return None
-    BAG_PIDFILE.write_text(str(proc.pid))
-    return proc
+    finally:
+        log_fh.close()
 
 
 def _getpgid(pid: int) -> int:

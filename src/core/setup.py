@@ -1,3 +1,5 @@
+from glob import glob
+
 from setuptools import setup
 
 package_name = "ros_px4_template_core"
@@ -14,8 +16,22 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         (f"share/{package_name}", ["package.xml"]),
+        (f"share/{package_name}/config", ["../../config/markers.yaml"]),
+        (f"share/{package_name}/config/missions", glob("../../config/missions/*.yaml")),
+        (f"share/{package_name}/config/params", glob("../../config/params/*.yaml")),
+        (
+            f"share/{package_name}/config/params/overlays",
+            glob("../../config/params/overlays/*.yaml"),
+        ),
+        (f"share/{package_name}/config/paths", glob("../../config/paths/*.yaml")),
+        (f"share/{package_name}/config/rviz", glob("../../config/rviz/*.rviz")),
     ],
-    install_requires=["setuptools", "opencv-python-headless>=4.7.0"],
+    install_requires=[
+        "setuptools",
+        "numpy>=1.26,<2.0",
+        "pyyaml>=6.0",
+        "opencv-python-headless>=4.7.0",
+    ],
     zip_safe=True,
     maintainer="Developer",
     maintainer_email="dev@example.com",

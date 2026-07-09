@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
-from ros_px4_template_core.lib.aruco_detector import detect_markers
+from ros_px4_template_core.lib.aruco_detector import _get_detector, detect_markers
 
 
 def _render_marker(marker_id: int = 0, img_size: int = 640) -> tuple[np.ndarray, np.ndarray]:
@@ -64,3 +64,23 @@ def test_uncalibrated_camera_matrix_returns_empty() -> None:
     cam = np.zeros((3, 3), dtype=np.float64)
     detections = detect_markers(img, cam, np.zeros((4, 1)), marker_size_m=0.2)
     assert len(detections) == 0
+
+
+def test_detector_cached_per_dictionary() -> None:
+    first = _get_detector(cv2.aruco.DICT_4X4_50)
+    second = _get_detector(cv2.aruco.DICT_4X4_50)
+    other = _get_detector(cv2.aruco.DICT_5X5_50)
+
+    assert first is second
+    assert first is not other
+
+
+def test_detection_unchanged_after_cache() -> None:
+    img, cam = _render_marker(marker_id=0)
+
+    first = detect_markers(img, cam, np.zeros((4, 1)), marker_size_m=0.2)
+    second = detect_markers(img, cam, np.zeros((4, 1)), marker_size_m=0.2)
+
+    assert [(d.marker_id, d.center_x_px, d.center_y_px) for d in first] == [
+        (d.marker_id, d.center_x_px, d.center_y_px) for d in second
+    ]

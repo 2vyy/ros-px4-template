@@ -2,12 +2,14 @@
 
 ## Overview
 
-Every `just sim` run records a ROS 2 bag (the bridge/agent topics) and, on
-teardown, captures the matching PX4 SITL ULog. Those two logs share no clock:
-the bag is wall time, the ULog is PX4 boot time, and Gazebo may be running
-faster or slower than real time. [skein](../../skein) — installed as a
-sibling repo — reconciles both logs onto one canonical timeline so you can
-query across ROS and PX4 data as if they were one recording.
+`just sim --record` records a ROS 2 bag (the bridge/agent topics) and, on
+teardown, captures the matching PX4 SITL ULog. A default `just sim` records
+nothing; recording is opt-in for runs you plan to inspect with `just analyze`.
+Those two recorded logs share no clock: the bag is wall time, the ULog is PX4
+boot time, and Gazebo may be running faster or slower than real time.
+[skein](../../skein) — installed as a sibling repo — reconciles both logs onto
+one canonical timeline so you can query across ROS and PX4 data as if they were
+one recording.
 
 This doc is the operational runbook: record, stop, inspect artifacts,
 analyze, query. For the design rationale (why a separate tool, why this
@@ -31,12 +33,12 @@ the ULog comes from PX4 SITL running under `$PX4_DIR`, not a real autopilot.
 ## 1. Record a run
 
 ```bash
-just sim --overlay auto_arm
+just sim --record --overlay auto_arm
 ```
 
-(Plain `just sim` also records — `--overlay` just selects a behavior
-overlay.) Once the stack is up, the readiness verdict confirms recording
-started:
+Recording is opt-in; a default `just sim` records nothing and `just analyze`
+requires a `--record` run. Once the stack is up, the readiness verdict confirms
+recording started:
 
 ```
 READY: /fmu topics up, rosbridge:9090, GCS params committed, recording -> logs/runs/20260622_112924/bag - 16.0s (logs/latest.log)
@@ -166,7 +168,7 @@ The bag records this minimum useful topic set (defined in
   `vehicle_local_position`).
 - `--stats` — print per-channel rate/gap aggregates instead of (or alongside)
   query results.
-- Each `just sim` produces exactly one run under `logs/runs/<id>/`.
+- Each `just sim --record` produces exactly one run under `logs/runs/<id>/`.
   `just clean` wipes `logs/runs/` entirely.
 
 ## SITL-only & caveats
@@ -184,8 +186,8 @@ The bag records this minimum useful topic set (defined in
 
 ## Troubleshooting
 
-- `no run at logs/runs/…` — record a run first with `just sim` (or
-  `just sim --overlay auto_arm`) before analyzing.
+- `no run at logs/runs/…` — record a run first with `just sim --record` (or
+  `just sim --record --overlay auto_arm`) before analyzing.
 - `skein project not found …` — set `SKEIN_DIR=/path/to/skein` if skein
   isn't checked out as a sibling at `../skein`.
 - `Warning: no session.ulg for this run` — overlay proceeds bag-only. Either

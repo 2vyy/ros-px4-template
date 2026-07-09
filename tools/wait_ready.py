@@ -117,7 +117,7 @@ def _px4_standby() -> bool:
     return _GCS_PARAMS_FLAG.exists()
 
 
-def _set_physics_speed(speed: float) -> bool:
+def _set_physics_speed(speed: float, world: str) -> bool:
     update_rate = int(speed * 250)
     try:
         r = subprocess.run(
@@ -125,7 +125,7 @@ def _set_physics_speed(speed: float) -> bool:
                 "gz",
                 "service",
                 "-s",
-                "/world/default/set_physics",
+                f"/world/{world}/set_physics",
                 "--reqtype",
                 "gz.msgs.Physics",
                 "--reptype",
@@ -148,6 +148,7 @@ def _set_physics_speed(speed: float) -> bool:
 def main(
     timeout: int = typer.Option(180, "--timeout", help="Seconds before giving up"),
     speed: float = typer.Option(1.0, "--speed", help="Physics speed factor (must not exceed 1.0)"),
+    world: str = typer.Option("default", "--world", help="Gazebo world name (for set_physics)"),
 ) -> None:
     if speed <= 0 or speed > 1.0:
         typer.echo(
@@ -187,7 +188,7 @@ def main(
             # Skip it entirely at the default speed.
             if speed == 1.0:
                 typer.echo("  [OK] Physics at realtime (world SDF defaults; set_physics skipped)")
-            elif _set_physics_speed(speed):
+            elif _set_physics_speed(speed, world):
                 typer.echo(f"  [OK] Gazebo physics speed throttled to {speed}x")
             else:
                 typer.echo("  [WARN] Failed to set Gazebo physics speed (might run unthrottled)")

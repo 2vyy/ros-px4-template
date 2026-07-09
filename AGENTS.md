@@ -25,7 +25,7 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 2. Frames: [docs/FRAMES.md](docs/FRAMES.md). All `src/` code uses ENU; convert only at the PX4 boundary in `offboard_controller` and `mission_manager`.
 3. Never edit files inside `PX4_DIR`. Gazebo worlds and models belong in `sim/worlds` and `sim/models`.
 4. `src/px4_msgs` stays on branch `release/1.17`. Enforced by `tools/check_invariants.py`.
-5. Pure logic in `lib/`, nodes in `nodes/`. ENU/NED conversion stays at the PX4 boundary in `nodes/offboard_controller.py` and `nodes/mission_manager.py`.
+5. Pure logic in `lib/`, nodes in `src/core/ros_px4_template_core/nodes/`. ENU/NED conversion stays at the PX4 boundary in `src/core/ros_px4_template_core/nodes/offboard_controller.py` and `src/core/ros_px4_template_core/nodes/mission_manager.py`.
 6. `sim/launch/sim_full.launch.py` is the full sim. `hardware/launch/hardware.launch.py` is rosbridge plus core nodes only, included by the sim launch with `config:=sim`.
 
 ## Tooling
@@ -35,7 +35,7 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | Workspace Setup | `uv run tasks.py setup` | `just setup` clones dependencies, runs uv sync and rosdep |
 | Tasks | `just` | `just --list` is canonical. Wraps `tasks.py` |
 | Quality gateway | `just check` | Automatically formats, lint-fixes, typechecks, builds workspace, and runs unit tests |
-| Simulation & Run | `just sim [flags]` | Smart-builds, boots detached, waits till ready, prints verdict, returns. Never holds the terminal. Flags: `--gui`, `--world`, `--model`, `--vision`, `--speed`, `--overlay`, `--no-build`, `--timeout` |
+| Simulation & Run | `just sim [flags]` | Smart-builds, boots detached, waits till ready, prints verdict, returns. Never holds the terminal. Flags: `--gui`, `--world`, `--model`, `--vision`, `--speed`, `--overlay`, `--record`, `--no-build`, `--timeout` |
 | Real Hardware | `just hw [flags]` | Same detached + verdict contract for the serial flight controller |
 | Lifecycle | `just stop` | Exhaustive cold teardown; no process survives |
 | Verification suite | `just test [type]` / `just scenario <name>` | Smart-builds first. Types: `unit`, `e2e` |
@@ -63,7 +63,7 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | Show capability registry | `just cap show` |
 | Record verified capability | `just cap mark <id> sim` |
 
-Sim flags: `just sim [--gui] [--world <world>] [--model <model>] [--vision <bool>] [--speed <f>] [--overlay auto_arm|inspect|hover] [--no-build] [--timeout <s>]`. Defaults: headless, `default` world, `x500`, vision off, speed `1.0`, no overlay (boots disarmed). `just sim` always detaches and returns after readiness; watch with `just log tail`, stop with `just stop`.
+Sim flags: `just sim [--gui] [--world <world>] [--model <model>] [--vision <bool>] [--speed <f>] [--overlay auto_arm|inspect|hover] [--record] [--no-build] [--timeout <s>]`. Defaults: headless, `default` world, `x500`, vision off, speed `1.0`, no overlay (boots disarmed), recording off. `just sim` always detaches and returns after readiness; watch with `just log tail`, stop with `just stop`.
 
 ## Verify (use in this order when something changed)
 
@@ -127,11 +127,11 @@ Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing
 | X | Check |
 |---|-------|
 | `just check` | `log/latest_build/`; confirm `src/px4_msgs` is on `release/1.17` (`just check`); ensure ROS is sourced or distrobox is available (handled automatically by `justfile` now) |
-| `just sim` hangs at Gazebo | `.env` has correct `PX4_DIR`; `${PX4_DIR}/build/px4_sitl_default/bin/px4` exists; on WSL confirm WSLg for GUI; try `just sim headless` |
+| `just sim` hangs at Gazebo | `.env` has correct `PX4_DIR`; `${PX4_DIR}/build/px4_sitl_default/bin/px4` exists; on WSL confirm WSLg for GUI; `just sim` is headless by default (GUI only via `--gui`) |
 | No `/fmu/out/*` topics | PX4 SITL is running and MicroXRCEAgent is on UDP 8888 (`ss -ulnp | grep 8888`); check `logs/latest.log` (`rg src=xrce`) for the XRCE handshake |
-| Scenario arm fail | `gcs_heartbeat` via `uv run`; `just stop` kills MicroXRCEAgent (session key rotates each launch); `arm_delay_s` in `config/params/sim.yaml` (default 3s) |
-| Mission stuck in `wait_arm_altitude` | Gate: effective ENU z (`max(pose, controller alt)`) >= `takeoff_altitude_m - takeoff_altitude_tolerance_m`. In sim check `sim_pose_adapter` / Gazebo pose; on hardware check `px4_pose_adapter` for `First pose published` (`xy_valid` and `z_valid`). |
-| Mission never enters `hover_marker` | `enable_vision:=true` needed; `/vision/marker_pose` valid; `marker.acquire_frames` consecutive frames must be hit |
+| Scenario arm fail | `gcs_heartbeat` via `uv run`; `just stop` kills MicroXRCEAgent (session key rotates each launch); `arm_delay_s` in `config/params/sim.yaml` (sim default 10s, hardware 5s) |
+| Mission stuck in `takeoff` | Gate: effective ENU z (`max(pose, controller alt)`) >= `takeoff_altitude_m - takeoff_altitude_tolerance_m`. Check `position_node` output: `rg "First pose published" logs/latest.log` and confirm `/drone/odom` is publishing (`just log topics`). |
+| Mission never enters `marker_hover` | Boot with `just sim --vision aruco`; check `/drone/marker_detection` publishes valid detections (`rg src=aruco_pose_publisher logs/latest.log`); the `marker_stable` guard needs `n` consecutive fresh detections (default 5) |
 | `just log topics` reports missing | Topic backticked in `docs/TOPICS.md` but never published; either fix the node or remove from the manifest |
 | MCP errors | See [docs/MCP.md](docs/MCP.md); confirm port 9090 open and `which uvx` path correct for the OS hosting rosbridge |
 | Stale ROS daemon between runs | `just stop` (kills sim processes plus `ros2 daemon stop`) before relaunching |
@@ -147,8 +147,8 @@ Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing
   4. `just check` then verify with `just status` or `ros2 node list`.
 - New libraries go in `src/core/ros_px4_template_core/lib/`. Add unit tests in `tests/unit/`. `lib/` must remain `rclpy` free where possible (see `StructuredLogger` Protocol pattern).
 - Always use `StructuredLogger` for agent-facing diagnostics. Call `self.slog.close()` from `destroy_node`.
-- Missions are data-driven YAML state graphs. New behaviors/guards go in `lib/mission/` and are registered in `lib/mission/registry.py`; missions are loaded by `lib/mission/loader.py`. Do not embed phase logic in `nodes/mission_manager.py`.
-- New scenarios go in `tests/scenarios/<NN>_<name>.py` using `_common.spin_until` and `PX4_QOS`. Scaffold a runnable stub with `just scenario-new <NN>_<name>` (writes the `Scenario` boilerplate and prints the `capabilities.toml` snippet to add), then edit the `done()` predicate. Each must end by calling `_common.write_report`, which prints a rich one-line verdict (`PASS`/`FAIL <name> <detail> <Ns>`); pass a real `detail` (waypoint error, hold time, or the fail reason), never a bare pass. Add a capability entry in `tests/capabilities.toml` and record via `just cap mark <id> sim` when passing.
+- Missions are data-driven YAML state graphs. New behaviors/guards go in `src/core/ros_px4_template_core/lib/mission/` and are registered in `src/core/ros_px4_template_core/lib/mission/registry.py`; missions are loaded by `src/core/ros_px4_template_core/lib/mission/loader.py`. Do not embed phase logic in `src/core/ros_px4_template_core/nodes/mission_manager.py`.
+- New scenarios go in `tests/scenarios/<NN>_<name>.py` using `spin_until` and `PX4_QOS` from `tests/scenarios/_common.py`. Scaffold a runnable stub with `just scenario-new <NN>_<name>` (writes the `Scenario` boilerplate and prints the `capabilities.toml` snippet to add), then edit the `done()` predicate. Each must end by calling `write_report`, which prints a rich one-line verdict (`PASS`/`FAIL <name> <detail> <Ns>`); pass a real `detail` (waypoint error, hold time, or the fail reason), never a bare pass. Add a capability entry in `tests/capabilities.toml` and record via `just cap mark <id> sim` when passing.
 - Do not commit `.env`, `logs/`, `build/`, `install/`, or `log/`.
 
 ## House style

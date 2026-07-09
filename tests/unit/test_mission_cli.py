@@ -34,11 +34,7 @@ def test_validate_missing_file() -> None:
 def test_validate_unknown_behavior(tmp_path: Path) -> None:
     bad = tmp_path / "bad.yaml"
     bad.write_text(
-        "mission:\n"
-        "  initial: s0\n"
-        "  states:\n"
-        "    s0: {behavior: __nope__}\n"
-        "  terminal: [s0]\n",
+        "mission:\n  initial: s0\n  states:\n    s0: {behavior: __nope__}\n  terminal: [s0]\n",
         encoding="utf-8",
     )
     ok, msg = validate_mission(str(bad))
@@ -50,11 +46,7 @@ def test_validate_unknown_behavior(tmp_path: Path) -> None:
 def test_validate_unknown_initial(tmp_path: Path) -> None:
     bad = tmp_path / "bad2.yaml"
     bad.write_text(
-        "mission:\n"
-        "  initial: ghost\n"
-        "  states:\n"
-        "    s0: {behavior: hold}\n"
-        "  terminal: [s0]\n",
+        "mission:\n  initial: ghost\n  states:\n    s0: {behavior: hold}\n  terminal: [s0]\n",
         encoding="utf-8",
     )
     ok, msg = validate_mission(str(bad))

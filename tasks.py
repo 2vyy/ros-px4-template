@@ -2,14 +2,16 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "typer>=0.12.3",
+#     # Minimal isolated env for the task runner (uv script mode) - intentionally
+#     # smaller than pyproject [project]; keep floors aligned when both declare a pkg.
+#     "typer>=0.12",
 #     "rich>=13.7.0",
 #     "tomli-w>=1.0.0",
-#     "tomli>=2.0.0",
 #     "pyyaml>=6.0",
-#     "lark>=1.1.9",
+#     "numpy>=1.26,<2.0",
 # ]
 # ///
+# ruff: noqa: E402,S603
 
 from __future__ import annotations
 
@@ -20,7 +22,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -49,25 +50,63 @@ def _load_dotenv() -> None:
                     os.environ[key] = val
 
 
-_load_dotenv()
-
-
 def _source_workspace_env() -> None:
     ws_setup = ROOT / "install" / "setup.bash"
-    if ws_setup.exists():
-        try:
-            cmd = f"source {ws_setup} && python3 -c 'import os, json; print(json.dumps(dict(os.environ)))'"
-            res = subprocess.run(
-                ["bash", "-c", cmd], capture_output=True, text=True, check=True, cwd=str(ROOT)
-            )
-            new_env = json.loads(res.stdout.strip())
+    if not ws_setup.exists():
+        return
+
+    cache_file = ROOT / "install" / ".ws_env_cache.json"
+    ros_setup = os.environ.get("ROS_SETUP", "/opt/ros/jazzy/setup.bash")
+    ros_setup_path = Path(ros_setup)
+    key = {
+        "setup_mtime_ns": ws_setup.stat().st_mtime_ns,
+        "ros_setup": ros_setup,
+        "ros_setup_mtime_ns": ros_setup_path.stat().st_mtime_ns if ros_setup_path.exists() else 0,
+    }
+
+    try:
+        cached = json.loads(cache_file.read_text(encoding="utf-8"))
+        if isinstance(cached, dict) and cached.get("_key") == key:
+            env = cached.get("env")
+            if isinstance(env, dict) and all(
+                isinstance(k, str) and isinstance(v, str) for k, v in env.items()
+            ):
+                for k, v in env.items():
+                    os.environ[k] = v
+                return
+    except Exception:
+        pass
+
+    try:
+        cmd = (
+            f"source {ws_setup} && "
+            "python3 -c 'import os, json; print(json.dumps(dict(os.environ)))'"
+        )
+        res = subprocess.run(
+            ["bash", "-c", cmd],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=str(ROOT),
+        )
+        new_env = json.loads(res.stdout.strip())
+        if isinstance(new_env, dict):
             for k, v in new_env.items():
-                os.environ[k] = v
-        except Exception as e:
-            print(f"Warning: failed to source workspace env: {e}", file=sys.stderr)
+                if isinstance(k, str) and isinstance(v, str):
+                    os.environ[k] = v
+            try:
+                cache_file.write_text(json.dumps({"_key": key, "env": new_env}), encoding="utf-8")
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"Warning: failed to source workspace env: {e}", file=sys.stderr)
 
 
-_source_workspace_env()
+@app.callback()
+def _bootstrap() -> None:
+    """Per-invocation env setup. Runs before every command."""
+    _load_dotenv()
+    _source_workspace_env()
 
 
 def _get_clean_env() -> dict[str, str]:
@@ -126,9 +165,7 @@ def _ros_launch_env(**extra: str) -> dict[str, str]:
     return env
 
 
-def _ros2_launch_capture_argv(
-    launch_args: list[str], cwd: Path = ROOT
-) -> list[str]:
+def _ros2_launch_capture_argv(launch_args: list[str], cwd: Path = ROOT) -> list[str]:
     """``bash -lc`` that sources ROS, then pipes ``ros2 launch`` stdout through the
     live capture filter into stdout. Not ``exec`` because
     a pipeline cannot be exec'd; the whole pipeline lives in the caller's setsid group.
@@ -152,14 +189,15 @@ def _ros2_launch_capture_argv(
 
 # Ensure tools/ is on path to import sub-apps
 sys.path.append(str(ROOT / "tools"))
-from capabilities import app as cap_app, scenario_sim_configs
-from log_summary import build_run_summary
-from cli_verdict import ExitCode, format_not_ready, format_ready, format_stopped
-import sim_cleanup
 import bag_recorder
-import ulog_retrieve
+import sim_cleanup
 import skein_analyze
+import ulog_retrieve
+from capabilities import app as cap_app
+from capabilities import scenario_sim_configs
+from cli_verdict import ExitCode, format_not_ready, format_ready, format_stopped
 from log_query import app as log_app
+from log_summary import build_run_summary, format_failure_digest
 from mission_cli import app as mission_app
 from scenario_scaffold import render_scenario
 
@@ -180,6 +218,14 @@ def _summarize_logs_silent() -> None:
         print(f"Warning: log summary skipped: {e}", file=sys.stderr)
 
 
+def _print_failure_digest() -> None:
+    try:
+        summary = json.loads((LOG_DIR / "latest_summary.json").read_text(encoding="utf-8"))
+        print(format_failure_digest(summary), file=sys.stderr)
+    except Exception as e:
+        print(f"(failure digest unavailable: {e})", file=sys.stderr)
+
+
 def _teardown() -> bool:
     """Exhaustive cold teardown of the whole stack. Prints a STOPPED verdict.
 
@@ -196,7 +242,9 @@ def _teardown() -> bool:
     return not result["survivors"]
 
 
-def _spawn_stack(launch_args: list[str], env: dict[str, str], *, append: bool) -> "subprocess.Popen[bytes]":
+def _spawn_stack(
+    launch_args: list[str], env: dict[str, str], *, append: bool
+) -> subprocess.Popen[bytes]:
     """Spawn a detached, captured ros2 launch into logs/latest.log. One launch path
     for sim, hw, and e2e groups. Caller owns readiness checking and teardown.
     """
@@ -234,6 +282,11 @@ def _resolve_scenario_script(name: str) -> Path:
     if available:
         print(f"Available: {', '.join(available)}", file=sys.stderr)
     raise typer.Exit(1) from None
+
+
+def _e2e_sim_groups(configs: list[dict]) -> list[tuple[str, str, list[str]]]:
+    """Return one isolated sim launch group per scenario config."""
+    return [(cfg["vision"], cfg["overlay"], [cfg["scenario"]]) for cfg in configs]
 
 
 def _needs_build() -> bool:
@@ -304,11 +357,20 @@ def setup():
             m = re.match(r"v?(\d+\.\d+)", version_str)
             if m:
                 px4_msgs_branch = f"release/{m.group(1)}"
-                print(f"Auto-detected PX4 version '{version_str}'. Using branch '{px4_msgs_branch}' for px4_msgs.")
+                print(
+                    f"Auto-detected PX4 version '{version_str}'. "
+                    f"Using branch '{px4_msgs_branch}' for px4_msgs."
+                )
             else:
-                print(f"PX4 version '{version_str}' could not be parsed. Defaulting to '{px4_msgs_branch}'.")
+                print(
+                    f"PX4 version '{version_str}' could not be parsed. "
+                    f"Defaulting to '{px4_msgs_branch}'."
+                )
         except Exception as e:
-            print(f"Could not determine PX4 version from PX4_DIR: {e}. Defaulting to '{px4_msgs_branch}'.")
+            print(
+                f"Could not determine PX4 version from PX4_DIR: {e}. "
+                f"Defaulting to '{px4_msgs_branch}'."
+            )
     else:
         print(f"PX4_DIR is not set or not a directory. Defaulting to branch '{px4_msgs_branch}'.")
 
@@ -392,7 +454,7 @@ def check():
     """Format, lint-fix, typecheck, compile, and run unit tests."""
     print("Running checks")
 
-    ruff_paths = ["src/core", "tests", "tools", "sim", "hardware"]
+    ruff_paths = ["src/core", "tests", "tools", "sim", "hardware", "tasks.py"]
     ruff_paths_str = [str(ROOT / p) for p in ruff_paths]
     env = _get_clean_env()
 
@@ -400,14 +462,12 @@ def check():
 
     print("Running ruff format and lint auto-fixes")
     res = subprocess.run(
-        ["uv", "run", "ruff", "check", "--fix"] + ruff_paths_str, cwd=str(ROOT), env=env
+        ["uv", "run", "ruff", "check", "--fix", *ruff_paths_str], cwd=str(ROOT), env=env
     )
     if res.returncode != 0:
         failed_steps.append("ruff check")
 
-    res = subprocess.run(
-        ["uv", "run", "ruff", "format"] + ruff_paths_str, cwd=str(ROOT), env=env
-    )
+    res = subprocess.run(["uv", "run", "ruff", "format", *ruff_paths_str], cwd=str(ROOT), env=env)
     if res.returncode != 0:
         failed_steps.append("ruff format")
 
@@ -418,14 +478,22 @@ def check():
     if res.returncode != 0:
         failed_steps.append("branch invariants")
 
+    print("Checking agent docs identifiers...")
+    res = subprocess.run(["uv", "run", "python", "tools/check_docs.py"], cwd=str(ROOT), env=env)
+    if res.returncode != 0:
+        failed_steps.append("docs identifiers")
+
     print("Running static typecheck...")
     res = subprocess.run(
         [
-            "uv", "run", "ty", "check",
+            "uv",
+            "run",
+            "ty",
+            "check",
             "src/core/ros_px4_template_core/lib",
             "tests/unit",
             "tools/",
-            "--exclude", "tools/gcs_heartbeat.py",
+            "tasks.py",
         ],
         cwd=str(ROOT),
         env=env,
@@ -457,16 +525,20 @@ def check():
         raise typer.Exit(1) from None
 
 
-
 @app.command()
 def sim(
     gui: bool = typer.Option(False, "--gui", help="Show the Gazebo GUI (default headless)."),
     world: str = typer.Option("default", "--world", help="World file name"),
     model: str = typer.Option("x500", "--model", help="Airframe model"),
     vision: str = typer.Option("false", "--vision", help="Enable vision/aruco detection"),
-    speed: float = typer.Option(1.0, "--speed", help="Gazebo physics speed (<=1.0, headless only)."),
+    speed: float = typer.Option(
+        1.0, "--speed", help="Gazebo physics speed (<=1.0, headless only)."
+    ),
     overlay: str = typer.Option(
         "", "--overlay", help="Param overlay: auto_arm | inspect | hover (default: none, disarmed)."
+    ),
+    record: bool = typer.Option(
+        False, "--record", help="Record an MCAP bag + retrieve the PX4 ULog for `just analyze`."
     ),
     build: bool = typer.Option(True, "--build/--no-build", help="Smart-build before launch."),
     timeout: int = typer.Option(180, "--timeout", help="Seconds to wait for readiness."),
@@ -527,27 +599,43 @@ def sim(
     (LOG_DIR / "sim.pid").write_text(str(proc.pid))
 
     res = subprocess.run(
-        ["uv", "run", "python", "tools/wait_ready.py", "--timeout", str(timeout),
-         "--speed", str(speed)],
+        [
+            "uv",
+            "run",
+            "python",
+            "tools/wait_ready.py",
+            "--timeout",
+            str(timeout),
+            "--speed",
+            str(speed),
+            "--world",
+            world,
+        ],
         cwd=str(ROOT),
     )
     elapsed = _time.monotonic() - started
     if res.returncode != 0:
         print(
-            format_not_ready("stack did not reach readiness (topics/rosbridge/GCS params)", elapsed),
+            format_not_ready(
+                "stack did not reach readiness (topics/rosbridge/GCS params)", elapsed
+            ),
             file=sys.stderr,
         )
         _teardown()
         raise typer.Exit(int(ExitCode.FAIL))
 
     # readiness confirmed past this point
-    run_dir = bag_recorder.new_run_dir()
-    bag_proc = bag_recorder.start(run_dir, env)
-    rec_detail = (
-        f"recording -> {run_dir.relative_to(ROOT)}/bag"
-        if bag_proc is not None
-        else "recording: DISABLED (recorder failed to start)"
-    )
+    if record:
+        run_dir = bag_recorder.new_run_dir()
+        bag_proc = bag_recorder.start(run_dir, env)
+        rec_detail = (
+            f"recording -> {run_dir.relative_to(ROOT)}/bag"
+            if bag_proc is not None
+            else "recording: DISABLED (recorder failed to start)"
+        )
+    else:
+        bag_recorder.BAG_PIDFILE.unlink(missing_ok=True)
+        rec_detail = "recording: off (use --record)"
     print(
         format_ready(
             ["/fmu topics up", "rosbridge:9090", "GCS params committed", rec_detail],
@@ -566,8 +654,15 @@ def stop():
 @app.command()
 def analyze(
     run: str = typer.Argument("latest", help="Run id under logs/runs/, or 'latest'."),
-    query: str = typer.Option("", "--query", "-q", help="Run `skein query --where <expr>` on the aligned MCAP after overlay."),
-    channel: str = typer.Option("vehicle_local_position", "--channel", "-c", help="Channel for --query."),
+    query: str = typer.Option(
+        "",
+        "--query",
+        "-q",
+        help="Run `skein query --where <expr>` on the aligned MCAP after overlay.",
+    ),
+    channel: str = typer.Option(
+        "vehicle_local_position", "--channel", "-c", help="Channel for --query."
+    ),
     stats: bool = typer.Option(False, "--stats", help="Per-channel aggregates for --query."),
 ):
     """Overlay a recorded run's bag + ULog onto one timeline with skein, writing
@@ -635,9 +730,7 @@ def hw(
     Same no-terminal-capture contract as `just sim`. Watch with `just log tail`,
     stop with `just stop`.
     """
-    res = subprocess.run(
-        ["uv", "run", "python", "tools/preflight.py", "--mode=hw"], cwd=str(ROOT)
-    )
+    res = subprocess.run(["uv", "run", "python", "tools/preflight.py", "--mode=hw"], cwd=str(ROOT))
     if res.returncode != 0:
         print("Preflight failed. Aborting hardware launch.", file=sys.stderr)
         raise typer.Exit(int(ExitCode.PRECONDITION))
@@ -685,6 +778,7 @@ def hw(
         raise typer.Exit(int(ExitCode.FAIL))
 
     print(format_ready([f"FC {port}@{baud}", "rosbridge:9090", "/fmu topics up"], elapsed))
+
 
 def _run_e2e_sim_group(
     vision: str,
@@ -734,7 +828,16 @@ def _run_e2e_sim_group(
         print("Waiting for simulation to stabilize...")
         try:
             subprocess.run(
-                ["uv", "run", "python", "tools/wait_ready.py", "--timeout", "180", "--speed", "1.0"],
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    "tools/wait_ready.py",
+                    "--timeout",
+                    "180",
+                    "--speed",
+                    "1.0",
+                ],
                 check=True,
                 cwd=str(ROOT),
             )
@@ -780,20 +883,25 @@ def test(
     if type == "unit":
         print("Running unit tests...")
         try:
-            subprocess.run(["uv", "run", "pytest", "tests/unit/", "-q", "--tb=short"], check=True, cwd=str(ROOT))
+            subprocess.run(
+                ["uv", "run", "pytest", "tests/unit/", "-q", "--tb=short"],
+                check=True,
+                cwd=str(ROOT),
+            )
         except subprocess.CalledProcessError:
             raise typer.Exit(int(ExitCode.FAIL)) from None
     elif type == "scenario":
         if not arg:
-            print("Error: Scenario name required (e.g. just test scenario --arg 01_arm_takeoff)", file=sys.stderr)
+            print(
+                "Error: Scenario name required (e.g. just test scenario --arg 01_arm_takeoff)",
+                file=sys.stderr,
+            )
             raise typer.Exit(int(ExitCode.USAGE)) from None
         _smart_build(True)
         script = _resolve_scenario_script(arg)
         print(f"Running scenario test: {arg}...")
         try:
-            subprocess.run(
-                ["uv", "run", "python", str(script)], check=True, cwd=str(ROOT)
-            )
+            subprocess.run(["uv", "run", "python", str(script)], check=True, cwd=str(ROOT))
         except subprocess.CalledProcessError:
             raise typer.Exit(int(ExitCode.FAIL)) from None
 
@@ -819,16 +927,13 @@ def test(
 
         gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
 
-        # Group scenarios by their required (vision, overlay) sim config and run
-        # each group against its own freshly launched, isolated sim. Hold scenarios
-        # (hover overlay) must not share a sim with the auto-flown demo mission that
-        # path scenarios need, so each config gets a clean boot + teardown.
+        # Run each declared scenario against its own freshly launched, isolated sim.
+        # Scenarios land, disarm, and mutate controller parameters during cleanup,
+        # so sharing a sim can leak state into the next scenario even when the
+        # requested vision/overlay config is identical.
         configs = scenario_sim_configs("sim")
         if not configs:
             print("Warning: no sim scenarios found in capabilities.toml")
-        groups: dict[tuple[str, str], list[str]] = {}
-        for cfg in configs:
-            groups.setdefault((cfg["vision"], cfg["overlay"]), []).append(cfg["scenario"])
 
         import atexit
 
@@ -843,8 +948,8 @@ def test(
         try:
             fails = 0
             (LOG_DIR / "latest.log").write_text("", encoding="utf-8")
-            group_items = list(groups.items())
-            for idx, ((vision, overlay), scenarios) in enumerate(group_items):
+            group_items = _e2e_sim_groups(configs)
+            for idx, (vision, overlay, scenarios) in enumerate(group_items):
                 is_last = idx == len(group_items) - 1
                 fails += _run_e2e_sim_group(
                     vision,
@@ -863,6 +968,7 @@ def test(
             )
 
             if fails > 0 or res_report.returncode != 0:
+                _print_failure_digest()
                 raise typer.Exit(int(ExitCode.FAIL))
             print("E2E cycle finished successfully (all scenarios passed).")
 
@@ -905,6 +1011,7 @@ def scenario(
         finally:
             _summarize_logs_silent()
         if not passed:
+            _print_failure_digest()
             raise typer.Exit(int(ExitCode.FAIL))
         return
 
@@ -922,6 +1029,7 @@ def scenario(
     finally:
         _summarize_logs_silent()
     if fails > 0:
+        _print_failure_digest()
         raise typer.Exit(int(ExitCode.FAIL))
 
 

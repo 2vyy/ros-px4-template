@@ -3,9 +3,18 @@ manifest-row parsing / type+direction verdicts."""
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
-from check_topics import TopicSpec, _topics_in_source, check_spec, parse_manifest, should_enforce
+import check_topics
+from check_topics import (
+    TopicSpec,
+    _query_live_topics,
+    _topics_in_source,
+    check_spec,
+    parse_manifest,
+    should_enforce,
+)
 
 
 def test_finds_topic_in_source(tmp_path: Path) -> None:
@@ -136,3 +145,42 @@ def test_should_enforce_enforces_conditional_topic_when_vision_on() -> None:
 def test_should_enforce_always_enforces_plain_topic() -> None:
     spec = TopicSpec("/clock", "rosgraph_msgs/msg/Clock", "pub")
     assert should_enforce(spec, vision=False) is True
+
+
+def test_query_live_topics_parses_verbose_topic_list(monkeypatch) -> None:
+    stdout = """
+Published topics:
+ * /drone/odom [nav_msgs/msg/Odometry] 1 publisher
+ * /clock [rosgraph_msgs/msg/Clock] 2 publishers
+
+Subscribed topics:
+ * /drone/odom [nav_msgs/msg/Odometry] 1 subscriber
+ * /fmu/in/trajectory_setpoint [px4_msgs/msg/TrajectorySetpoint] 1 subscriber
+"""
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        assert kwargs == {"capture_output": True, "text": True}
+        return subprocess.CompletedProcess(args, 0, stdout=stdout)
+
+    monkeypatch.setattr(check_topics.subprocess, "run", fake_run)
+
+    info = _query_live_topics()
+
+    assert calls == [["ros2", "topic", "list", "--verbose"]]
+    assert info["/drone/odom"] == ("nav_msgs/msg/Odometry", 1, 1)
+    assert info["/clock"] == ("rosgraph_msgs/msg/Clock", 2, 0)
+    assert info["/fmu/in/trajectory_setpoint"] == ("px4_msgs/msg/TrajectorySetpoint", 0, 1)
+    assert "/missing/topic" not in info
+
+
+def test_query_live_topics_handles_subprocess_failure(monkeypatch) -> None:
+    def fake_run(args: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+        assert args == ["ros2", "topic", "list", "--verbose"]
+        assert kwargs == {"capture_output": True, "text": True}
+        return subprocess.CompletedProcess(args, 1, stdout="")
+
+    monkeypatch.setattr(check_topics.subprocess, "run", fake_run)
+
+    assert _query_live_topics() == {}

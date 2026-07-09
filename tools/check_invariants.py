@@ -20,20 +20,44 @@ def _warn(msg: str) -> None:
     print(f"WARNING: {msg}", file=sys.stderr)
 
 
-def check_px4_msgs_branch() -> bool:
-    if not PX4_MSGS.is_dir():
-        _fail(f"Missing {PX4_MSGS} — run: just clone-px4-msgs")
+def _branch_from_git_metadata(git_path: Path) -> str | None:
+    """Read the current branch from .git/HEAD when the git executable is unavailable."""
+    if git_path.is_file():
+        raw = git_path.read_text(encoding="utf-8").strip()
+        if not raw.startswith("gitdir:"):
+            return None
+        git_path = (git_path.parent / raw.removeprefix("gitdir:").strip()).resolve()
+
+    head = git_path / "HEAD"
+    if not head.is_file():
+        return None
+    raw_head = head.read_text(encoding="utf-8").strip()
+    prefix = "ref: refs/heads/"
+    if raw_head.startswith(prefix):
+        return raw_head.removeprefix(prefix)
+    return "HEAD"
+
+
+def check_px4_msgs_branch(px4_msgs: Path = PX4_MSGS) -> bool:
+    if not px4_msgs.is_dir():
+        _fail(f"Missing {px4_msgs} — run: just clone-px4-msgs")
         return False
-    result = subprocess.run(
-        ["git", "-C", str(PX4_MSGS), "rev-parse", "--abbrev-ref", "HEAD"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        _fail(f"px4_msgs is not a git checkout ({PX4_MSGS})")
-        return False
-    branch = result.stdout.strip()
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(px4_msgs), "rev-parse", "--abbrev-ref", "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            _fail(f"px4_msgs is not a git checkout ({px4_msgs})")
+            return False
+        branch = result.stdout.strip()
+    except FileNotFoundError:
+        branch = _branch_from_git_metadata(px4_msgs / ".git")
+        if branch is None:
+            _fail(f"px4_msgs is not a git checkout ({px4_msgs})")
+            return False
     if branch != EXPECTED_BRANCH:
         _fail(
             f"px4_msgs on branch {branch!r}, expected {EXPECTED_BRANCH!r} "

@@ -45,7 +45,7 @@ ENU altitude grows with +Z. NED altitude grows as `z_ned` becomes more negative.
 
 ## Mission pose
 
-`mission_manager` uses `/drone/pose_enu` (`geometry_msgs/PoseStamped`, frame `map`, `RELIABLE` QoS). In sim, `sim_pose_adapter` publishes Gazebo ground truth; on hardware, `px4_pose_adapter` republishes PX4 NED as ENU. Mission logic blends pose z with `controller_status.altitude_enu_m` until pose is live. Do not feed mission logic raw `/fmu/out/vehicle_local_position`.
+`mission_manager` consumes `/drone/odom` (`nav_msgs/Odometry`, frame `map`, `RELIABLE` QoS), published by `position_node` from PX4's `/fmu/out/vehicle_local_position_v1` in the anchored ENU frame (see [TOPICS.md](TOPICS.md)). Mission logic blends odom z with `controller_status.altitude_enu_m` (`z_eff = max(pose_z, controller_alt)`) so the takeoff gate works before the first odom fix. Do not feed mission logic raw `/fmu/out/vehicle_local_position` - it is NED and unanchored.
 
 ## Quick checks
 
