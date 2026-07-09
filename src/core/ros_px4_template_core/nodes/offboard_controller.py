@@ -5,6 +5,13 @@ otherwise it is omitted (NaN) so PX4 holds current heading. The ENU-to-NED
 conversion happens only in ``_publish_position_setpoint`` -- the sole PX4
 frame boundary for heading. PX4 mc_pos_control tracks ``/drone/target_pose``
 waypoints in OFFBOARD mode.
+
+On disarm or the rising edge of PX4's ``VehicleStatus.failsafe``, this node
+latches automatic arm/mode commands off (the disarm latch from plan 030, plus
+a failsafe latch here). Latching never overrides PX4's own failsafe action or
+stops setpoint/OffboardControlMode streaming; it only suppresses this node's
+own OFFBOARD/arm requests. An explicit ``auto_arm=true`` parameter set clears
+both latches, but is rejected while PX4 still reports an active failsafe.
 =============================================================================
 """
 
@@ -91,6 +98,8 @@ class OffboardController(Node):
         self._armed = False
         self._nav_state = 0
         self._disarm_latched = False
+        self._failsafe_active = False
+        self._failsafe_latched = False
         self._arm_failed = False
         self._arm_fail_reason = ""
         self._px4_ever_disarmed = False
@@ -107,9 +116,18 @@ class OffboardController(Node):
         def _on_set_params(params) -> SetParametersResult:
             for p in params:
                 if p.name == "auto_arm" and bool(p.value):
+                    if self._failsafe_active:
+                        self.slog.event(events.FAILSAFE_LATCH_CLEAR_REJECTED)
+                        return SetParametersResult(
+                            successful=False,
+                            reason="cannot clear latches while PX4 failsafe is active",
+                        )
                     if self._disarm_latched:
                         self._disarm_latched = False
-                        self.slog.event("AUTO_ARM_LATCH_CLEARED_BY_PARAM")
+                        self.slog.event(events.AUTO_ARM_LATCH_CLEARED_BY_PARAM, latch="disarm")
+                    if self._failsafe_latched:
+                        self._failsafe_latched = False
+                        self.slog.event(events.AUTO_ARM_LATCH_CLEARED_BY_PARAM, latch="failsafe")
             return SetParametersResult(successful=True)
 
         self.add_on_set_parameters_callback(_on_set_params)
@@ -225,7 +243,14 @@ class OffboardController(Node):
         self._nav_state = int(msg.nav_state)
         if was_armed and not self._armed:
             self._disarm_latched = True
-            self.slog.event("AUTO_ARM_DISABLED_ON_DISARM")
+            self.slog.event(events.AUTO_ARM_DISABLED_ON_DISARM)
+        was_failsafe = self._failsafe_active
+        self._failsafe_active = bool(msg.failsafe)
+        if self._failsafe_active and not was_failsafe:
+            self._failsafe_latched = True
+            self.slog.event(events.FAILSAFE_MODE_COMMANDS_LATCHED)
+        elif not self._failsafe_active and was_failsafe:
+            self.slog.event(events.FAILSAFE_CLEARED_LIVE)
         if (
             not self._px4_ever_disarmed
             and msg.arming_state == VehicleStatus.ARMING_STATE_DISARMED
@@ -260,7 +285,11 @@ class OffboardController(Node):
         return (self.get_clock().now().nanoseconds - self._start_time_ns) / 1e9
 
     def _update_state_machine(self) -> None:
-        self._auto_arm = bool(self.get_parameter("auto_arm").value) and not self._disarm_latched
+        self._auto_arm = offboard_fsm.auto_arm_allowed(
+            bool(self.get_parameter("auto_arm").value),
+            disarm_latched=self._disarm_latched,
+            failsafe_latched=self._failsafe_latched,
+        )
         xrce_elapsed = (
             (self.get_clock().now().nanoseconds / 1e9 - self._xrce_connect_time)
             if self._xrce_connect_time is not None

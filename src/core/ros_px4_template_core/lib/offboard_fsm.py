@@ -43,6 +43,15 @@ class FsmResult:
     send_offboard: bool
 
 
+def auto_arm_allowed(requested: bool, *, disarm_latched: bool, failsafe_latched: bool) -> bool:
+    """Effective auto-arm: the operator's request, inhibited by either latch.
+
+    Neither latch overwrites the ``auto_arm`` parameter; they only suppress
+    the automatic arm/mode commands this tick derives from it.
+    """
+    return requested and not disarm_latched and not failsafe_latched
+
+
 def tick(inputs: FsmInputs) -> FsmResult:
     """Compute next state and command flags for one control cycle."""
     if not inputs.auto_arm:
