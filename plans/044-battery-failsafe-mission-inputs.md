@@ -1,264 +1,283 @@
-# Plan 044: Battery and failsafe reach the mission FSM (`battery_low` / `failsafe_active` guards)
+# Plan 044: Make battery and PX4 failsafe safe mission inputs
 
 > **Executor instructions**: Follow this plan step by step. Run every
-> verification command and confirm the expected result before moving to the
-> next step. If anything in the "STOP conditions" section occurs, stop and
-> report - do not improvise. When done, update the status row for this plan
-> in `plans/README.md` - unless a reviewer dispatched you and told you they
-> maintain the index.
+> verification command and confirm the expected result before moving on. If a
+> STOP condition occurs, stop and report. Do not improvise. When done, update
+> this plan's row in `plans/README.md` unless a reviewer owns the index.
 >
-> **Drift check (run first)**: `git diff --stat ead4cc6..HEAD -- src/core/ros_px4_template_core/lib/mission/ src/core/ros_px4_template_core/nodes/mission_manager.py`
-> Plans 041/042 legitimately touch `mission_manager.py` and `lib/mission/`
-> first - reconcile with their diffs. Any OTHER drift is a STOP condition.
+> **Drift check (run first)**:
+> `git diff --stat e05d19b..HEAD -- src/core/ros_px4_template_core/lib/mission/types.py src/core/ros_px4_template_core/lib/mission/guards.py src/core/ros_px4_template_core/lib/mission/telemetry.py src/core/ros_px4_template_core/lib/offboard_fsm.py src/core/ros_px4_template_core/lib/events.py src/core/ros_px4_template_core/nodes/mission_manager.py src/core/ros_px4_template_core/nodes/offboard_controller.py tests/unit/test_mission_guards.py tests/unit/test_mission_telemetry.py tests/unit/test_offboard_fsm.py schemas/mission.schema.json docs/MISSIONS.md docs/TOPICS.md`
+>
+> Also run `git diff --stat -- <the same paths>` to expose uncommitted drift.
+> Plan 041 legitimately changes both nodes first. Reconcile its target-yaw
+> fields and imports without altering its contract; stop on other mismatches.
 
 ## Status
 
-- **Priority**: P2 (direction: competition capability)
+- **Priority**: P1
 - **Effort**: M
-- **Risk**: LOW-MED (new subscriptions + safety guards; defaults are fail-open so existing missions are untouched)
-- **Depends on**: none hard (independent of 041/042; merge after them to avoid
-  `mission_manager.py` conflicts)
-- **Category**: feature
-- **Planned at**: commit `ead4cc6`, 2026-07-06
+- **Risk**: MED (safety telemetry plus automatic mode-command suppression)
+- **Depends on**: none functionally; execute after plan 041 to avoid shared-file conflicts
+- **Category**: direction
+- **Planned at**: commit `e05d19b`, 2026-07-09
 
 ## Why this matters
 
-A competition mission that ignores battery state flies its search pattern
-until PX4's failsafe yanks control away mid-task - losing both the task and
-the choice of where to land. The mission FSM's safety tier exists exactly for
-this ("a hazard always wins over normal progression", docs/MISSIONS.md), but
-its `Inputs` snapshot carries no battery or failsafe information, so no
-mission can express "return to origin at 20% battery" or "hold safe when PX4
-enters failsafe". PX4 already publishes both facts on the uXRCE bridge; this
-plan carries them into the snapshot and adds two guards.
+The mission safety tier cannot react to battery state or record a PX4
+failsafe because neither reaches its immutable `Inputs` snapshot. More
+importantly, the current auto-arm FSM requests OFFBOARD whenever PX4 is in a
+different mode. During a failsafe this can fight PX4's selected recovery mode.
+This plan adds validated, freshness-aware telemetry and suppresses automatic
+mode re-entry until an operator explicitly re-enables it.
 
 ## Current state
 
-- `lib/mission/types.py:10-22` - frozen `Inputs`; the last three fields
-  (`detections`, `detection_stability`, `input_ages`) have defaults, so new
-  defaulted fields append cleanly at the end.
-- `lib/mission/guards.py` - registry of pure predicates; pattern to copy is
-  `estimate_invalid` (lines 72-74).
-- `nodes/mission_manager.py`:
-  - Subscribes only `/drone/controller_status`, `/drone/odom`,
-    `/drone/marker_detection`, all `_RELIABLE_QOS` (lines 39-41 define the
-    profile; there is NO PX4 QoS profile in this file yet).
-  - `_snapshot` (lines 142-168) builds the `Inputs`.
-  - `self._estimate_ok = True` is a hardcoded placeholder (line 80) - this
-    plan gives it real data too (see Step 3.4).
-- PX4 QoS pattern to copy (`nodes/offboard_controller.py:35-40`):
-  `BEST_EFFORT` reliability, `TRANSIENT_LOCAL` durability, `KEEP_LAST`
-  depth 10.
-- PX4 messages (px4_msgs, branch `release/1.17`):
-  - `BatteryStatus.remaining`: float32, 0.0-1.0 (fraction).
-  - `VehicleStatus.failsafe`: bool.
-- Topic names: versioned topics get a `_v1` suffix (docs/TOPICS.md "PX4
-  versioned topics"). `vehicle_status_v1` is confirmed in use. The battery
-  topic is expected at `/fmu/out/battery_status_v1` but MUST be verified live
-  in Step 6 (fallback: `/fmu/out/battery_status` unversioned; if neither
-  exists the uXRCE publication list does not include it - STOP condition).
-- Schema: `battery_low` and `failsafe_active` are NEW guard names ->
-  regenerate `schemas/mission.schema.json` (drift unit test exists).
-- Docs contract: new subscription -> node docstring block + `docs/TOPICS.md`
-  rows (`just log topics` validates presence of backticked topics against the
-  live graph).
+- `mission/types.py:10-22` has no battery or failsafe fields.
+- `mission/guards.py` has pure safety predicates but no battery/failsafe guards.
+- `mission_manager.py:149-189` builds a locked snapshot from odom, controller
+  status, and marker data. New callbacks must use the same `_state_lock`.
+- `offboard_controller.py:203-216` already receives `VehicleStatus`; its
+  parameter callback clears the disarm latch on explicit `auto_arm=true`.
+- `offboard_fsm.py:70-72` requests OFFBOARD every two seconds whenever
+  effective auto-arm is true and `nav_state != OFFBOARD`.
+- `BatteryStatus.msg` is version 1. `remaining` uses `-1` as invalid and the
+  message exposes `connected`; treating raw `-1` as low battery is unsafe.
+- `VehicleStatus.msg` is version 1 and exposes `failsafe: bool`.
+- Existing PX4 QoS is BEST_EFFORT, TRANSIENT_LOCAL, KEEP_LAST depth 10.
+
+## Design decisions
+
+### Unknown and stale battery is not low battery
+
+`Inputs.battery_remaining` is `float | None`, default `None`. A value is
+usable only when the battery is connected, finite, in `[0, 1]`, and fresh.
+The `battery_low` guard returns false for unknown/stale data. Missions that
+need fail-closed telemetry can separately use `inputs_stale` with key
+`battery`.
+
+### PX4 remains the failsafe authority
+
+`failsafe_active` lets the mission record or change its logical state, but it
+does not override PX4's selected action. On the first active failsafe,
+`offboard_controller` latches automatic arm/mode commands off. The latch is
+cleared only by an explicit `auto_arm=true` parameter set after PX4 reports
+that failsafe is inactive. Existing OffboardControlMode/setpoint streaming is
+not stopped while PX4 remains in OFFBOARD; only new arm or mode commands are
+suppressed.
 
 ## Commands you will need
 
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
-| Guard tests | `uv run pytest tests/unit/test_mission_guards.py -q` | all pass |
-| Schema regen | `just mission schema > schemas/mission.schema.json` | drift test passes |
+| Pure tests | `uv run pytest tests/unit/test_mission_guards.py tests/unit/test_mission_telemetry.py tests/unit/test_offboard_fsm.py -q` | all pass |
+| Schema | `just mission schema` | output contains both new guards |
 | Full gate | `just check` | exit 0 |
-| Topic name check (operator, sim up) | `ros2 topic list \| grep -i battery` | the real name |
-| Live guard check (operator) | see Step 6 | RTL-style divert observed |
+| Topic check | `just sim` then `ros2 topic list` | battery topic name confirmed |
+| Live battery guard | see Step 7 | structured `battery_low` transition |
 
 ## Scope
 
 **In scope**:
-- `src/core/ros_px4_template_core/lib/mission/types.py` (two appended fields)
-- `src/core/ros_px4_template_core/lib/mission/guards.py` (two guards)
-- `src/core/ros_px4_template_core/nodes/mission_manager.py` (two subscriptions + snapshot)
+
+- `src/core/ros_px4_template_core/lib/mission/types.py`
+- `src/core/ros_px4_template_core/lib/mission/guards.py`
+- `src/core/ros_px4_template_core/lib/mission/telemetry.py` (create)
+- `src/core/ros_px4_template_core/lib/offboard_fsm.py`
+- `src/core/ros_px4_template_core/lib/events.py`
+- `src/core/ros_px4_template_core/nodes/mission_manager.py`
+- `src/core/ros_px4_template_core/nodes/offboard_controller.py`
 - `tests/unit/test_mission_guards.py`
-- `schemas/mission.schema.json` (regenerated)
-- `docs/TOPICS.md`, `docs/MISSIONS.md`
+- `tests/unit/test_mission_telemetry.py` (create)
+- `tests/unit/test_offboard_fsm.py`
+- `schemas/mission.schema.json`
+- `docs/MISSIONS.md`, `docs/TOPICS.md`
+- `plans/README.md` status only
 
 **Out of scope**:
-- Changing any shipped mission YAML to USE the guards (document the pattern;
-  missions opt in per competition task).
-- `offboard_controller` - it has its own failsafe-adjacent logic (disarm
-  latch); no changes.
-- Battery estimation/filtering - raw `remaining` passes through; PX4 owns the
-  estimate.
-- `estimate_ok` beyond the minimal wiring in Step 3.4.
+
+- Changing shipped missions to opt into the guards.
+- Battery filtering, capacity estimation, multi-battery arbitration, or PX4
+  failsafe parameter tuning.
+- Mapping `estimate_ok`; no correct estimator-health field is established.
+- Stopping PX4 offboard streams solely because `failsafe` is true.
+- Editing PX4 message definitions or files under `PX4_DIR`.
 
 ## Git workflow
 
-- Branch: `advisor/044-battery-failsafe-inputs`
-- Commit style: `feat(mission): battery_remaining and failsafe in Inputs; battery_low/failsafe_active guards`
-- Do NOT push or open a PR unless the operator instructed it.
+- Branch: `advisor/044-battery-failsafe`
+- Commit: `feat(safety): expose battery and latch offboard on failsafe`
+- Do not push or open a PR without operator instruction.
 
 ## Steps
 
-### Step 1: Extend `Inputs`
+### Step 1: Normalize battery telemetry in pure code
 
-Append to the END of the `Inputs` dataclass (after `input_ages`):
-
-```python
-    battery_remaining: float = 1.0
-    failsafe: bool = False
-```
-
-Fail-open defaults: with no battery data the guard never trips (1.0 full),
-with no status data failsafe reads False. Existing constructors (node,
-tests) keep working unchanged.
-
-**Verify**: `uv run pytest tests/unit -q` -> no failures
-
-### Step 2: The guards
-
-In `lib/mission/guards.py` (bottom, matching the existing style):
+Create `mission/telemetry.py` with no ROS imports. Add:
 
 ```python
-@guard("battery_low")
-def battery_low(inputs: Inputs, signals: dict, params: dict) -> bool:
-    return inputs.battery_remaining <= float(params.get("frac", 0.2))
-
-
-@guard("failsafe_active")
-def failsafe_active(inputs: Inputs, signals: dict, params: dict) -> bool:
-    return inputs.failsafe
+def usable_battery_remaining(*, connected: bool, remaining: float) -> float | None:
+    ...
 ```
 
-Tests in `tests/unit/test_mission_guards.py` (copy the file's Inputs-builder
-pattern):
+Return `None` when disconnected, non-finite, or outside `[0, 1]`; otherwise
+return the float. Tests must cover `-1`, NaN, infinity, disconnected values,
+zero, one, and a normal fraction.
 
-- `battery_low`: 0.5 with default frac -> False; 0.15 -> True; boundary 0.2
-  -> True (`<=`); custom `frac: 0.5` with 0.4 -> True.
-- `failsafe_active`: default Inputs -> False; `failsafe=True` -> True.
-- Defaults regression: an `Inputs` built WITHOUT the new kwargs has
-  `battery_remaining == 1.0` and `failsafe is False`.
+**Verify**: `uv run pytest tests/unit/test_mission_telemetry.py -q` -> all pass.
 
-**Verify**: `uv run pytest tests/unit/test_mission_guards.py -q` -> all pass
+### Step 2: Extend immutable inputs and guards
 
-### Step 3: `mission_manager` subscriptions + snapshot
-
-1. Add a PX4 QoS profile next to `_RELIABLE_QOS` (import `DurabilityPolicy`):
+Append defaulted fields to `Inputs`:
 
 ```python
-_PX4_QOS = QoSProfile(
-    reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.TRANSIENT_LOCAL,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=10,
-)
+battery_remaining: float | None = None
+failsafe_active: bool = False
 ```
 
-2. State fields in `__init__`: `self._battery_remaining = 1.0`,
-   `self._failsafe = False`.
-3. Subscriptions (in `__init__`, `callback_group=self._sub_group` like the
-   others; import `BatteryStatus`, `VehicleStatus` from `px4_msgs.msg`):
-   - `/fmu/out/battery_status_v1` -> `_battery_cb`:
-     `self._battery_remaining = float(msg.remaining)`.
-   - `/fmu/out/vehicle_status_v1` -> `_vehicle_status_cb`:
-     `self._failsafe = bool(msg.failsafe)`.
-   Use the `_v1` names to match the file's other PX4-topic conventions; the
-   live check in Step 6 confirms the battery name (STOP condition if wrong).
-4. In `_vehicle_status_cb`, also wire the placeholder honestly - PX4's
-   failsafe already implies a degraded vehicle, but keep `estimate_ok`
-   untouched unless a field maps cleanly; if `VehicleStatus` on this branch
-   has no obvious estimator-health flag, leave `self._estimate_ok` alone and
-   note it in your report (do NOT invent a mapping).
-5. In `_snapshot`, pass `battery_remaining=self._battery_remaining,
-   failsafe=self._failsafe` to `Inputs`.
-6. Update the module docstring's Subscriptions block with both topics.
+Add guards:
 
-**Verify**: `uv run ruff check src/core/ros_px4_template_core/nodes/mission_manager.py` -> exit 0
+- `battery_low`: true only when `battery_remaining` is not `None`, battery
+  age is at most `max_age_s` (default 5.0), and remaining is at or below
+  `frac` (default 0.2).
+- `failsafe_active`: mirrors the snapshot boolean.
 
-### Step 4: Schema + docs
+Reject a configured `frac` outside `[0, 1]` with a clear `ValueError`; add
+tests so malformed mission parameters cannot silently invert safety logic.
+Extend the test `_inputs` helper with optional battery and failsafe kwargs.
 
-1. `just mission schema > schemas/mission.schema.json`; confirm the diff adds
-   only the two guard names to the guard enum.
-2. `docs/TOPICS.md`: add pub row `/fmu/out/battery_status_v1`
-   (`px4_msgs/msg/BatteryStatus`, pub, PX4 uXRCE-DDS bridge) and extend the
-   subscriptions table: `/fmu/out/battery_status_v1` -> `mission_manager`;
-   `/fmu/out/vehicle_status_v1` -> `offboard_controller`, `mission_manager`.
-3. `docs/MISSIONS.md` guards table: `battery_low` (`frac` (0.2), "battery
-   fraction at or below `frac`"), `failsafe_active` (no params, "PX4 reports
-   an active failsafe"). Add a one-line safety-tier example under the table:
+Tests must cover threshold boundaries, custom threshold, unknown battery,
+stale battery, default fields, active/inactive failsafe, and invalid `frac`.
 
-```yaml
-  safety:
-    - {guard: failsafe_active, to: hold_safe}
-    - {guard: battery_low, params: {frac: 0.25}, to: return_to_origin}
+**Verify**: `uv run pytest tests/unit/test_mission_guards.py -q` -> all pass.
+
+### Step 3: Subscribe and snapshot under the existing lock
+
+In `mission_manager`:
+
+1. Add the PX4 QoS profile matching `offboard_controller`.
+2. Import `BatteryStatus` and `VehicleStatus`.
+3. Initialize battery to `None`, battery timestamp to `0.0`, failsafe to
+   false, and vehicle-status timestamp to `0.0`.
+4. Subscribe to `/fmu/out/battery_status_v1` and
+   `/fmu/out/vehicle_status_v1` with `_PX4_QOS` and `_sub_group`.
+5. In each callback, compute values before taking `_state_lock`, then update
+   value and timestamp together while holding the lock.
+6. Copy both values and timestamps inside the existing `_snapshot` lock.
+7. Add `battery` and `vehicle_status` ages to `input_ages`; pass the new
+   fields to `Inputs`.
+8. Leave `_estimate_ok` unchanged.
+9. Update the node's ROS 2 Interface docstring.
+
+**Verify**: `uv run ruff check src/core/ros_px4_template_core/nodes/mission_manager.py`
+-> exit 0.
+
+### Step 4: Add a failsafe latch to automatic mode commands
+
+Add a pure helper to `offboard_fsm.py`:
+
+```python
+def auto_arm_allowed(requested: bool, *, disarm_latched: bool, failsafe_latched: bool) -> bool:
+    return requested and not disarm_latched and not failsafe_latched
 ```
 
-**Verify**: `uv run pytest tests/unit -q -k schema` -> passes;
-`rg -n "battery_status" docs/TOPICS.md` -> rows present
+Cover its truth table in `test_offboard_fsm.py`.
 
-### Step 5: Full gate
+In `offboard_controller`:
 
-**Verify**: `just check` -> exit 0
+1. Track `_failsafe_active` and `_failsafe_latched`.
+2. In `_status_cb`, latch on the rising edge of `msg.failsafe` and log
+   `FAILSAFE_MODE_COMMANDS_LATCHED`. Log when the live failsafe clears, but
+   do not clear the latch automatically.
+3. Compute effective `_auto_arm` with `auto_arm_allowed`.
+4. On explicit `auto_arm=true`, reject the parameter update while live
+   failsafe is active. Otherwise clear both disarm and failsafe latches and
+   log which latch was cleared.
+5. Do not change `_control_loop` streaming conditions. PX4 still owns the
+   live mode transition.
+6. Add canonical event names to `lib/events.py`.
 
-### Step 6: Live verification (operator-gated)
+**Verify**: `uv run pytest tests/unit/test_offboard_fsm.py -q` and
+`uv run ruff check src/core/ros_px4_template_core/nodes/offboard_controller.py`
+-> both pass.
 
-1. `just sim` -> READY. `ros2 topic list | grep -i battery` -> note the exact
-   name. If it is NOT `/fmu/out/battery_status_v1`: unversioned
-   `/fmu/out/battery_status` means edit the subscription + TOPICS.md rows to
-   the real name and re-run `just check`; NO battery topic at all is a STOP
-   condition (report; the uXRCE publication set on this PX4 build omits it).
-2. `ros2 topic echo /fmu/out/battery_status_v1 --once` (real name) ->
-   `remaining` is a sane fraction (SITL's simulated battery starts near 1.0
-   and drains slowly).
-3. Guard end-to-end: create a THROWAWAY mission copy (e.g.
-   `/tmp` is fine for this file, or `config/missions/` deleted afterwards)
-   of `hover.yaml` with the safety edge
-   `{guard: battery_low, params: {frac: 0.99}, to: hold_safe}` - with SITL's
-   battery just below full this trips within the first ticks; confirm via
-   `rg "TRANSITION.*battery_low" logs/latest.log` after booting it with
-   `--overlay` pointing at the copy (or `ros2 param set` + relaunch). Then
-   delete the throwaway files. `just stop`.
-4. Regression: `just scenario 01_arm_takeoff` -> PASS (fail-open defaults did
-   not disturb an existing mission).
+### Step 5: Regenerate schema and update docs
 
-If you cannot run a sim, complete steps 1-5 and STOP reporting live
-verification pending (the topic-name confirmation in particular).
+Regenerate `schemas/mission.schema.json` and confirm only the two new guard
+names are added.
+
+Update `docs/TOPICS.md` for the battery publication and both mission-manager
+subscriptions. Update `docs/MISSIONS.md` with:
+
+- `battery_low` params `frac` and `max_age_s`;
+- `failsafe_active` semantics;
+- an example battery diversion to `return_to_origin`;
+- a warning that a failsafe transition is logical observability only, PX4
+  owns the action, and the controller will not re-request OFFBOARD until an
+  explicit safe re-enable.
+
+Do not show `failsafe_active -> hold_safe` as if mission hold overrides PX4.
+
+**Verify**: `uv run pytest tests/unit/test_mission_schema.py -q` -> pass;
+`uv run python tools/check_docs.py` -> pass.
+
+### Step 6: Run the full gate
+
+**Verify**: `just check` -> exit 0.
+
+### Step 7: Perform live topic and guard verification
+
+1. `just sim` -> READY.
+2. Confirm `/fmu/out/battery_status_v1` exists and echo one message. Record
+   `connected` and `remaining` without assuming SITL starts below 1.0.
+3. Run `just log topics` after the manifest update -> PASS.
+4. Use a temporary mission/overlay with a battery threshold just above the
+   observed valid fraction. Relaunch it and confirm a structured
+   `TRANSITION` with `guard=battery_low`.
+5. Run `just scenario 01_arm_takeoff` -> PASS.
+6. Do not force a real PX4 failsafe merely to test the latch. The pure helper
+   and node review cover that path; future fault-injection work may add a
+   safe live scenario.
+
+If the battery topic is absent, stop before marking DONE. Do not remove the
+manifest row to make the topic check pass.
 
 ## Test plan
 
-Unit: the guard truth tables + boundary + defaults regression (Step 2), the
-schema drift test (Step 4). Live: topic-name confirmation, a forced
-`battery_low` safety transition observed in the structured log, and scenario
-01 regression.
+- Pure normalization tests for every invalid `BatteryStatus.remaining` form.
+- Guard truth tables including unknown and stale data.
+- Pure auto-arm suppression truth table.
+- Schema drift test.
+- Live battery-topic name, valid sample, forced threshold transition, topic
+  audit, and existing flight regression.
 
 ## Done criteria
 
-- [ ] `uv run pytest tests/unit -q` passes (new guard tests included)
-- [ ] `rg -n "battery_remaining|failsafe" src/core/ros_px4_template_core/lib/mission/types.py` -> both fields with defaults, appended last
-- [ ] `git diff schemas/mission.schema.json` shows only two guard-enum additions
-- [ ] `rg -n "battery_status" docs/TOPICS.md src/core/ros_px4_template_core/nodes/mission_manager.py` -> rows + docstring + subscription agree on ONE topic name
-- [ ] `just check` exits 0
-- [ ] Live Step 6 checks reported (or explicitly deferred by the operator)
-- [ ] `git status` shows only in-scope files modified
-- [ ] `plans/README.md` status row updated
+- [ ] Invalid/disconnected battery never triggers `battery_low`.
+- [ ] Stale battery does not trigger `battery_low`; `inputs_stale` can detect it.
+- [ ] All new mission-manager state is copied under `_state_lock`.
+- [ ] Active or latched failsafe makes effective auto-arm false.
+- [ ] Failsafe latch cannot be cleared while live failsafe remains active.
+- [ ] `just check` exits 0.
+- [ ] Battery topic exists live and `just log topics` passes.
+- [ ] Forced battery transition and scenario 01 regression are recorded.
+- [ ] Only in-scope files changed; the plan index row is updated.
 
 ## STOP conditions
 
-- No battery topic exists on the live graph under either name (Step 6.1).
-- `BatteryStatus` has no `remaining` field on `release/1.17` (message drift -
-  report the actual fields).
-- Adding the defaulted fields breaks any existing `Inputs` construction site
-  (would mean a positional construction exists somewhere - report it, do not
-  reorder fields).
-- The `just log topics` manifest check fails after the TOPICS.md edit because
-  the battery topic is absent from the live graph - reconcile the name first
-  (Step 6.1), never delete the manifest row to make the check pass.
+- The live topic is absent or has a different message contract.
+- `BatteryStatus.remaining` invalid semantics differ from the committed
+  `release/1.17` message definition.
+- Implementing the latch requires stopping offboard streams while PX4 still
+  reports OFFBOARD. Report the mode behavior instead of guessing.
+- PX4 resumes OFFBOARD automatically during an observed failsafe despite
+  effective auto-arm being false.
+- Plan 041's optional-yaw contract would need to be changed.
 
 ## Maintenance notes
 
-- Follow-up candidates once real hardware data flows: `estimate_ok` from a
-  real estimator-health flag, wind/geofence from PX4 events - each is "one
-  field on `Inputs` + one guard", the pattern this plan establishes.
-- Reviewer: guards must stay pure over the snapshot (no node state reads),
-  and the defaults must remain fail-open (a template user whose PX4 build
-  lacks the battery topic gets exactly today's behavior).
+- A future multi-battery plan should select a primary battery before filling
+  this single optional fraction.
+- Hardware operators can combine `battery_low` with `inputs_stale` when the
+  competition policy requires fail-closed telemetry.
+- Plan 042 must preserve both disarm and failsafe latches when adding landing
+  handoff state.

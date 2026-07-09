@@ -1,270 +1,257 @@
-# Plan 043: Competition practice worlds and a committed ArUco marker asset pipeline
+# Plan 043: Add deterministic competition worlds and correctly scaled ArUco assets
 
 > **Executor instructions**: Follow this plan step by step. Run every
-> verification command and confirm the expected result before moving to the
-> next step. If anything in the "STOP conditions" section occurs, stop and
-> report - do not improvise. When done, update the status row for this plan
-> in `plans/README.md` - unless a reviewer dispatched you and told you they
-> maintain the index.
+> verification command and confirm the expected result before moving on. If a
+> STOP condition occurs, stop and report. Do not improvise. When done, update
+> this plan's row in `plans/README.md` unless a reviewer owns the index.
 >
-> **Drift check (run first)**: `git diff --stat ead4cc6..HEAD -- sim/ config/markers.yaml tasks.py tools/`
-> If `sim/` or `config/markers.yaml` changed, compare the "Current state"
-> excerpts before proceeding; on a mismatch, treat it as a STOP condition.
+> **Drift check (run first)**:
+> `git diff --stat e05d19b..HEAD -- tools/gen_marker_assets.py sim/models sim/worlds sim/launch/sim_full.launch.py config/marker_maps src/core/setup.py tests/unit/test_marker_assets.py docs/SIM.md README.md`
+>
+> Also run `git diff --stat -- <the same paths>` to expose uncommitted work.
+> Plan 031 already changed world-aware readiness and is DONE. Stop on any
+> other semantic mismatch.
 
 ## Status
 
-- **Priority**: P2 (direction: competition capability)
+- **Priority**: P2
 - **Effort**: M
-- **Risk**: LOW-MED (additive assets; nothing existing changes behavior at speed defaults)
-- **Depends on**: none hard. Soft: plans/031-wait-ready-world-aware-physics.md
-  (only needed to run NON-default worlds with `--speed != 1.0`; at the default
-  speed 1.0 the physics call is skipped entirely, so new worlds work today)
-- **Category**: feature
-- **Planned at**: commit `ead4cc6`, 2026-07-06
+- **Risk**: LOW-MED (additive simulation assets plus package resources)
+- **Depends on**: none; plan 031 is already DONE
+- **Category**: direction
+- **Planned at**: commit `e05d19b`, 2026-07-09
 
 ## Why this matters
 
-The repo ships exactly one world: `sim/worlds/default.sdf`, a bare ground
-plane with a light. `config/markers.yaml` maps marker 0 to world (8, 0, 0),
-but nothing in the world renders there - the vision scenarios work only
-because they publish synthetic camera images. For competition prep you want
-to fly the actual course shape: a marker field for search missions, a landing
-pad for precision landing (plan 042), obstacles for corridor flying, all
-visible in the Gazebo GUI and ready for a future camera-equipped model.
-Bonus: `tasks.py` already puts `{ROOT}/sim/models` on `GZ_SIM_RESOURCE_PATH`
-(lines 503, 820, 915) but the directory does not exist - this plan makes that
-path real.
+The template has one empty world and a marker map whose marker is not rendered.
+Synthetic scenarios verify perception logic, but they do not provide a course
+for GUI inspection, flight rehearsal, or future camera-equipped models. This
+plan adds deterministic marker, landing, and obstacle worlds without changing
+the default world or claiming real-camera E2E support that the current x500
+model does not provide.
 
 ## Current state
 
-- `sim/worlds/default.sdf` - the skeleton to copy: `<world name="default">`,
-  `physics type="ode"` with `max_step_size 0.004`, `real_time_factor 1.0`,
-  `real_time_update_rate 250`, ground plane, `sunUTC` directional light,
-  `spherical_coordinates` block. Keep ALL of these blocks identical in new
-  worlds (PX4 SITL's EKF needs the magnetic field + coordinates; the physics
-  numbers are flight-verified).
-- `sim/models/` - does not exist.
-- World selection plumbing (already works, verify, do not modify):
-  - `just sim --world <name>` -> `sim_full.launch.py:_world_sdf` (lines
-    39-44) prefers `sim/worlds/<name>.sdf` over PX4's worlds.
-  - The clock bridge greps `/world/{world}/clock` (lines 83-91), so the SDF's
-    `<world name="...">` attribute MUST equal the file stem.
-  - `_gz_paths` (lines 47-58) includes `sim/worlds`, PX4 worlds/models, and
-    inherits `GZ_SIM_RESOURCE_PATH` from the environment - which `tasks.py`
-    seeds with `{ROOT}/sim/worlds:{ROOT}/sim/models`. Models under
-    `sim/models/` resolve via `model://<name>` when launched through `just`.
-- `config/markers.yaml` (whole file):
+- `sim/worlds/default.sdf` contains the flight-verified physics, ground,
+  magnetic field, light, and ENU spherical coordinates.
+- `sim/models/` does not exist.
+- `sim_full.py:_world_sdf` prefers repository worlds; `_gz_paths` includes
+  repository worlds but not repository models.
+- `tasks.py` already seeds `sim/models` in `GZ_SIM_RESOURCE_PATH` for normal
+  `just sim` launches.
+- `aruco_pose_publisher.py:41-45` uses DICT_4X4_50 and a 0.2 m marker code size.
+- `marker_localizer.py:43` accepts a `marker_map_file` parameter.
+- `config/markers.yaml` is the installed default map used by existing
+  synthetic scenarios. It must remain unchanged.
+- The current x500 camera topic expected by `_vision_bridge` is not produced
+  by the stock model. Physical markers are therefore GUI/manual assets in this
+  plan, not an automated perception capability.
 
-```yaml
-# marker_id -> world pose (anchored-ENU, origin = takeoff point). Meters.
-markers:
-  0: {x: 8.0, y: 0.0, z: 0.0}
-```
+## Design decisions
 
-- ArUco parameters that the rendered marker must match
-  (`lib/aruco_detector.py`): dictionary `cv2.aruco.DICT_4X4_50`, marker size
-  `marker_size_m` default 0.2. Check what `nodes/aruco_pose_publisher.py`
-  declares for `marker_size` (a `marker_size` ROS param around its
-  `__init__`) and use THAT value as the printed size.
-- Synthetic-image caveat: scenarios 05/06 publish their own camera frames;
-  they neither need nor see these world assets. Real-camera detection
-  additionally needs a camera-bearing vehicle model whose sensor topic
-  matches the vision bridge path
-  `/world/{world}/model/{model}_0/link/camera_link/sensor/camera/image`
-  (`sim_full.launch.py`, vision branch) - that model is OUT of scope here;
-  these worlds make the environment side ready and GUI-visible.
-- Repo invariant 3: Gazebo worlds and models belong in `sim/worlds` and
-  `sim/models`; never edit `PX4_DIR`.
+### Physical scale
+
+OpenCV's `marker_size_m=0.2` describes the black ArUco code, not the padded
+texture. Generate a 512 px code with a 64 px white quiet zone on every side,
+making a 640 px texture. The rendered surface side is therefore:
+
+`0.2 m * 640 / 512 = 0.25 m`
+
+This preserves a 0.2 m black code and prevents the roughly 20 percent range
+error caused by fitting the padded texture onto a 0.2 m surface.
+
+### World-specific maps
+
+Keep `config/markers.yaml` unchanged for existing scenarios. Put the
+three-marker field map in `config/marker_maps/marker_field.yaml`. A marker map
+must describe the selected world, not every marker that might exist in any
+world.
 
 ## Commands you will need
 
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
-| Generate marker textures | `uv run python tools/gen_marker_assets.py` | PNGs + model dirs written, idempotent |
-| SDF validity | `gz sdf -k sim/worlds/<name>.sdf` (ROS/gz shell) | `Check complete` / exit 0 |
+| Generator tests | `uv run pytest tests/unit/test_marker_assets.py -q` | all pass |
+| Generate assets | `uv run python tools/gen_marker_assets.py` | deterministic model trees written |
+| SDF validation | `gz sdf -k sim/worlds/<world>.sdf` | exit 0 for all worlds |
 | Full gate | `just check` | exit 0 |
-| Live boot (operator) | `just sim --world marker_field --gui` | READY verdict; markers visible |
+| Live boot | `just sim --world marker_field --gui` | READY; assets visible |
 
 ## Scope
 
 **In scope**:
-- `tools/gen_marker_assets.py` (create; generator script)
-- `sim/models/aruco_marker_{0,1,2}/` (create; generated, committed)
-- `sim/worlds/marker_field.sdf`, `sim/worlds/landing_pad.sdf`,
-  `sim/worlds/obstacle_course.sdf` (create)
-- `config/markers.yaml` (add markers 1 and 2 for the field world)
-- `sim/launch/sim_full.launch.py` (ONLY the `_gz_paths` list: add
-  `str(project_root / "sim" / "models")` so direct `ros2 launch` matches
-  `just sim`)
-- `README.md`/`AGENTS.md` NOT touched; document worlds in a short header
-  comment inside each SDF instead
+
+- `tools/gen_marker_assets.py` (create)
+- `tests/unit/test_marker_assets.py` (create)
+- `sim/models/aruco_marker_{0,1,2}/` (generated and committed)
+- `sim/worlds/marker_field.sdf` (create)
+- `sim/worlds/landing_pad.sdf` (create)
+- `sim/worlds/obstacle_course.sdf` (create)
+- `config/marker_maps/marker_field.yaml` (create)
+- `sim/launch/sim_full.launch.py` (`_gz_paths` only)
+- `src/core/setup.py` (install world-specific marker maps)
+- `docs/SIM.md` (create), `README.md` (one link/table)
+- `plans/README.md` status only
 
 **Out of scope**:
-- A camera-equipped vehicle model (needs bridge-topic alignment; future work).
-- Editing `default.sdf` or anything under `PX4_DIR`.
-- `tools/wait_ready.py` (plan 031 owns the world-aware physics call).
-- Scenario changes; 05/06 stay synthetic.
+
+- Modifying `config/markers.yaml` or existing scenarios.
+- A camera-equipped vehicle model or new Gazebo-to-ROS camera bridge.
+- Automated physical-marker detection or precision-landing verification.
+- Capability metadata changes such as `sim_world`.
+- Editing `default.sdf`, `tools/wait_ready.py`, or anything under `PX4_DIR`.
 
 ## Git workflow
 
 - Branch: `advisor/043-competition-worlds`
-- Commit style: `feat(sim): competition worlds (marker field, landing pad, obstacles) + generated ArUco assets`
-- Do NOT push or open a PR unless the operator instructed it.
+- Commit: `feat(sim): add competition worlds and ArUco assets`
+- Do not push or open a PR without operator instruction.
 
 ## Steps
 
-### Step 1: `tools/gen_marker_assets.py`
+### Step 1: Build a testable deterministic generator
 
-A small script (typer optional; plain `main()` fine - match the style of
-other `tools/*.py`) that, for marker ids `(0, 1, 2)`:
+Create `tools/gen_marker_assets.py` with constants:
 
-1. Renders the marker bitmap:
-   `cv2.aruco.generateImageMarker(cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50), marker_id, 512)`
-   and adds a white quiet-zone border (pad to ~615 px so the border is ~10%
-   per side - detection needs the quiet zone).
-2. Writes `sim/models/aruco_marker_<id>/materials/textures/aruco_marker_<id>.png`.
-3. Writes `model.config` (name, sdf version, author placeholder) and
-   `model.sdf`: a `<static>true</static>` model with a single link, a thin
-   box visual `<size>S S 0.01</size>` where `S` is the marker size in meters
-   (read the default from `aruco_pose_publisher`'s `marker_size` param -
-   verify in code; expected 0.2, but if competitions need visibility from 3 m
-   altitude a 0.5 m printed size with a matching `marker_size` param note is
-   acceptable - pick ONE size, state it in the model.config description, and
-   note in the SDF header that `marker_size` must match), with a PBR material:
+- dictionary: `DICT_4X4_50`
+- IDs: `(0, 1, 2)`
+- code pixels: 512
+- quiet zone: 64 px per side
+- code size: 0.2 m
+- surface size: 0.25 m, derived from the pixel ratio
 
-```xml
-<material>
-  <diffuse>1 1 1 1</diffuse>
-  <pbr><metal>
-    <albedo_map>model://aruco_marker_<id>/materials/textures/aruco_marker_<id>.png</albedo_map>
-  </metal></pbr>
-</material>
-```
+Separate pure rendering/text functions from filesystem output. `main()` writes
+to repository `sim/models`; tests must be able to pass a temporary output root.
 
-   No collision element (flat decal; the ground plane provides physics).
-4. Idempotent: re-running overwrites byte-identically (fix any timestamp
-   nondeterminism; PNG encoding of the same array is deterministic).
+For each ID write:
 
-Run it and COMMIT the generated files (the script is the provenance; CI/dev
-machines must not need to regenerate).
+- `materials/textures/aruco_marker_<id>.png` with a pure white border;
+- deterministic `model.config` describing the 0.2 m code and 0.25 m surface;
+- deterministic `model.sdf` for a static, collision-free, 0.01 m thin box
+  whose top texture uses the generated PNG.
 
-**Verify**: `uv run python tools/gen_marker_assets.py` twice ->
-`git status` identical after both runs; `ls sim/models/aruco_marker_0/materials/textures/` shows the PNG.
+Do not include timestamps, host paths, or nondeterministic metadata.
 
-### Step 2: Three worlds
+Tests must verify image dimensions, 64 px white border, non-white code area,
+surface/code size constants, expected model URI, and byte-identical output
+from two runs into the same temporary directory.
 
-Copy `sim/worlds/default.sdf` and for each: change ONLY the
-`<world name="...">` attribute (must equal the file stem), add a 2-4 line
-header comment (purpose, marker layout, which mission/scenario uses it), and
-add content models. Keep physics/light/coordinates/ground blocks identical.
+**Verify**: `uv run pytest tests/unit/test_marker_assets.py -q` -> all pass.
 
-1. `marker_field.sdf`: include the three markers at poses that
-   `config/markers.yaml` will mirror:
+### Step 2: Generate and inspect committed assets
 
-```xml
-<include><uri>model://aruco_marker_0</uri><pose>8 0 0.005 0 0 0</pose></include>
-<include><uri>model://aruco_marker_1</uri><pose>-6 10 0.005 0 0 0</pose></include>
-<include><uri>model://aruco_marker_2</uri><pose>0 -12 0.005 0 0 0</pose></include>
-```
+Run the generator twice. The second run must produce no diff. Inspect each PNG
+and model file, then commit the generated files with the generator.
 
-2. `landing_pad.sdf`: a 1.5 m radius static grey cylinder (height 0.02) at
-   (8, 0, 0) as the pad, with `model://aruco_marker_0` at
-   `8 0 0.03` on top - matches plan 042's `precision_land.yaml` approach
-   waypoint and marker 0's mapped pose.
-3. `obstacle_course.sdf`: `model://aruco_marker_0` at (8, 0, 0.005) plus 4-6
-   static box/cylinder obstacles (e.g. 1x1x4 m pillars) forming a slalom
-   between origin and the marker, all clear of the direct climb column at
-   (0,0). Inline `<model>` definitions with simple geometry are fine here
-   (they are world-specific, not reusable assets).
+**Verify**:
 
-Gazebo pose convention note for the header comments: SDF world poses here are
-ENU-compatible (world_frame_orientation ENU in the spherical_coordinates
-block), matching `config/markers.yaml` anchored-ENU when the vehicle spawns
-at origin - state this in each header.
+- `uv run python tools/gen_marker_assets.py` twice -> second run leaves
+  `git diff --exit-code -- sim/models` unchanged relative to the first run.
+- Each texture is 640 by 640 and each model declares a 0.25 m surface.
 
-**Verify**: in a gz-capable shell (distrobox):
-`gz sdf -k sim/worlds/marker_field.sdf && gz sdf -k sim/worlds/landing_pad.sdf && gz sdf -k sim/worlds/obstacle_course.sdf` -> all pass
+### Step 3: Add three worlds from the verified default skeleton
 
-### Step 3: Align `config/markers.yaml`
+Copy the default world blocks without changing physics, gravity, magnetic
+field, ground, light, or spherical coordinates. The `<world name>` must match
+the filename stem.
 
-```yaml
-# marker_id -> world pose (anchored-ENU, origin = takeoff point). Meters.
-# Must mirror the marker <include> poses in sim/worlds/*.sdf.
-markers:
-  0: {x: 8.0, y: 0.0, z: 0.0}
-  1: {x: -6.0, y: 10.0, z: 0.0}
-  2: {x: 0.0, y: -12.0, z: 0.0}
-```
+- `marker_field.sdf`: marker 0 at `(8, 0, 0.005)`, marker 1 at
+  `(-6, 10, 0.005)`, marker 2 at `(0, -12, 0.005)`.
+- `landing_pad.sdf`: a static grey 1.5 m radius, 0.02 m high cylinder centered
+  at `(8, 0)` with marker 0 just above its top surface.
+- `obstacle_course.sdf`: marker 0 at `(8, 0)` plus four to six static obstacles
+  forming a slalom while leaving the origin climb column clear.
 
-(Existing consumer: `marker_localizer` relocalization - adding ids is
-additive; id 0 is unchanged so scenarios 05/06 are unaffected.)
+Each file gets a short header documenting purpose, marker layout, and anchored
+ENU coordinates. Models must not introduce collisions on the marker decal
+itself; the landing pad and obstacles do have appropriate collisions.
 
-**Verify**: `uv run pytest tests/unit -q` -> no failures (if any test pins
-the markers file content, reconcile it - check `rg -l "markers.yaml" tests/`)
+**Verify**: run `gz sdf -k` separately on all three files -> each exits 0.
 
-### Step 4: `_gz_paths` includes `sim/models`
+### Step 4: Add the world-specific marker map
 
-In `sim/launch/sim_full.launch.py:_gz_paths`, add
-`str(project_root / "sim" / "models"),` after the `sim/worlds` entry. This
-makes direct `ros2 launch` resolve `model://aruco_marker_*` the same way
-`just sim` (which injects it via `GZ_SIM_RESOURCE_PATH`) already would.
+Create `config/marker_maps/marker_field.yaml` matching the three field poses.
+Do not edit `config/markers.yaml`.
 
-**Verify**: `uv run ruff check sim/launch/sim_full.launch.py` -> exit 0
+Update `src/core/setup.py` to install `config/marker_maps/*.yaml` under the
+package share directory. Extend the existing package/resource test pattern so
+the new map is verified after a build.
 
-### Step 5: Full gate + live boot (operator-gated)
+**Verify**: `uv run pytest tests/unit/test_package_xml.py tests/unit/test_marker_map.py -q`
+-> all pass; after `just check`, the installed marker-field map exists under
+`install/ros_px4_template_core/share/ros_px4_template_core/config/marker_maps/`.
+
+### Step 5: Make direct ROS launch resolve repository models
+
+Add `str(project_root / "sim" / "models")` immediately after repository
+worlds in `_gz_paths`. Do not change `_world_sdf`, bridge topics, or PX4 paths.
+
+**Verify**: `uv run ruff check sim/launch/sim_full.launch.py` -> exit 0.
+
+### Step 6: Document honest usage and limitations
+
+Create `docs/SIM.md` with a terse table for `default`, `marker_field`,
+`landing_pad`, and `obstacle_course`, including marker coordinates and example
+`just sim --world ...` commands. Explain:
+
+- marker code size is 0.2 m despite the 0.25 m padded surface;
+- `marker_field.yaml` must be selected when localizing IDs 1 and 2;
+- stock x500 has no bridged camera, so physical assets are currently GUI and
+  manual flight practice only;
+- scenarios 05/06 remain synthetic by design.
+
+Add one README link to `docs/SIM.md`.
+
+**Verify**: `uv run python tools/check_docs.py` -> pass.
+
+### Step 7: Run full and live verification
 
 1. `just check` -> exit 0.
-2. Operator: `just sim --world marker_field --gui` -> READY verdict; three
-   markers visible on the ground in the GUI. `just stop`.
-3. Operator: `just sim --world landing_pad` (headless is fine) -> READY;
-   `rg "world.*landing_pad|marker" logs/latest.log | head` shows the world
-   loaded without model-resolution errors
-   (`rg -i "unable to find\|error" logs/latest.log` -> no model URI errors).
+2. `just sim --world marker_field --gui` -> READY; inspect all three IDs and
+   white quiet zones; `just stop`.
+3. `just sim --world landing_pad` -> READY with no model-resolution error;
    `just stop`.
-4. Regression: `just sim` (default world) -> READY. `just stop`.
+4. `just sim --world obstacle_course` -> READY; `just stop`.
+5. `just sim` -> default world READY; `just stop`.
 
-If you cannot run a sim, complete steps 1-4, run the `gz sdf -k` checks, and
-STOP reporting live verification pending.
+If GUI inspection is unavailable, do not mark DONE. Report SDF and headless
+boot results plus the pending visual sign-off.
 
 ## Test plan
 
-`gz sdf -k` on all three worlds (machine check), generator idempotency
-(Step 1), the existing unit suite for markers.yaml consumers, and the
-operator boot checks (READY verdict is itself a post-condition check: clock
-bridge up means the world name matched the file stem).
+- Deterministic generator unit tests in a temporary directory.
+- Exact quiet-zone and physical-scale assertions.
+- `gz sdf -k` for every new world.
+- Package-resource check for the field map.
+- Live boot of all new worlds and default regression.
+- GUI inspection of marker IDs and border visibility.
 
 ## Done criteria
 
-- [ ] `uv run python tools/gen_marker_assets.py` is idempotent; assets committed
-- [ ] `gz sdf -k` passes on all three new worlds
-- [ ] `rg -n "<world name" sim/worlds/*.sdf` -> each name equals its file stem
-- [ ] `config/markers.yaml` mirrors the marker_field poses; id 0 unchanged
-- [ ] `just check` exits 0
-- [ ] Live: default + marker_field + landing_pad boot READY (or reported as pending operator sign-off)
-- [ ] `git status` shows only in-scope files added/modified
-- [ ] `plans/README.md` status row updated
+- [ ] Generator is deterministic and unit-tested.
+- [ ] Black code is 0.2 m; padded surface is 0.25 m.
+- [ ] `config/markers.yaml` is unchanged.
+- [ ] Field map exactly matches `marker_field.sdf`.
+- [ ] All SDF files validate and world names match filename stems.
+- [ ] `just check` exits 0.
+- [ ] All three worlds and default boot READY.
+- [ ] GUI sign-off confirms markers render with white quiet zones.
+- [ ] Only in-scope files changed; the plan index row is updated.
 
 ## STOP conditions
 
-- `gz sdf -k` unavailable or failing on the COPIED skeleton itself (gz
-  version drift - report the gz version).
-- A world boots but the clock bridge never comes up (verdict NOT READY,
-  `rg clock_bridge logs/latest.log` shows the wait loop spinning) - the world
-  name/stem contract broke; fix the name attribute, do not patch the bridge.
-- PX4 SITL fails to spawn the vehicle in a new world (`rg src=px4 logs/latest.log`
-  shows spawn errors) - likely a physics-block divergence; diff against
-  `default.sdf` and report if the skeleton was kept identical.
-- Anything requires editing files under `PX4_DIR` (invariant 3; also the
-  no-PX4/Gazebo-modification rule) - STOP.
+- The copied default skeleton fails `gz sdf -k` before new models are added.
+- The generated texture maps to a face/orientation that is not visible from
+  above. Report the rendered result; do not change camera conventions.
+- Any implementation requires modifying `PX4_DIR`.
+- A new world breaks clock readiness because world name and stem differ.
+- The work expands into a camera-equipped model or automated scenario.
 
 ## Maintenance notes
 
-- Real-camera vision practice needs a vehicle model with a `camera_link`
-  sensor whose topic path matches the bridge template in
-  `sim_full.launch.py`; when that lands, these worlds are already the test
-  environments (markers physically present).
-- New marker ids: extend the id tuple in `tools/gen_marker_assets.py`, rerun,
-  add the world include + `config/markers.yaml` row - keep all three in sync.
-- Reviewer: confirm marker PNGs have a white quiet zone (a borderless marker
-  will not detect) and that committed binaries are small (512-ish px, tens of
-  KB each).
+- New marker IDs require generator output, the relevant world include, and
+  the matching world-specific map.
+- A later camera-model plan can turn these environments into true perception
+  scenarios without changing their geometry.
+- Plan 042 may use `landing_pad` for manual observation, but its automated
+  acceptance remains synthetic and does not depend on this plan.
