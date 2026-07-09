@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../schemas/mission.schema.json
+# Takeoff, then hold at 3 m facing ENU yaw 90 deg (North). Used by 07_yaw_control.
+mission:
+  initial: takeoff
+  safety:
+    - {guard: estimate_invalid, to: hold_safe}
+    - {guard: inputs_stale, params: {t: 1.0}, to: hold_safe}
+  states:
+    takeoff:   {behavior: hold, params: {z: 3.0}}
+    yaw_hold:  {behavior: hold, params: {z: 3.0, yaw_deg: 90.0}}
+    hold_safe: {behavior: hold}
+  transitions:
+    - {from: takeoff, guard: armed_at_altitude, to: yaw_hold}
+  terminal: [yaw_hold]

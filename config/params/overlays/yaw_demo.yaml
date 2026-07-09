@@ -1,0 +1,6 @@
+offboard_controller:
+  ros__parameters:
+    auto_arm: true
+mission_manager:
+  ros__parameters:
+    mission_file: "config/missions/yaw_demo.yaml"

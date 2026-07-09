@@ -17,6 +17,7 @@ from ros_px4_template_core.lib.frames import (
     enu_setpoint_to_px4_ned,
     enu_to_ned,
     enu_yaw_from_heading,
+    heading_ned_from_enu_yaw,
     marker_world_from_drone,
     ned_to_enu,
     px4_local_z_ned,
@@ -53,6 +54,20 @@ def test_enu_ned_roundtrip_identity(v: tuple[float, float, float]) -> None:
 def test_enu_yaw_from_heading_in_range(h: float) -> None:
     y = enu_yaw_from_heading(h)
     assert -math.pi - 1e-9 <= y <= math.pi + 1e-9
+
+
+@given(st.floats(min_value=-100.0, max_value=100.0, allow_nan=False))
+def test_heading_ned_from_enu_yaw_in_range(y: float) -> None:
+    h = heading_ned_from_enu_yaw(y)
+    assert -math.pi - 1e-9 <= h <= math.pi + 1e-9
+
+
+@given(_YAW)
+def test_enu_ned_yaw_roundtrip(y: float) -> None:
+    recovered = enu_yaw_from_heading(heading_ned_from_enu_yaw(y))
+    wrapped = math.atan2(math.sin(y), math.cos(y))
+    assert math.isclose(math.sin(recovered), math.sin(wrapped), abs_tol=1e-9)
+    assert math.isclose(math.cos(recovered), math.cos(wrapped), abs_tol=1e-9)
 
 
 @given(_FINITE, _FINITE, _YAW)
@@ -142,6 +157,14 @@ def test_enu_yaw_from_heading_cardinals() -> None:
     assert math.isclose(enu_yaw_from_heading(0.0), math.pi / 2)
     assert math.isclose(enu_yaw_from_heading(math.pi / 2), 0.0)
     assert math.isclose(abs(enu_yaw_from_heading(-math.pi / 2)), math.pi)
+
+
+def test_heading_ned_from_enu_yaw_cardinals() -> None:
+    # ENU East (yaw=0) -> NED East (heading=pi/2).
+    assert math.isclose(heading_ned_from_enu_yaw(0.0), math.pi / 2)
+    # ENU North (yaw=pi/2) -> NED North (heading=0).
+    assert math.isclose(heading_ned_from_enu_yaw(math.pi / 2), 0.0)
+    assert math.isclose(abs(heading_ned_from_enu_yaw(-math.pi / 2)), math.pi)
 
 
 def test_camera_to_body_nadir() -> None:

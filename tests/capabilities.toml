@@ -52,3 +52,14 @@ scenario_file = "06_search_relocalize.py"
 sim_vision = "aruco"
 sim_overlay = "search_relocalize"
 last_verified = "2026-06-05"
+
+[capabilities.yaw_control]
+description = "Mission-commanded ENU yaw reaches PX4 as NED heading and the vehicle turns to it"
+status = "verified"
+platforms = [
+    "sim",
+]
+scenario_file = "07_yaw_control.py"
+sim_vision = "none"
+sim_overlay = "yaw_demo"
+last_verified = "2026-07-09"

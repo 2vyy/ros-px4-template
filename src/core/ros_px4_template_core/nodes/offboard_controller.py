@@ -1,7 +1,10 @@
 """Offboard position controller — streams setpoints, optional auto-arm.
 
-Yaw is omitted (NaN) for position-only missions so PX4 holds current heading.
-PX4 mc_pos_control tracks ``/drone/target_pose`` waypoints in OFFBOARD mode.
+Yaw is commanded only when the mission sets it (``GoTo.yaw``, ENU radians);
+otherwise it is omitted (NaN) so PX4 holds current heading. The ENU-to-NED
+conversion happens only in ``_publish_position_setpoint`` -- the sole PX4
+frame boundary for heading. PX4 mc_pos_control tracks ``/drone/target_pose``
+waypoints in OFFBOARD mode.
 =============================================================================
 """
 
@@ -25,13 +28,14 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 from ros_px4_template_core.lib import events, offboard_fsm
-from ros_px4_template_core.lib.frames import enu_setpoint_to_px4_ned
+from ros_px4_template_core.lib.frames import enu_setpoint_to_px4_ned, heading_ned_from_enu_yaw
 from ros_px4_template_core.lib.offboard_fsm import NAV_STATE_OFFBOARD
 from ros_px4_template_core.lib.setpoint_hold import (
     effective_target_setpoint,
     is_target_pose_stale,
 )
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
+from ros_px4_template_core.lib.target_pose import target_yaw_from_quaternion
 
 _PX4_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -97,6 +101,8 @@ class OffboardController(Node):
         self._initial_pos_enu: tuple[float, float, float] | None = None
         self._have_odom = False
         self._setpoint_origin_ned: tuple[float, float, float] | None = None
+        self._target_yaw_enu: float | None = None
+        self._yaw_malformed = False
 
         def _on_set_params(params) -> SetParametersResult:
             for p in params:
@@ -160,6 +166,19 @@ class OffboardController(Node):
         if self._target_pose_stale:
             self._target_pose_stale = False
             self.slog.event(events.TARGET_POSE_STALE, active=False)
+
+        q = msg.pose.orientation
+        qw, qx, qy, qz = q.w, q.x, q.y, q.z
+        is_sentinel = (qw, qx, qy, qz) == (0.0, 0.0, 0.0, 0.0)
+        yaw = target_yaw_from_quaternion(qw, qx, qy, qz)
+        malformed = yaw is None and not is_sentinel
+        if malformed and not self._yaw_malformed:
+            self._yaw_malformed = True
+            self.slog.event(events.TARGET_YAW_MALFORMED, active=True, qw=qw, qx=qx, qy=qy, qz=qz)
+        elif not malformed and self._yaw_malformed:
+            self._yaw_malformed = False
+            self.slog.event(events.TARGET_YAW_MALFORMED, active=False)
+        self._target_yaw_enu = yaw
 
     def _active_setpoint_enu(self) -> tuple[float, float, float]:
         now = self.get_clock().now().nanoseconds / 1e9
@@ -342,7 +361,11 @@ class OffboardController(Node):
         msg.position = [float(x_ned), float(y_ned), float(z_ned)]
         msg.velocity = [float("nan"), float("nan"), float("nan")]
         msg.acceleration = [float("nan"), float("nan"), float("nan")]
-        msg.yaw = float("nan")
+        msg.yaw = (
+            float(heading_ned_from_enu_yaw(self._target_yaw_enu))
+            if self._target_yaw_enu is not None
+            else float("nan")
+        )
         msg.yawspeed = float("nan")
         self._pub_setpoint.publish(msg)
 
