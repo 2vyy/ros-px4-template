@@ -27,13 +27,37 @@ def hold(scratch: dict, inputs: Inputs, params: dict) -> BehaviorResult:
         scratch["x"] = float(params.get("x", inputs.pose_enu[0]))
         scratch["y"] = float(params.get("y", inputs.pose_enu[1]))
         scratch["z"] = float(params.get("z", inputs.pose_enu[2]))
+        yaw_deg = params.get("yaw_deg")
+        scratch["yaw"] = math.radians(float(yaw_deg)) if yaw_deg is not None else None
     tol = float(params.get("tolerance_m", 0.4))
     reached = math.dist(inputs.pose_enu, (scratch["x"], scratch["y"], scratch["z"])) <= tol
-    return BehaviorResult(GoTo(scratch["x"], scratch["y"], scratch["z"]), {"reached": reached})
+    return BehaviorResult(
+        GoTo(scratch["x"], scratch["y"], scratch["z"], scratch["yaw"]), {"reached": reached}
+    )
+
+
+def _split_waypoint_entry(
+    entry: tuple, index: int
+) -> tuple[tuple[float, float, float], float | None]:
+    """Split one waypoint entry into a 3-element position and an optional yaw (deg).
+
+    Accepts only ``[x, y, z]`` or ``[x, y, z, yaw_deg]``; anything else is a
+    malformed mission and fails fast at load/first-tick, not mid-flight.
+    """
+    if len(entry) == 3:
+        x, y, z = (float(v) for v in entry)
+        return (x, y, z), None
+    if len(entry) == 4:
+        x, y, z, yaw_deg = (float(v) for v in entry)
+        return (x, y, z), yaw_deg
+    raise ValueError(
+        f"waypoint entry {index}: expected 3 ([x, y, z]) or 4 ([x, y, z, yaw_deg]) "
+        f"elements, got {len(entry)}"
+    )
 
 
 def _step_waypoints(
-    scratch: dict, inputs: Inputs, params: dict, wps: list
+    scratch: dict, inputs: Inputs, params: dict, wps: list[tuple[float, float, float]]
 ) -> tuple[int, bool, bool]:
     """Shared waypoint stepper. Returns (index, reached_current, done)."""
     tol = float(params.get("tolerance_m", 0.4))
@@ -55,11 +79,17 @@ def _step_waypoints(
 
 @behavior("follow_waypoints")
 def follow_waypoints(scratch: dict, inputs: Inputs, params: dict) -> BehaviorResult:
-    wps = [tuple(map(float, p)) for p in params.get("waypoints", [])]
+    raw = params.get("waypoints", [])
+    split = [_split_waypoint_entry(tuple(entry), i) for i, entry in enumerate(raw)]
+    wps = [pos for pos, _yaw_deg in split]
+    yaws_deg = [yaw_deg for _pos, yaw_deg in split]
     idx, at, done = _step_waypoints(scratch, inputs, params, wps)
-    cur = wps[min(idx, len(wps) - 1)] if wps else inputs.pose_enu
+    cur_idx = min(idx, len(wps) - 1) if wps else None
+    cur = wps[cur_idx] if cur_idx is not None else inputs.pose_enu
+    yaw_deg = yaws_deg[cur_idx] if cur_idx is not None else None
+    yaw = math.radians(yaw_deg) if yaw_deg is not None else None
     return BehaviorResult(
-        GoTo(*cur),
+        GoTo(*cur, yaw),
         {"reached": at, "waypoints_done": done, "waypoint_index": idx},
     )
 

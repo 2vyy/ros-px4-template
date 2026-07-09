@@ -8,6 +8,8 @@ Subscriptions:
     /drone/marker_detection     [px4_ros_msgs/MarkerDetection]
 Publishers:
     /drone/target_pose      [geometry_msgs/PoseStamped]
+        Orientation carries optional commanded ENU yaw (lib/target_pose codec);
+        the all-zero quaternion means yaw omitted (PX4 holds heading).
     /drone/mission_status   [px4_ros_msgs/MissionStatus]
     /drone/mission_markers  [visualization_msgs/MarkerArray]
 =============================================================================
@@ -37,6 +39,7 @@ from ros_px4_template_core.lib.mission.engine import MissionContext, tick
 from ros_px4_template_core.lib.mission.loader import load_mission_file
 from ros_px4_template_core.lib.mission.types import Inputs
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
+from ros_px4_template_core.lib.target_pose import target_yaw_to_quaternion
 
 _RELIABLE_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10
@@ -81,6 +84,7 @@ class MissionManager(Node):
         self._marker_time = 0.0
         self._marker_stability = 0
         self._last_target = (0.0, 0.0, self._takeoff_alt)
+        self._last_yaw: float | None = None
 
         self.create_subscription(
             ControllerStatus,
@@ -191,7 +195,7 @@ class MissionManager(Node):
     def _tick(self) -> None:
         now = self.get_clock().now().nanoseconds / 1e9
         if not self._have_odom:
-            self._publish_target((0.0, 0.0, self._takeoff_alt))
+            self._publish_target((0.0, 0.0, self._takeoff_alt), None)
             return
         inputs = self._snapshot(now)
         command = tick(self._ctx, self._mission, inputs)
@@ -204,18 +208,23 @@ class MissionManager(Node):
 
         if isinstance(command, GoTo):
             self._last_target = (command.x, command.y, command.z)
-        self._publish_target(self._last_target)
+            self._last_yaw = command.yaw
+        self._publish_target(self._last_target, self._last_yaw)
         self._publish_status(inputs, now)
         self._publish_markers(self._last_target)
 
-    def _publish_target(self, target) -> None:
+    def _publish_target(self, target, yaw_enu: float | None) -> None:
         msg = PoseStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "map"
         msg.pose.position.x = float(target[0])
         msg.pose.position.y = float(target[1])
         msg.pose.position.z = float(target[2])
-        msg.pose.orientation.w = 1.0
+        qw, qx, qy, qz = target_yaw_to_quaternion(yaw_enu)
+        msg.pose.orientation.w = qw
+        msg.pose.orientation.x = qx
+        msg.pose.orientation.y = qy
+        msg.pose.orientation.z = qz
         self._pub_target.publish(msg)
 
     def _publish_status(self, inputs: Inputs, now: float) -> None:

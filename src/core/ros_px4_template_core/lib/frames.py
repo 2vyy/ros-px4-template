@@ -51,6 +51,16 @@ def enu_yaw_from_heading(heading_ned: float) -> float:
     return math.atan2(math.sin(yaw), math.cos(yaw))
 
 
+def heading_ned_from_enu_yaw(yaw_enu: float) -> float:
+    """ENU yaw (0=East, CCW+) -> PX4 heading (NED yaw: 0=North, CW+), wrapped.
+
+    Exact inverse of :func:`enu_yaw_from_heading`: the same relation,
+    ``heading_ned = pi/2 - yaw_enu``, is self-inverse.
+    """
+    heading = math.pi / 2.0 - yaw_enu
+    return math.atan2(math.sin(heading), math.cos(heading))
+
+
 def enu_yaw_from_quaternion(q_w: float, q_x: float, q_y: float, q_z: float) -> float:
     """Extract ENU yaw from an ENU quaternion."""
     return math.atan2(2.0 * (q_w * q_z + q_x * q_y), 1.0 - 2.0 * (q_y * q_y + q_z * q_z))

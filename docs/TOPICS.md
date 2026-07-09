@@ -44,6 +44,7 @@ PX4 1.17 with uXRCE-DDS appends `_v1` to any message carrying `MESSAGE_VERSION` 
 - `/drone/odom`: `RELIABLE`. Single source of truth published by `position_node` from PX4's local-position estimate (anchored ENU), in both sim and hardware. `/drone/local_origin`: latched (`TRANSIENT_LOCAL`) effective NED setpoint origin.
 - `/drone/marker_detection`: `RELIABLE`, `KEEP_LAST` depth 10.
 - Other `/drone/*` status and setpoint topics: `RELIABLE`, `KEEP_LAST` depth 10.
+- `/drone/target_pose` orientation is an optional-yaw contract, not a real attitude: the all-zero quaternion means "yaw omitted" (PX4 holds current heading); any other finite, near-unit quaternion is a commanded ENU yaw. See [docs/MISSIONS.md](MISSIONS.md#commanding-yaw) and `lib/target_pose.py`.
 
 A `(vision)` suffix on the Dir marks a topic published only under
 `--vision aruco`; `just log topics` skips its presence check unless run with

@@ -110,8 +110,8 @@ Registered in `lib/mission/behaviors.py`. Each returns a command plus signals
 
 | Behavior | params (default) | Signals emitted |
 |----------|------------------|-----------------|
-| `hold` | `x`,`y`,`z` (current pose at entry), `tolerance_m` (0.4) | `reached` |
-| `follow_waypoints` | `waypoints` (list of `[x,y,z]`) **or** `path_file` (YAML path, resolved to waypoints by the loader), `tolerance_m` (0.4), `hold_s` (2.0) | `reached`, `waypoints_done`, `waypoint_index` |
+| `hold` | `x`,`y`,`z` (current pose at entry), `yaw_deg` (optional, ENU degrees, latched at entry), `tolerance_m` (0.4) | `reached` |
+| `follow_waypoints` | `waypoints` (list of `[x,y,z]` or `[x,y,z,yaw_deg]`) **or** `path_file` (YAML path, resolved to waypoints by the loader), `tolerance_m` (0.4), `hold_s` (2.0) | `reached`, `waypoints_done`, `waypoint_index` |
 | `search_lawnmower` | `center` (`[0,0]`), `spacing_m` (2.0), `legs` (4), `altitude_m` (3.0), `hold_s` (0.0) | `search_complete` |
 | `center_on_marker` | `target_id`, `altitude_m` (current z), `tolerance_m` (0.4), `hold_s` (10.0) | `centering_error`, `centered`, `hold_complete` |
 | `goto_origin` | `z` (current z), `tolerance_m` (0.5) | `reached` |
@@ -139,6 +139,20 @@ Registered in `lib/mission/guards.py`. Each is a pure predicate over the snapsho
 | `inputs_stale` | `key` (`odom`), `t` (1.0) | named input older than `t` s |
 
 For `marker_*` guards, omitting `id` matches any marker.
+
+## Commanding yaw
+
+`hold` and `follow_waypoints` accept an optional `yaw_deg` (ENU degrees, 0 =
+East, positive counter-clockwise). Omitting it means heading is uncontrolled:
+PX4 holds whatever heading it already has. When set, `GoTo.yaw` carries the
+value as ENU radians through `mission_manager` to `offboard_controller`, which
+is the only place ENU yaw is converted to PX4 NED heading (`/fmu/in/trajectory_setpoint`'s `yaw` field).
+
+On the wire, `/drone/target_pose`'s orientation quaternion is the optional-yaw
+contract: the all-zero quaternion is the internal sentinel for "yaw omitted"
+(the identity quaternion is a real ENU yaw of zero, so it cannot double as the
+sentinel); any other finite, near-unit quaternion is a commanded ENU yaw. See
+`lib/target_pose.py` for the codec.
 
 ## Vision relocalization
 
@@ -202,3 +216,4 @@ mission:
 | `03_waypoint` | Default sim (`follow_waypoints` mission, no vision) |
 | `05_aruco_hover` | `vision=aruco` (`marker_hover` mission) |
 | `06_search_relocalize` | `vision=aruco` (`search_relocalize` mission + `marker_localizer`) |
+| `07_yaw_control` | Overlay `yaw_demo` (`yaw_demo` mission, no vision) |

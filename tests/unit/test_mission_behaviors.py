@@ -42,9 +42,32 @@ def test_hold_latches_entry_point() -> None:
     r = hold(scratch, _inputs(pose_enu=(1.0, 2.0, 3.0)), {"z": 5.0})
     assert isinstance(r.command, GoTo)
     assert (r.command.x, r.command.y, r.command.z) == (1.0, 2.0, 5.0)
+    assert r.command.yaw is None
     r2 = hold(scratch, _inputs(pose_enu=(9.0, 9.0, 5.0)), {"z": 5.0})
     assert isinstance(r2.command, GoTo)
     assert (r2.command.x, r2.command.y, r2.command.z) == (1.0, 2.0, 5.0)
+
+
+def test_hold_latches_yaw_deg_as_enu_radians() -> None:
+    hold = get_behavior("hold")
+    scratch: dict = {}
+    r = hold(scratch, _inputs(pose_enu=(1.0, 2.0, 3.0)), {"z": 5.0, "yaw_deg": 90.0})
+    assert isinstance(r.command, GoTo)
+    assert r.command.yaw is not None
+    assert math.isclose(r.command.yaw, math.pi / 2, abs_tol=1e-9)
+    # Yaw stays latched even if a later tick's params change (entry-point semantics).
+    r2 = hold(scratch, _inputs(pose_enu=(1.0, 2.0, 3.0)), {"z": 5.0, "yaw_deg": 0.0})
+    assert isinstance(r2.command, GoTo)
+    assert r2.command.yaw is not None
+    assert math.isclose(r2.command.yaw, math.pi / 2, abs_tol=1e-9)
+
+
+def test_hold_without_yaw_deg_omits_yaw() -> None:
+    hold = get_behavior("hold")
+    scratch: dict = {}
+    r = hold(scratch, _inputs(pose_enu=(1.0, 2.0, 3.0)), {"z": 5.0})
+    assert isinstance(r.command, GoTo)
+    assert r.command.yaw is None
 
 
 def test_follow_waypoints_advances_after_dwell() -> None:
@@ -63,6 +86,42 @@ def test_follow_waypoints_advances_after_dwell() -> None:
     fw(scratch, _inputs(now=4.0, pose_enu=(5.0, 0.0, 3.0)), params)
     r = fw(scratch, _inputs(now=6.5, pose_enu=(5.0, 0.0, 3.0)), params)
     assert r.signals["waypoints_done"] is True
+
+
+def test_follow_waypoints_mixed_yaw_advances_with_matching_yaw() -> None:
+    fw = get_behavior("follow_waypoints")
+    scratch: dict = {}
+    params = {
+        "waypoints": [(0.0, 0.0, 3.0, 90.0), (5.0, 0.0, 3.0)],
+        "hold_s": 2.0,
+        "tolerance_m": 0.4,
+    }
+    r = fw(scratch, _inputs(now=0.0, pose_enu=(0.0, 0.0, 0.0)), params)
+    assert isinstance(r.command, GoTo)
+    assert (r.command.x, r.command.y) == (0.0, 0.0)
+    assert r.command.yaw is not None
+    assert math.isclose(r.command.yaw, math.pi / 2, abs_tol=1e-9)
+
+    fw(scratch, _inputs(now=1.0, pose_enu=(0.0, 0.0, 3.0)), params)
+    r = fw(scratch, _inputs(now=3.5, pose_enu=(0.0, 0.0, 3.0)), params)
+    assert isinstance(r.command, GoTo)
+    assert (r.command.x, r.command.y) == (5.0, 0.0)
+    assert r.command.yaw is None
+
+
+def test_follow_waypoints_rejects_malformed_entry_length() -> None:
+    fw = get_behavior("follow_waypoints")
+    scratch: dict = {}
+    params = {"waypoints": [(0.0, 0.0)]}
+    try:
+        fw(scratch, _inputs(pose_enu=(0.0, 0.0, 0.0)), params)
+    except ValueError as exc:
+        msg = str(exc)
+        assert "0" in msg  # entry index
+        assert "3" in msg  # expected length
+        assert "4" in msg  # expected length
+    else:
+        raise AssertionError("expected ValueError for malformed waypoint entry")
 
 
 def test_center_on_marker_targets_pose_plus_offset() -> None:
