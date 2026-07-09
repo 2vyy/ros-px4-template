@@ -78,3 +78,22 @@ def estimate_invalid(inputs: Inputs, signals: dict, params: dict) -> bool:
 def inputs_stale(inputs: Inputs, signals: dict, params: dict) -> bool:
     key = str(params.get("key", "odom"))
     return inputs.input_ages.get(key, float("inf")) > float(params.get("t", 1.0))
+
+
+@guard("battery_low")
+def battery_low(inputs: Inputs, signals: dict, params: dict) -> bool:
+    frac = float(params.get("frac", 0.2))
+    if not 0.0 <= frac <= 1.0:
+        raise ValueError(f"battery_low: 'frac' must be within [0, 1], got {frac}")
+    max_age_s = float(params.get("max_age_s", 5.0))
+    if inputs.battery_remaining is None:
+        return False
+    age = inputs.input_ages.get("battery", float("inf"))
+    if age > max_age_s:
+        return False
+    return inputs.battery_remaining <= frac
+
+
+@guard("failsafe_active")
+def failsafe_active(inputs: Inputs, signals: dict, params: dict) -> bool:
+    return bool(inputs.failsafe_active)

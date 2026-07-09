@@ -137,8 +137,33 @@ Registered in `lib/mission/guards.py`. Each is a pure predicate over the snapsho
 | `geofence_breach` | `radius_m` (50.0) | horizontal distance from origin ≥ `radius_m` |
 | `estimate_invalid` | — | the state estimate is not OK |
 | `inputs_stale` | `key` (`odom`), `t` (1.0) | named input older than `t` s |
+| `battery_low` | `frac` (0.2), `max_age_s` (5.0) | battery is connected, fresh (age <= `max_age_s`), and remaining fraction <= `frac` |
+| `failsafe_active` | — | PX4 reports `VehicleStatus.failsafe` true (logical mirror only, see warning below) |
 
 For `marker_*` guards, omitting `id` matches any marker.
+
+An unknown, disconnected, or stale battery reading never trips `battery_low` --
+it fails toward "don't know", not "low". Combine `battery_low` with
+`inputs_stale` (`key: battery`) if a competition or hardware policy requires
+fail-closed behavior when battery telemetry itself goes stale.
+
+**`battery_low` diverts a mission, it does not touch arming or offboard mode.**
+Example: divert to `return_to_origin` at 20%:
+
+```yaml
+safety:
+  - {guard: battery_low, params: {frac: 0.2}, to: return_to_origin}
+```
+
+**Warning: `failsafe_active` is logical observability only.** PX4 remains the
+sole failsafe authority — a mission transition on this guard (e.g. to a
+`hold`) does not command, override, or interrupt whatever recovery mode PX4
+itself selected. Do not model `failsafe_active -> hold_safe` as if the mission
+holding position overrides PX4; it does not. Separately, on the rising edge of
+a live PX4 failsafe, `offboard_controller` latches its own automatic arm/mode
+commands off (existing `OffboardControlMode`/setpoint streaming keeps
+running); it will not re-request OFFBOARD until an operator explicitly sets
+`auto_arm=true` after PX4 reports the failsafe has cleared.
 
 ## Commanding yaw
 

@@ -6,6 +6,8 @@ Subscriptions:
     /drone/controller_status    [px4_ros_msgs/ControllerStatus]
     /drone/odom                 [nav_msgs/Odometry]   (position_node SoT pose)
     /drone/marker_detection     [px4_ros_msgs/MarkerDetection]
+    /fmu/out/battery_status_v1  [px4_msgs/BatteryStatus]
+    /fmu/out/vehicle_status_v1  [px4_msgs/VehicleStatus]  (failsafe only)
 Publishers:
     /drone/target_pose      [geometry_msgs/PoseStamped]
         Orientation carries optional commanded ENU yaw (lib/target_pose codec);
@@ -25,11 +27,12 @@ import rclpy
 from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
+from px4_msgs.msg import BatteryStatus, VehicleStatus
 from px4_ros_msgs.msg import ControllerStatus, MarkerDetection, MissionStatus
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from visualization_msgs.msg import Marker, MarkerArray
 
 from ros_px4_template_core.lib.frames import enu_yaw_from_quaternion
@@ -37,12 +40,19 @@ from ros_px4_template_core.lib.mission.commands import GoTo
 from ros_px4_template_core.lib.mission.detection import Detection
 from ros_px4_template_core.lib.mission.engine import MissionContext, tick
 from ros_px4_template_core.lib.mission.loader import load_mission_file
+from ros_px4_template_core.lib.mission.telemetry import usable_battery_remaining
 from ros_px4_template_core.lib.mission.types import Inputs
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 from ros_px4_template_core.lib.target_pose import target_yaw_to_quaternion
 
 _RELIABLE_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10
+)
+_PX4_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=10,
 )
 _STABLE_FRESH_S = 0.3  # a detection counts toward stability if newer than this
 _DEFAULT_MISSION = "config/missions/hover.yaml"
@@ -85,6 +95,12 @@ class MissionManager(Node):
         self._marker_stability = 0
         self._last_target = (0.0, 0.0, self._takeoff_alt)
         self._last_yaw: float | None = None
+        self._battery_remaining: float | None = None
+        self._have_battery = False
+        self._battery_time = 0.0
+        self._failsafe_active = False
+        self._have_vehicle_status = False
+        self._vehicle_status_time = 0.0
 
         self.create_subscription(
             ControllerStatus,
@@ -101,6 +117,20 @@ class MissionManager(Node):
             "/drone/marker_detection",
             self._detection_cb,
             _RELIABLE_QOS,
+            callback_group=self._sub_group,
+        )
+        self.create_subscription(
+            BatteryStatus,
+            "/fmu/out/battery_status_v1",
+            self._battery_cb,
+            _PX4_QOS,
+            callback_group=self._sub_group,
+        )
+        self.create_subscription(
+            VehicleStatus,
+            "/fmu/out/vehicle_status_v1",
+            self._vehicle_status_cb,
+            _PX4_QOS,
             callback_group=self._sub_group,
         )
 
@@ -150,6 +180,24 @@ class MissionManager(Node):
             self._marker_time = marker_time
             self._marker_stability += 1
 
+    def _battery_cb(self, msg: BatteryStatus) -> None:
+        remaining = usable_battery_remaining(
+            connected=bool(msg.connected), remaining=float(msg.remaining)
+        )
+        battery_time = self.get_clock().now().nanoseconds / 1e9
+        with self._state_lock:
+            self._battery_remaining = remaining
+            self._battery_time = battery_time
+            self._have_battery = True
+
+    def _vehicle_status_cb(self, msg: VehicleStatus) -> None:
+        failsafe_active = bool(msg.failsafe)
+        vehicle_status_time = self.get_clock().now().nanoseconds / 1e9
+        with self._state_lock:
+            self._failsafe_active = failsafe_active
+            self._vehicle_status_time = vehicle_status_time
+            self._have_vehicle_status = True
+
     def _snapshot(self, now: float) -> Inputs:
         dets: tuple[Detection, ...] = ()
         stability: dict[int, int] = {}
@@ -165,6 +213,12 @@ class MissionManager(Node):
             marker_id_seen = self._marker_id_seen
             marker_time = self._marker_time
             marker_stability = self._marker_stability
+            battery_remaining = self._battery_remaining
+            have_battery = self._have_battery
+            battery_time = self._battery_time
+            failsafe_active = self._failsafe_active
+            have_vehicle_status = self._have_vehicle_status
+            vehicle_status_time = self._vehicle_status_time
             if marker_offset_body is None or now - marker_time > 1.0:
                 self._marker_stability = 0
                 marker_stability = 0
@@ -189,7 +243,15 @@ class MissionManager(Node):
             estimate_ok=estimate_ok,
             detections=dets,
             detection_stability=stability,
-            input_ages={"odom": (now - odom_time) if have_odom else float("inf")},
+            input_ages={
+                "odom": (now - odom_time) if have_odom else float("inf"),
+                "battery": (now - battery_time) if have_battery else float("inf"),
+                "vehicle_status": (
+                    (now - vehicle_status_time) if have_vehicle_status else float("inf")
+                ),
+            },
+            battery_remaining=battery_remaining,
+            failsafe_active=failsafe_active,
         )
 
     def _tick(self) -> None:

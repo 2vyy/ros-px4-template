@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ros_px4_template_core.lib.offboard_fsm import FsmInputs, tick
+from ros_px4_template_core.lib.offboard_fsm import FsmInputs, auto_arm_allowed, tick
 
 _READY: dict[str, Any] = dict(
     elapsed_s=30.0,
@@ -70,3 +70,14 @@ def test_arm_failed_state() -> None:
     result = tick(_inputs(arm_failed=True))
     assert result.state == "ARM_FAILED"
     assert not result.send_arm
+
+
+def test_auto_arm_allowed_truth_table() -> None:
+    assert auto_arm_allowed(True, disarm_latched=False, failsafe_latched=False) is True
+    assert auto_arm_allowed(True, disarm_latched=True, failsafe_latched=False) is False
+    assert auto_arm_allowed(True, disarm_latched=False, failsafe_latched=True) is False
+    assert auto_arm_allowed(True, disarm_latched=True, failsafe_latched=True) is False
+    assert auto_arm_allowed(False, disarm_latched=False, failsafe_latched=False) is False
+    assert auto_arm_allowed(False, disarm_latched=True, failsafe_latched=False) is False
+    assert auto_arm_allowed(False, disarm_latched=False, failsafe_latched=True) is False
+    assert auto_arm_allowed(False, disarm_latched=True, failsafe_latched=True) is False

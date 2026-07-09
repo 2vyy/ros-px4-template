@@ -13,6 +13,7 @@ PX4 1.17 with uXRCE-DDS appends `_v1` to any message carrying `MESSAGE_VERSION` 
 | `/clock` | `rosgraph_msgs/msg/Clock` | pub | clock_bridge in `sim/launch/sim_full.launch.py` |
 | `/fmu/out/vehicle_local_position_v1` | `px4_msgs/msg/VehicleLocalPosition` | pub | PX4 uXRCE-DDS bridge |
 | `/fmu/out/vehicle_status_v1` | `px4_msgs/msg/VehicleStatus` | pub | PX4 uXRCE-DDS bridge |
+| `/fmu/out/battery_status_v1` | `px4_msgs/msg/BatteryStatus` | pub | PX4 uXRCE-DDS bridge |
 | `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | pub | `offboard_controller` |
 | `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | pub | `offboard_controller` |
 | `/fmu/in/vehicle_command` | `px4_msgs/msg/VehicleCommand` | pub | `offboard_controller` |
@@ -32,7 +33,8 @@ PX4 1.17 with uXRCE-DDS appends `_v1` to any message carrying `MESSAGE_VERSION` 
 | `/fmu/out/vehicle_local_position_v1` | `position_node` |
 | `/drone/odom` | `offboard_controller`, `mission_manager` |
 | `/drone/local_origin` | `offboard_controller` |
-| `/fmu/out/vehicle_status_v1` | `offboard_controller` |
+| `/fmu/out/vehicle_status_v1` | `offboard_controller`, `mission_manager` |
+| `/fmu/out/battery_status_v1` | `mission_manager` |
 | `/drone/target_pose` | `offboard_controller` |
 | `/drone/controller_status` | `mission_manager` |
 | `/drone/marker_detection` | `mission_manager`, `marker_localizer` |

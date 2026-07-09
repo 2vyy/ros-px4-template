@@ -74,7 +74,7 @@ round-trip; (b) add the highest-leverage competition capabilities that fit the
 | 041  | Yaw control end to end (mission YAML to `TrajectorySetpoint.yaw`) | P1 | M | — | DONE (`just check`: 270 passed; `just scenario 07_yaw_control` PASS: setpoint_yaw_ned=0.000, vehicle_yaw_enu=1.562, err 0.009 rad; `just scenario 01_arm_takeoff` PASS with NaN yaw; `just cap mark yaw_control sim`) |
 | 042  | Precision landing on a marker (`center_land`, `Land` executed end to end) | P1 | M/L | 030 | TODO |
 | 043  | Competition practice worlds + committed ArUco marker assets | P2 | M | soft: 031 | TODO |
-| 044  | Battery/failsafe in mission `Inputs` (`battery_low` / `failsafe_active` guards) | P2 | M | — | TODO |
+| 044  | Battery/failsafe in mission `Inputs` (`battery_low` / `failsafe_active` guards) | P2 | M | — | DONE (`just check`: 286 passed; live: `/fmu/out/battery_status_v1` connected=true remaining=0.99995; forced `TRANSITION ... guard=battery_low` via temp mission; `just log topics` PASS; `just scenario 01_arm_takeoff` PASS) |
 
 #### Round 4b — toolchain/meta vetting follow-ups (2026-07-06, same base `ead4cc6`)
 

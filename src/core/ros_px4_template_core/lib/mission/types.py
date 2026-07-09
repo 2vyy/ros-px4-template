@@ -20,6 +20,8 @@ class Inputs:
     detections: tuple[Detection, ...] = ()
     detection_stability: dict[int, int] = field(default_factory=dict)
     input_ages: dict[str, float] = field(default_factory=dict)
+    battery_remaining: float | None = None
+    failsafe_active: bool = False
 
 
 @dataclass(frozen=True)
