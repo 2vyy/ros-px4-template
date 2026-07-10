@@ -97,3 +97,20 @@ def battery_low(inputs: Inputs, signals: dict, params: dict) -> bool:
 @guard("failsafe_active")
 def failsafe_active(inputs: Inputs, signals: dict, params: dict) -> bool:
     return bool(inputs.failsafe_active)
+
+
+@guard("disarmed")
+def disarmed(inputs: Inputs, signals: dict, params: dict) -> bool:
+    return not inputs.armed
+
+
+@guard("marker_lost_signal")
+def marker_lost_signal(inputs: Inputs, signals: dict, params: dict) -> bool:
+    """True when the current state's behavior signalled ``marker_lost``.
+
+    Distinct from the inputs-only ``marker_lost`` guard: this reads the exact
+    freshness computation the behavior made this tick (e.g. ``center_land``),
+    so the mission transition can never disagree with what the behavior itself
+    just decided.
+    """
+    return bool(signals.get("marker_lost"))

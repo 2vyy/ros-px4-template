@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 
 from ros_px4_template_core.lib import mission as _m  # noqa: F401 (registers)
-from ros_px4_template_core.lib.mission.commands import GoTo
+from ros_px4_template_core.lib.mission.commands import GoTo, Land
 from ros_px4_template_core.lib.mission.detection import Detection
 from ros_px4_template_core.lib.mission.registry import get_behavior
 from ros_px4_template_core.lib.mission.types import Inputs
@@ -155,6 +155,143 @@ def test_goto_origin_commands_origin() -> None:
     r = go({}, _inputs(pose_enu=(5.0, 5.0, 3.0)), {"z": 3.0})
     assert isinstance(r.command, GoTo)
     assert (r.command.x, r.command.y, r.command.z) == (0.0, 0.0, 3.0)
+
+
+def _cl_params(**overrides: object) -> dict:
+    defaults: dict = {
+        "target_id": 0,
+        "tolerance_m": 0.3,
+        "descent_rate_m_s": 0.4,
+        "land_altitude_m": 0.7,
+        "min_altitude_m": 0.3,
+        "marker_fresh_s": 1.0,
+        "max_dt_s": 0.5,
+    }
+    return {**defaults, **overrides}
+
+
+def test_center_land_descends_while_centered_and_fresh() -> None:
+    cl = get_behavior("center_land")
+    scratch: dict = {}
+    params = _cl_params()
+    det0 = Detection(id=0, offset_body_flu=(0.0, 0.0, -3.0), stamp=0.0)
+    r0 = cl(scratch, _inputs(now=0.0, pose_enu=(0.0, 0.0, 3.0), detections=(det0,)), params)
+    assert isinstance(r0.command, GoTo)
+    z0 = r0.command.z
+    det1 = Detection(id=0, offset_body_flu=(0.0, 0.0, -3.0), stamp=0.1)
+    r1 = cl(scratch, _inputs(now=0.1, pose_enu=(0.0, 0.0, 3.0), detections=(det1,)), params)
+    assert isinstance(r1.command, GoTo)
+    assert r1.command.z < z0
+    assert math.isclose(z0 - r1.command.z, 0.4 * 0.1, abs_tol=1e-6)
+    assert r1.signals["centered"] is True
+    assert r1.signals["marker_lost"] is False
+
+
+def test_center_land_holds_altitude_when_not_centered() -> None:
+    cl = get_behavior("center_land")
+    scratch: dict = {}
+    params = _cl_params()
+    det0 = Detection(id=0, offset_body_flu=(5.0, 0.0, -3.0), stamp=0.0)
+    r0 = cl(scratch, _inputs(now=0.0, pose_enu=(0.0, 0.0, 3.0), detections=(det0,)), params)
+    assert r0.signals["centered"] is False
+    assert isinstance(r0.command, GoTo)
+    z0 = r0.command.z
+    det1 = Detection(id=0, offset_body_flu=(5.0, 0.0, -3.0), stamp=1.0)
+    r1 = cl(scratch, _inputs(now=1.0, pose_enu=(0.0, 0.0, 3.0), detections=(det1,)), params)
+    assert r1.signals["centered"] is False
+    assert isinstance(r1.command, GoTo)
+    assert math.isclose(r1.command.z, z0, abs_tol=1e-9)
+
+
+def test_center_land_commands_land_when_low_and_centered() -> None:
+    cl = get_behavior("center_land")
+    scratch: dict = {}
+    params = _cl_params()
+    det = Detection(id=0, offset_body_flu=(0.0, 0.0, -0.6), stamp=0.0)
+    r = cl(scratch, _inputs(now=0.0, pose_enu=(0.0, 0.0, 0.6), detections=(det,)), params)
+    assert isinstance(r.command, Land)
+    assert r.signals["land_commanded"] is True
+    assert r.signals["centered"] is True
+
+
+def test_center_land_freezes_altitude_on_marker_loss() -> None:
+    cl = get_behavior("center_land")
+    scratch: dict = {}
+    params = _cl_params(marker_fresh_s=0.05)
+    det0 = Detection(id=0, offset_body_flu=(0.0, 0.0, -3.0), stamp=0.0)
+    cl(scratch, _inputs(now=0.0, pose_enu=(0.0, 0.0, 3.0), detections=(det0,)), params)
+    det1 = Detection(id=0, offset_body_flu=(0.0, 0.0, -3.0), stamp=0.1)
+    r1 = cl(scratch, _inputs(now=0.1, pose_enu=(0.0, 0.0, 3.0), detections=(det1,)), params)
+    assert isinstance(r1.command, GoTo)
+    z_before_loss = r1.command.z
+    # Marker disappears entirely; last tx/ty is retained but altitude must freeze.
+    r2 = cl(scratch, _inputs(now=0.2, pose_enu=(0.0, 0.0, 3.0), detections=()), params)
+    assert isinstance(r2.command, GoTo)
+    assert math.isclose(r2.command.z, z_before_loss, abs_tol=1e-9)
+    assert (r2.command.x, r2.command.y) == (0.0, 0.0)
+    assert r2.signals["marker_lost"] is True
+    r3 = cl(scratch, _inputs(now=0.3, pose_enu=(0.0, 0.0, 3.0), detections=()), params)
+    assert isinstance(r3.command, GoTo)
+    assert math.isclose(r3.command.z, z_before_loss, abs_tol=1e-9)
+    assert r3.signals["marker_lost"] is True
+
+
+def test_center_land_dt_clamp_rejects_negative_delta() -> None:
+    cl = get_behavior("center_land")
+    scratch: dict = {}
+    params = _cl_params()
+    det0 = Detection(id=0, offset_body_flu=(0.0, 0.0, -3.0), stamp=5.0)
+    r0 = cl(scratch, _inputs(now=5.0, pose_enu=(0.0, 0.0, 3.0), detections=(det0,)), params)
+    assert isinstance(r0.command, GoTo)
+    z0 = r0.command.z
+    # Clock rewinds (now < last_now): dt must clamp to 0, not increase descent.
+    det1 = Detection(id=0, offset_body_flu=(0.0, 0.0, -3.0), stamp=4.0)
+    r1 = cl(scratch, _inputs(now=4.0, pose_enu=(0.0, 0.0, 3.0), detections=(det1,)), params)
+    assert isinstance(r1.command, GoTo)
+    assert math.isclose(r1.command.z, z0, abs_tol=1e-9)
+
+
+def test_center_land_dt_clamp_caps_large_delta() -> None:
+    cl = get_behavior("center_land")
+    scratch: dict = {}
+    params = _cl_params(max_dt_s=0.5)
+    det0 = Detection(id=0, offset_body_flu=(0.0, 0.0, -3.0), stamp=0.0)
+    r0 = cl(scratch, _inputs(now=0.0, pose_enu=(0.0, 0.0, 3.0), detections=(det0,)), params)
+    assert isinstance(r0.command, GoTo)
+    z0 = r0.command.z
+    # A huge tick gap (e.g. a stall) must not translate into a huge descent step.
+    det1 = Detection(id=0, offset_body_flu=(0.0, 0.0, -3.0), stamp=50.0)
+    r1 = cl(scratch, _inputs(now=50.0, pose_enu=(0.0, 0.0, 3.0), detections=(det1,)), params)
+    assert isinstance(r1.command, GoTo)
+    assert math.isclose(z0 - r1.command.z, 0.4 * 0.5, abs_tol=1e-6)
+
+
+def test_center_land_latches_land_for_the_episode() -> None:
+    """After the hand-off, marker loss must NOT signal marker_lost: PX4 owns the
+    descent and the marker inevitably leaves view near touchdown. The behavior
+    keeps emitting Land until the state is exited (disarm -> done)."""
+    cl = get_behavior("center_land")
+    scratch: dict = {}
+    params = _cl_params()
+    det = Detection(id=0, offset_body_flu=(0.0, 0.0, -0.6), stamp=0.0)
+    r = cl(scratch, _inputs(now=0.0, pose_enu=(0.0, 0.0, 0.6), detections=(det,)), params)
+    assert isinstance(r.command, Land)
+    # Marker gone, vehicle below ground-effect view: still Land, no marker_lost.
+    r2 = cl(scratch, _inputs(now=5.0, pose_enu=(0.0, 0.0, 0.05), detections=()), params)
+    assert isinstance(r2.command, Land)
+    assert r2.signals["marker_lost"] is False
+    assert r2.signals["land_commanded"] is True
+
+
+def test_center_land_reentry_reinitializes_from_current_altitude() -> None:
+    """Fresh scratch (as after a reacquire -> descend re-entry) must not carry
+    over the previous episode's z_cmd; it re-derives from the current pose."""
+    cl = get_behavior("center_land")
+    params = _cl_params()
+    det = Detection(id=0, offset_body_flu=(0.0, 0.0, -1.5), stamp=0.0)
+    r = cl({}, _inputs(now=0.0, pose_enu=(0.0, 0.0, 1.5), detections=(det,)), params)
+    assert isinstance(r.command, GoTo)
+    assert math.isclose(r.command.z, 1.5, abs_tol=1e-9)
 
 
 def test_search_lawnmower_steps_through_legs_then_complete() -> None:

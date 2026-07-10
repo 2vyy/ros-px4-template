@@ -14,6 +14,7 @@ PX4 1.17 with uXRCE-DDS appends `_v1` to any message carrying `MESSAGE_VERSION` 
 | `/fmu/out/vehicle_local_position_v1` | `px4_msgs/msg/VehicleLocalPosition` | pub | PX4 uXRCE-DDS bridge |
 | `/fmu/out/vehicle_status_v1` | `px4_msgs/msg/VehicleStatus` | pub | PX4 uXRCE-DDS bridge |
 | `/fmu/out/battery_status_v1` | `px4_msgs/msg/BatteryStatus` | pub | PX4 uXRCE-DDS bridge |
+| `/fmu/out/vehicle_command_ack` | `px4_msgs/msg/VehicleCommandAck` | pub | PX4 uXRCE-DDS bridge |
 | `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | pub | `offboard_controller` |
 | `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | pub | `offboard_controller` |
 | `/fmu/in/vehicle_command` | `px4_msgs/msg/VehicleCommand` | pub | `offboard_controller` |
@@ -23,6 +24,7 @@ PX4 1.17 with uXRCE-DDS appends `_v1` to any message carrying `MESSAGE_VERSION` 
 | `/drone/controller_status` | `px4_ros_msgs/msg/ControllerStatus` | pub | `offboard_controller` |
 | `/drone/mission_status` | `px4_ros_msgs/msg/MissionStatus` | pub | `mission_manager` |
 | `/drone/mission_markers` | `visualization_msgs/msg/MarkerArray` | pub | `mission_manager` (RViz waypoint visualization) |
+| `/drone/land_command` | `std_msgs/msg/Empty` | pub | `mission_manager` (once per landing episode, on `Land`) |
 | `/drone/marker_detection` | `px4_ros_msgs/msg/MarkerDetection` | pub (vision) | `aruco_pose_publisher` |
 | `/drone/pose_override` | `geometry_msgs/msg/PoseStamped` | pub (vision) | `marker_localizer` (known-marker relocalization fix) |
 
@@ -35,8 +37,10 @@ PX4 1.17 with uXRCE-DDS appends `_v1` to any message carrying `MESSAGE_VERSION` 
 | `/drone/local_origin` | `offboard_controller` |
 | `/fmu/out/vehicle_status_v1` | `offboard_controller`, `mission_manager` |
 | `/fmu/out/battery_status_v1` | `mission_manager` |
+| `/fmu/out/vehicle_command_ack` | `offboard_controller` |
 | `/drone/target_pose` | `offboard_controller` |
 | `/drone/controller_status` | `mission_manager` |
+| `/drone/land_command` | `offboard_controller` |
 | `/drone/marker_detection` | `mission_manager`, `marker_localizer` |
 | `/drone/pose_override` | `position_node` (applied when fresh and within jump bound) |
 

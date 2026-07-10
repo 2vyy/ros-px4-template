@@ -63,3 +63,14 @@ scenario_file = "07_yaw_control.py"
 sim_vision = "none"
 sim_overlay = "yaw_demo"
 last_verified = "2026-07-09"
+
+[capabilities.precision_land]
+description = "Vehicle centers on the marker, descends, and PX4 lands it; no auto-rearm"
+status = "verified"
+platforms = [
+    "sim",
+]
+scenario_file = "08_precision_land.py"
+sim_vision = "aruco"
+sim_overlay = "precision_land"
+last_verified = "2026-07-09"

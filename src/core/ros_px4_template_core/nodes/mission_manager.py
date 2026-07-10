@@ -14,6 +14,12 @@ Publishers:
         the all-zero quaternion means yaw omitted (PX4 holds heading).
     /drone/mission_status   [px4_ros_msgs/MissionStatus]
     /drone/mission_markers  [visualization_msgs/MarkerArray]
+    /drone/land_command     [std_msgs/Empty]
+        Published once per landing episode when the mission emits `Land`
+        (e.g. `center_land`'s hand-off). offboard_controller reacts by
+        commanding PX4's own NAV_LAND and suppressing its own OFFBOARD/arm
+        commands. Fresh `GoTo` commands are NOT published while `Land` is
+        active, so nothing fights PX4's descent.
 =============================================================================
 """
 
@@ -33,10 +39,12 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallb
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Empty
 from visualization_msgs.msg import Marker, MarkerArray
 
+from ros_px4_template_core.lib import events
 from ros_px4_template_core.lib.frames import enu_yaw_from_quaternion
-from ros_px4_template_core.lib.mission.commands import GoTo
+from ros_px4_template_core.lib.mission.commands import GoTo, Land
 from ros_px4_template_core.lib.mission.detection import Detection
 from ros_px4_template_core.lib.mission.engine import MissionContext, tick
 from ros_px4_template_core.lib.mission.loader import load_mission_file
@@ -101,6 +109,7 @@ class MissionManager(Node):
         self._failsafe_active = False
         self._have_vehicle_status = False
         self._vehicle_status_time = 0.0
+        self._land_sent = False
 
         self.create_subscription(
             ControllerStatus,
@@ -141,6 +150,7 @@ class MissionManager(Node):
         self._pub_markers = self.create_publisher(
             MarkerArray, "/drone/mission_markers", _RELIABLE_QOS
         )
+        self._pub_land = self.create_publisher(Empty, "/drone/land_command", _RELIABLE_QOS)
 
         rate = float(self.get_parameter("tick_rate_hz").value)
         self.create_timer(1.0 / rate, self._tick, callback_group=self._tick_group)
@@ -271,7 +281,16 @@ class MissionManager(Node):
         if isinstance(command, GoTo):
             self._last_target = (command.x, command.y, command.z)
             self._last_yaw = command.yaw
-        self._publish_target(self._last_target, self._last_yaw)
+            # A fresh GoTo means any prior landing episode has ended (e.g. the
+            # mission diverted back through reacquire); a later Land is a new
+            # episode and must publish /drone/land_command again.
+            self._land_sent = False
+        if isinstance(command, Land) and not self._land_sent:
+            self._land_sent = True
+            self._pub_land.publish(Empty())
+            self.slog.event(events.LAND_COMMAND_SENT_MISSION)
+        if not isinstance(command, Land):
+            self._publish_target(self._last_target, self._last_yaw)
         self._publish_status(inputs, now)
         self._publish_markers(self._last_target)
 

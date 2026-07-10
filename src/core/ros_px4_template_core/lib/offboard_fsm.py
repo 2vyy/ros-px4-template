@@ -43,13 +43,17 @@ class FsmResult:
     send_offboard: bool
 
 
-def auto_arm_allowed(requested: bool, *, disarm_latched: bool, failsafe_latched: bool) -> bool:
-    """Effective auto-arm: the operator's request, inhibited by either latch.
+def auto_arm_allowed(
+    requested: bool, *, disarm_latched: bool, failsafe_latched: bool, landing_latched: bool
+) -> bool:
+    """Effective auto-arm: the operator's request, inhibited by any latch.
 
     Neither latch overwrites the ``auto_arm`` parameter; they only suppress
-    the automatic arm/mode commands this tick derives from it.
+    the automatic arm/mode commands this tick derives from it. ``landing_latched``
+    is set independently while a precision-land hand-off (NAV_LAND) is active,
+    so this node stops re-commanding OFFBOARD/arm while PX4's own lander runs.
     """
-    return requested and not disarm_latched and not failsafe_latched
+    return requested and not disarm_latched and not failsafe_latched and not landing_latched
 
 
 def tick(inputs: FsmInputs) -> FsmResult:
