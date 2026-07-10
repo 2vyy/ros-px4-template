@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from ros_px4_template_core.lib import mission as _m  # noqa: F401
 from ros_px4_template_core.lib.mission.commands import GoTo
 from ros_px4_template_core.lib.mission.detection import Detection
@@ -94,3 +96,63 @@ def test_entry_resets_scratch() -> None:
     tick(ctx, _mission(), _inputs(armed=True, altitude_ok=True))
     assert "follow" in ctx.scratch
     assert ctx.scratch.get("takeoff", {}) == {} or "takeoff" not in ctx.scratch
+
+
+def _precision_land_mission() -> Mission:
+    return Mission(
+        initial="descend",
+        states={
+            "descend": StateDef(
+                "descend",
+                "center_land",
+                {"target_id": 0, "tolerance_m": 0.3, "descent_rate_m_s": 0.4},
+            ),
+            "reacquire": StateDef("reacquire", "hold", {}),
+        },
+        safety=(),
+        transitions=(
+            TransitionDef("descend", "marker_lost_signal", {}, "reacquire"),
+            TransitionDef("reacquire", "marker_stable", {"id": 0, "n": 5}, "descend"),
+        ),
+        terminal=frozenset(),
+    )
+
+
+def test_reentry_reinitializes_descend_scratch_from_current_altitude() -> None:
+    """Re-entering `descend` after a `reacquire` detour must not carry over the
+    previous episode's z_cmd -- it re-derives descent from the CURRENT pose,
+    per plan 042's addendum (scratch clears on every transition)."""
+    ctx = MissionContext(state="descend")
+    mission = _precision_land_mission()
+    det = Detection(id=0, offset_body_flu=(0.0, 0.0, -5.0), stamp=0.0)
+    # Descend for a few ticks at high altitude, centered and fresh.
+    for t in (0.0, 0.1, 0.2):
+        cmd = tick(
+            ctx,
+            mission,
+            _inputs(now=t, pose_enu=(0.0, 0.0, 5.0), detections=(det,), armed=True),
+        )
+    assert isinstance(cmd, GoTo)
+    assert cmd.z < 5.0  # it has descended from the initial 5.0m
+
+    # Marker disappears -> transitions to reacquire (holds current pose).
+    cmd = tick(ctx, mission, _inputs(now=1.5, pose_enu=(0.0, 0.0, cmd.z), detections=()))
+    assert ctx.state == "reacquire"
+
+    # Marker reacquired and stable -> transitions back to descend. The vehicle
+    # is now much lower (2.0m) than the previous episode's z_cmd; re-entry must
+    # re-derive from THIS altitude, not silently jump/continue the old one.
+    stable_det = Detection(id=0, offset_body_flu=(0.0, 0.0, -2.0), stamp=1.5)
+    cmd = tick(
+        ctx,
+        mission,
+        _inputs(
+            now=1.5,
+            pose_enu=(0.0, 0.0, 2.0),
+            detections=(stable_det,),
+            detection_stability={0: 5},
+        ),
+    )
+    assert ctx.state == "descend"
+    assert isinstance(cmd, GoTo)
+    assert math.isclose(cmd.z, 2.0, abs_tol=1e-9)

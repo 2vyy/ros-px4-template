@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 
 from ros_px4_template_core.lib.frames import marker_world_from_drone
-from ros_px4_template_core.lib.mission.commands import BehaviorResult, GoTo
+from ros_px4_template_core.lib.mission.commands import BehaviorResult, GoTo, Land
 from ros_px4_template_core.lib.mission.detection import Detection
 from ros_px4_template_core.lib.mission.registry import behavior
 from ros_px4_template_core.lib.mission.types import Inputs
@@ -146,6 +146,80 @@ def center_on_marker(scratch: dict, inputs: Inputs, params: dict) -> BehaviorRes
         GoTo(tx, ty, z),
         {"centering_error": err, "centered": centered, "hold_complete": hold_complete},
     )
+
+
+@behavior("center_land")
+def center_land(scratch: dict, inputs: Inputs, params: dict) -> BehaviorResult:
+    """Visually servo over the marker, descend while centered, hand off to PX4 land.
+
+    Descends only while the selected detection is FRESH (``marker_fresh_s``)
+    AND the vehicle is centered (``tolerance_m``). On staleness or loss, the
+    commanded altitude FREEZES (never climbs back) and the behavior signals
+    ``marker_lost: True`` so the mission can divert to a ``reacquire`` state
+    (via the ``marker_lost_signal`` guard) instead of blind-descending. The
+    per-tick time delta used for descent integration is clamped to
+    ``[0, max_dt_s]`` so a clock rewind cannot subtract distance and a stall
+    cannot translate into an oversized descent step.
+
+    Once ``Land`` is emitted, the hand-off is LATCHED for the episode: PX4
+    owns the final descent and the marker inevitably leaves view near
+    touchdown, so marker loss after hand-off must not divert to ``reacquire``.
+    The behavior keeps emitting ``Land`` (``marker_lost: False``) until the
+    state is exited (the ``disarmed`` guard fires on touchdown); a transition
+    away clears the scratch, so a later episode starts fresh.
+    """
+    if scratch.get("land_latched"):
+        return BehaviorResult(
+            Land(),
+            {
+                "centering_error": float(scratch.get("last_err", 0.0)),
+                "centered": True,
+                "marker_lost": False,
+                "land_commanded": True,
+            },
+        )
+
+    tid = params.get("target_id")
+    tid = int(tid) if tid is not None else None
+    tol = float(params.get("tolerance_m", 0.3))
+    descent_rate = float(params.get("descent_rate_m_s", 0.4))
+    land_altitude = float(params.get("land_altitude_m", 0.7))
+    min_altitude = float(params.get("min_altitude_m", 0.3))
+    fresh_s = float(params.get("marker_fresh_s", 1.0))
+    max_dt_s = float(params.get("max_dt_s", 0.5))
+
+    det = _latest(inputs.detections, tid)
+    if det is not None:
+        tx, ty, _ = marker_world_from_drone(inputs.pose_enu, det.offset_body_flu, inputs.yaw_enu)
+        scratch["tx"], scratch["ty"] = tx, ty
+        scratch["last_det_stamp"] = det.stamp
+    else:
+        tx = scratch.get("tx", inputs.pose_enu[0])
+        ty = scratch.get("ty", inputs.pose_enu[1])
+
+    fresh = "last_det_stamp" in scratch and (inputs.now - scratch["last_det_stamp"]) <= fresh_s
+    err = math.hypot(inputs.pose_enu[0] - tx, inputs.pose_enu[1] - ty)
+    centered = err <= tol
+
+    if "z_cmd" not in scratch:
+        scratch["z_cmd"] = inputs.pose_enu[2]
+    raw_dt = inputs.now - scratch.get("last_now", inputs.now)
+    dt = min(max(raw_dt, 0.0), max_dt_s)
+    scratch["last_now"] = inputs.now
+
+    if fresh and centered:
+        scratch["z_cmd"] = max(min_altitude, scratch["z_cmd"] - descent_rate * dt)
+
+    signals = {
+        "centering_error": err,
+        "centered": centered,
+        "marker_lost": not fresh,
+    }
+    if fresh and centered and inputs.pose_enu[2] <= land_altitude:
+        scratch["land_latched"] = True
+        scratch["last_err"] = err
+        return BehaviorResult(Land(), {**signals, "land_commanded": True})
+    return BehaviorResult(GoTo(tx, ty, scratch["z_cmd"]), {**signals, "land_commanded": False})
 
 
 @behavior("goto_origin")

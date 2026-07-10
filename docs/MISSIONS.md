@@ -114,6 +114,7 @@ Registered in `lib/mission/behaviors.py`. Each returns a command plus signals
 | `follow_waypoints` | `waypoints` (list of `[x,y,z]` or `[x,y,z,yaw_deg]`) **or** `path_file` (YAML path, resolved to waypoints by the loader), `tolerance_m` (0.4), `hold_s` (2.0) | `reached`, `waypoints_done`, `waypoint_index` |
 | `search_lawnmower` | `center` (`[0,0]`), `spacing_m` (2.0), `legs` (4), `altitude_m` (3.0), `hold_s` (0.0) | `search_complete` |
 | `center_on_marker` | `target_id`, `altitude_m` (current z), `tolerance_m` (0.4), `hold_s` (10.0) | `centering_error`, `centered`, `hold_complete` |
+| `center_land` | `target_id`, `tolerance_m` (0.3), `descent_rate_m_s` (0.4), `land_altitude_m` (0.7), `min_altitude_m` (0.3), `marker_fresh_s` (1.0, freshness window for the selected detection), `max_dt_s` (0.5, clamps the per-tick descent-integration time delta to `[0, max_dt_s]`) | `centering_error`, `centered`, `marker_lost` (detection stale/missing -- altitude is frozen, not descending; forced `false` once `Land` is latched, since PX4 owns the final descent and the marker leaves view near touchdown), `land_commanded` |
 | `goto_origin` | `z` (current z), `tolerance_m` (0.5) | `reached` |
 
 `path_file` is resolved relative to the project root and may be used anywhere
@@ -139,8 +140,16 @@ Registered in `lib/mission/guards.py`. Each is a pure predicate over the snapsho
 | `inputs_stale` | `key` (`odom`), `t` (1.0) | named input older than `t` s |
 | `battery_low` | `frac` (0.2), `max_age_s` (5.0) | battery is connected, fresh (age <= `max_age_s`), and remaining fraction <= `frac` |
 | `failsafe_active` | — | PX4 reports `VehicleStatus.failsafe` true (logical mirror only, see warning below) |
+| `disarmed` | — | vehicle is not armed |
+| `marker_lost_signal` | — | the current state's behavior signalled `marker_lost` (e.g. `center_land` on detection staleness/loss) |
 
 For `marker_*` guards, omitting `id` matches any marker.
+
+`marker_lost_signal` reads the exact freshness decision the behavior made
+this tick (via its `marker_lost` signal), rather than recomputing freshness
+from `inputs.detections` independently the way the inputs-only `marker_lost`
+guard does -- this keeps a descend-episode's own staleness judgment and its
+mission transition from ever disagreeing.
 
 An unknown, disconnected, or stale battery reading never trips `battery_low` --
 it fails toward "don't know", not "low". Combine `battery_low` with
@@ -188,6 +197,40 @@ marker (mapped in `config/markers.yaml`) into a `/drone/pose_override`
 when it is fresh and within a jump bound — so a known marker can correct drift
 without letting a bad fix teleport the vehicle. Missions consume the corrected
 pose transparently; the `search_relocalize` mission demonstrates the full loop.
+
+## Precision landing and the reacquire pattern
+
+`config/missions/precision_land.yaml` demonstrates `center_land`: approach a
+marker, center over it, descend while centered, and hand off to PX4's own
+`NAV_LAND` (mission emits `Land`; `mission_manager` publishes
+`/drone/land_command` once per landing episode; `offboard_controller` sends
+`VEHICLE_CMD_NAV_LAND` and latches its own OFFBOARD/arm commands off for the
+duration -- an independent latch reason alongside the disarm and failsafe
+latches, all three combined by `offboard_fsm.auto_arm_allowed`).
+
+The graph adds a `reacquire` state so a lost or never-stable marker never
+turns into a blind descent:
+
+- `approach` enters `descend` only on a **stable** marker observation
+  (`marker_stable`); reaching the approach waypoint without one goes to
+  `reacquire` instead.
+- `descend` reverts to `reacquire` when `center_land` signals `marker_lost`
+  (via the `marker_lost_signal` guard). The commanded altitude freezes at the
+  moment of loss -- it never climbs back -- while `reacquire` holds the
+  current pose.
+- `reacquire` returns to `descend` once the marker is stable again. Because
+  the engine clears a state's scratch on every transition (see FSM semantics
+  above), re-entering `descend` re-derives its descent from the vehicle's
+  CURRENT altitude, not the frozen value from the previous episode.
+- `descend` reaches `done` on `disarmed`: PX4's own AUTO_LAND disarms the
+  vehicle; the mission only observes that. Once `Land` is latched (hand-off
+  sent), `center_land` stops signalling `marker_lost` -- the marker inevitably
+  leaves view near touchdown and PX4 owns the descent, so a post-hand-off loss
+  must not divert back to `reacquire`.
+
+`Land` is emitted once per landing episode; `mission_manager`'s publish latch
+resets whenever a `GoTo` resumes (e.g. a `reacquire` detour), so a later
+episode issues a fresh `/drone/land_command`.
 
 ## Adding a behavior or guard
 
@@ -242,3 +285,4 @@ mission:
 | `05_aruco_hover` | `vision=aruco` (`marker_hover` mission) |
 | `06_search_relocalize` | `vision=aruco` (`search_relocalize` mission + `marker_localizer`) |
 | `07_yaw_control` | Overlay `yaw_demo` (`yaw_demo` mission, no vision) |
+| `08_precision_land` | `vision=aruco`, overlay `precision_land` (`precision_land` mission) |

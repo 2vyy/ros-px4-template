@@ -129,3 +129,14 @@ def test_battery_low_invalid_frac_raises() -> None:
 def test_failsafe_active_guard() -> None:
     assert get_guard("failsafe_active")(_inputs(failsafe_active=True), {}, {}) is True
     assert get_guard("failsafe_active")(_inputs(failsafe_active=False), {}, {}) is False
+
+
+def test_disarmed_guard() -> None:
+    assert get_guard("disarmed")(_inputs(armed=True), {}, {}) is False
+    assert get_guard("disarmed")(_inputs(armed=False), {}, {}) is True
+
+
+def test_marker_lost_signal_guard() -> None:
+    assert get_guard("marker_lost_signal")(_inputs(), {"marker_lost": True}, {}) is True
+    assert get_guard("marker_lost_signal")(_inputs(), {"marker_lost": False}, {}) is False
+    assert get_guard("marker_lost_signal")(_inputs(), {}, {}) is False

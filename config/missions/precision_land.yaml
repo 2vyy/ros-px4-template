@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=../../schemas/mission.schema.json
+# Fly to the marker area, center over it, descend, and hand off to PX4 land.
+#
+# Freeze/reacquire contract (plan 042 addendum, BINDING over the base plan):
+# - `approach` enters `descend` ONLY through a stable observation of the
+#   marker (`marker_stable`). Reaching the waypoint WITHOUT a stable marker
+#   goes to `reacquire` instead -- there is no waypoints_done -> descend edge.
+# - `descend`'s `center_land` behavior descends only while the marker is fresh
+#   AND centered; on loss it freezes the commanded altitude (never climbs
+#   back) and signals `marker_lost`, which the `marker_lost_signal` guard uses
+#   to divert to `reacquire`.
+# - `reacquire` holds the current pose (does not chase); it returns to
+#   `descend` only once the marker is stable again (`marker_stable`). Because
+#   the engine clears state scratch on every transition, re-entering `descend`
+#   re-derives its descent from the CURRENT altitude, not the frozen value
+#   from the previous episode.
+# - `descend -> done` on `disarmed`: PX4's own AUTO_LAND disarms the vehicle;
+#   the mission engine only observes that, it does not command the disarm.
+#   Once `Land` is latched (hand-off sent), `center_land` stops signalling
+#   `marker_lost` -- the marker inevitably leaves view near touchdown -- so
+#   the mission stays in `descend` until the `disarmed` guard fires.
+mission:
+  initial: takeoff
+  safety:
+    - {guard: estimate_invalid, to: hold_safe}
+    - {guard: inputs_stale, params: {t: 1.0}, to: hold_safe}
+  states:
+    takeoff:    {behavior: hold, params: {z: 3.0}}
+    approach:   {behavior: follow_waypoints, params: {waypoints: [[8.0, 0.0, 3.0]], tolerance_m: 0.6, hold_s: 1.0}}
+    reacquire:  {behavior: hold}
+    descend:    {behavior: center_land, params: {target_id: 0, tolerance_m: 0.3, descent_rate_m_s: 0.4, land_altitude_m: 0.7, min_altitude_m: 0.3, marker_fresh_s: 1.0, max_dt_s: 0.5}}
+    done:       {behavior: hold}
+    hold_safe:  {behavior: hold}
+  transitions:
+    - {from: takeoff,    guard: armed_at_altitude,                    to: approach}
+    - {from: approach,   guard: marker_stable, params: {id: 0, n: 5}, to: descend}
+    - {from: approach,   guard: waypoints_done,                       to: reacquire}
+    - {from: reacquire,  guard: marker_stable, params: {id: 0, n: 5}, to: descend}
+    - {from: descend,    guard: marker_lost_signal,                   to: reacquire}
+    - {from: descend,    guard: disarmed,                             to: done}
+  terminal: [done]

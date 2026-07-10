@@ -12,6 +12,15 @@ a failsafe latch here). Latching never overrides PX4's own failsafe action or
 stops setpoint/OffboardControlMode streaming; it only suppresses this node's
 own OFFBOARD/arm requests. An explicit ``auto_arm=true`` parameter set clears
 both latches, but is rejected while PX4 still reports an active failsafe.
+
+On ``/drone/land_command`` (mission-commanded precision landing), this node
+commands PX4's own ``NAV_LAND`` and latches a THIRD, independent reason
+(``_landing_latched``, plan 042) so the FSM stops re-commanding OFFBOARD/arm
+while PX4's AUTO_LAND runs. An explicit ``auto_arm=true`` is rejected while
+the landing hand-off is still active (NAV_LAND sent, vehicle not yet
+disarmed); once disarmed it clears the landing latch (and the landing state)
+so a later scenario in the same sim boot can land again.
+
 =============================================================================
 """
 
@@ -33,6 +42,7 @@ from px4_ros_msgs.msg import ControllerStatus
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Empty
 
 from ros_px4_template_core.lib import events, offboard_fsm
 from ros_px4_template_core.lib.frames import enu_setpoint_to_px4_ned, heading_ned_from_enu_yaw
@@ -100,6 +110,8 @@ class OffboardController(Node):
         self._disarm_latched = False
         self._failsafe_active = False
         self._failsafe_latched = False
+        self._landing = False
+        self._landing_latched = False
         self._arm_failed = False
         self._arm_fail_reason = ""
         self._px4_ever_disarmed = False
@@ -122,12 +134,22 @@ class OffboardController(Node):
                             successful=False,
                             reason="cannot clear latches while PX4 failsafe is active",
                         )
+                    if self._landing and self._armed:
+                        self.slog.event(events.LANDING_LATCH_CLEAR_REJECTED)
+                        return SetParametersResult(
+                            successful=False,
+                            reason="cannot clear landing latch while landing hand-off is active",
+                        )
                     if self._disarm_latched:
                         self._disarm_latched = False
                         self.slog.event(events.AUTO_ARM_LATCH_CLEARED_BY_PARAM, latch="disarm")
                     if self._failsafe_latched:
                         self._failsafe_latched = False
                         self.slog.event(events.AUTO_ARM_LATCH_CLEARED_BY_PARAM, latch="failsafe")
+                    if self._landing_latched:
+                        self._landing_latched = False
+                        self._landing = False
+                        self.slog.event(events.AUTO_ARM_LATCH_CLEARED_BY_PARAM, latch="landing")
             return SetParametersResult(successful=True)
 
         self.add_on_set_parameters_callback(_on_set_params)
@@ -156,6 +178,7 @@ class OffboardController(Node):
             self._command_ack_cb,
             _PX4_QOS,
         )
+        self.create_subscription(Empty, "/drone/land_command", self._land_cb, _RELIABLE_QOS)
 
         self._pub_setpoint = self.create_publisher(
             TrajectorySetpoint, "/fmu/in/trajectory_setpoint", _PX4_QOS
@@ -259,7 +282,29 @@ class OffboardController(Node):
             self._px4_ever_disarmed = True
             self.slog.event("PX4_DISARMED_OBSERVED")
 
+    def _land_cb(self, _msg: Empty) -> None:
+        if self._landing:
+            return
+        # Set the inhibit BEFORE commanding NAV_LAND: once PX4 switches
+        # nav_state away from OFFBOARD, an unlatched FSM would immediately try
+        # to re-request OFFBOARD/arm and fight the lander.
+        self._landing = True
+        self._landing_latched = True
+        self._vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+        self.slog.event(events.LAND_COMMAND_RECEIVED)
+
     def _command_ack_cb(self, msg: VehicleCommandAck) -> None:
+        if msg.command == VehicleCommand.VEHICLE_CMD_NAV_LAND:
+            result = int(msg.result)
+            if result == VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED:
+                self.slog.event(events.LAND_ACK_OK)
+                return
+            reason = _ACK_RESULT_NAMES.get(result, f"unknown({result})")
+            # Remain inhibited and do not retry: a rejected/failed NAV_LAND ack
+            # means PX4 declined the hand-off; retry-looping the command would
+            # mask a real problem, not fix it.
+            self.slog.event(events.LAND_ACK_DENIED, result=result, reason=reason)
+            return
         if msg.command != VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM:
             return
         result = int(msg.result)
@@ -289,6 +334,7 @@ class OffboardController(Node):
             bool(self.get_parameter("auto_arm").value),
             disarm_latched=self._disarm_latched,
             failsafe_latched=self._failsafe_latched,
+            landing_latched=self._landing_latched,
         )
         xrce_elapsed = (
             (self.get_clock().now().nanoseconds / 1e9 - self._xrce_connect_time)

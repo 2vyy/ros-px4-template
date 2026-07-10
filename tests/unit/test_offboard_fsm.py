@@ -73,11 +73,47 @@ def test_arm_failed_state() -> None:
 
 
 def test_auto_arm_allowed_truth_table() -> None:
-    assert auto_arm_allowed(True, disarm_latched=False, failsafe_latched=False) is True
-    assert auto_arm_allowed(True, disarm_latched=True, failsafe_latched=False) is False
-    assert auto_arm_allowed(True, disarm_latched=False, failsafe_latched=True) is False
-    assert auto_arm_allowed(True, disarm_latched=True, failsafe_latched=True) is False
-    assert auto_arm_allowed(False, disarm_latched=False, failsafe_latched=False) is False
-    assert auto_arm_allowed(False, disarm_latched=True, failsafe_latched=False) is False
-    assert auto_arm_allowed(False, disarm_latched=False, failsafe_latched=True) is False
-    assert auto_arm_allowed(False, disarm_latched=True, failsafe_latched=True) is False
+    assert (
+        auto_arm_allowed(True, disarm_latched=False, failsafe_latched=False, landing_latched=False)
+        is True
+    )
+    assert (
+        auto_arm_allowed(True, disarm_latched=True, failsafe_latched=False, landing_latched=False)
+        is False
+    )
+    assert (
+        auto_arm_allowed(True, disarm_latched=False, failsafe_latched=True, landing_latched=False)
+        is False
+    )
+    assert (
+        auto_arm_allowed(True, disarm_latched=True, failsafe_latched=True, landing_latched=False)
+        is False
+    )
+    assert (
+        auto_arm_allowed(True, disarm_latched=False, failsafe_latched=False, landing_latched=True)
+        is False
+    )
+    assert (
+        auto_arm_allowed(True, disarm_latched=True, failsafe_latched=True, landing_latched=True)
+        is False
+    )
+    assert (
+        auto_arm_allowed(False, disarm_latched=False, failsafe_latched=False, landing_latched=False)
+        is False
+    )
+    assert (
+        auto_arm_allowed(False, disarm_latched=True, failsafe_latched=False, landing_latched=False)
+        is False
+    )
+    assert (
+        auto_arm_allowed(False, disarm_latched=False, failsafe_latched=True, landing_latched=False)
+        is False
+    )
+    assert (
+        auto_arm_allowed(False, disarm_latched=True, failsafe_latched=True, landing_latched=False)
+        is False
+    )
+    assert (
+        auto_arm_allowed(False, disarm_latched=False, failsafe_latched=False, landing_latched=True)
+        is False
+    )

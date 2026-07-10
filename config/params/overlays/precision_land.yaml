@@ -1,0 +1,12 @@
+offboard_controller:
+  ros__parameters:
+    auto_arm: true
+mission_manager:
+  ros__parameters:
+    mission_file: "config/missions/precision_land.yaml"
+# center_land visually servos onto the marker itself; relocalizing on it would
+# fight the descent, so keep marker_localizer dormant here (same rationale as
+# marker_hover.yaml).
+marker_localizer:
+  ros__parameters:
+    enabled: false

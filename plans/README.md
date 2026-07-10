@@ -72,7 +72,7 @@ round-trip; (b) add the highest-leverage competition capabilities that fit the
 | 039  | Cache the workspace env sourcing that runs on every `just` command | P3 | S | — | DONE (cache create/hit/invalidate/corrupt-recover checks; cold `mission list` 0.74s, warm 0.49s; `just check`: 243 passed) |
 | 040  | Rename the miscounted `setpoints_sent` FSM gate; delete a dead quat write | P3 | S | — | DONE (`test_offboard_fsm.py`: 7 tests; old-name grep clean; `just check`: 239 passed) |
 | 041  | Yaw control end to end (mission YAML to `TrajectorySetpoint.yaw`) | P1 | M | — | DONE (`just check`: 270 passed; `just scenario 07_yaw_control` PASS: setpoint_yaw_ned=0.000, vehicle_yaw_enu=1.562, err 0.009 rad; `just scenario 01_arm_takeoff` PASS with NaN yaw; `just cap mark yaw_control sim`) |
-| 042  | Precision landing on a marker (`center_land`, `Land` executed end to end) | P1 | M/L | 030 | TODO |
+| 042  | Precision landing on a marker (`center_land`, `Land` executed end to end) | P1 | M/L | 030 | DONE (`just check`: 297 passed; `just scenario 08_precision_land` PASS: landed xy_err=0.06m, froze_on_loss=True, reacquired=True, nav_land_ack=ACCEPTED, no rearm/OFFBOARD after hand-off; `just test e2e` all pass; `just cap mark precision_land sim`) |
 | 043  | Competition practice worlds + committed ArUco marker assets | P2 | M | soft: 031 | TODO |
 | 044  | Battery/failsafe in mission `Inputs` (`battery_low` / `failsafe_active` guards) | P2 | M | — | DONE (`just check`: 286 passed; live: `/fmu/out/battery_status_v1` connected=true remaining=0.99995; forced `TRANSITION ... guard=battery_low` via temp mission; `just log topics` PASS; `just scenario 01_arm_takeoff` PASS) |
 
