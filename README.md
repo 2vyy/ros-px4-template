@@ -149,4 +149,5 @@ just analyze                      # overlay+query the latest recorded run via sk
 - [rosbridge and ros-mcp-server](docs/MCP.md)
 - [Mission phases and YAML schema](docs/MISSIONS.md)
 - [Record & analyze a run with skein](docs/SKEIN.md)
+- [Competition worlds and ArUco assets](docs/SIM.md)
 

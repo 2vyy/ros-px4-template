@@ -50,6 +50,7 @@ def _gz_paths(project_root: Path, px4_dir: str) -> str:
             None,
             [
                 str(project_root / "sim" / "worlds"),
+                str(project_root / "sim" / "models"),
                 f"{px4_dir}/Tools/simulation/gz/worlds",
                 f"{px4_dir}/Tools/simulation/gz/models",
                 os.environ.get("GZ_SIM_RESOURCE_PATH", ""),

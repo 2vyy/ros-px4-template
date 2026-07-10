@@ -17,6 +17,7 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/config", ["../../config/markers.yaml"]),
+        (f"share/{package_name}/config/marker_maps", glob("../../config/marker_maps/*.yaml")),
         (f"share/{package_name}/config/missions", glob("../../config/missions/*.yaml")),
         (f"share/{package_name}/config/params", glob("../../config/params/*.yaml")),
         (
