@@ -1,6 +1,8 @@
+# auto_arm is false by default: `just sim` boots disarmed (the documented contract).
+# Overlays in config/params/overlays/ set auto_arm true for flight scenarios.
 offboard_controller:
   ros__parameters:
-    auto_arm: true
+    auto_arm: false
     arm_delay_s: 10.0
     target_altitude_m: 3.0
     position_ramp_s: 8.0
