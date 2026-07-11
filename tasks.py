@@ -847,6 +847,27 @@ def _run_e2e_sim_group(
                 f"in group (vision={vision} overlay={overlay})",
                 file=sys.stderr,
             )
+            # Write a failure report per scenario (same shape as write_report in
+            # tests/scenarios/_common.py) so the e2e report block lists them
+            # instead of silently omitting scenarios that never ran.
+            for s in scenarios:
+                (LOG_DIR / f"scenario_{s}.json").write_text(
+                    json.dumps(
+                        {
+                            "scenario": s,
+                            "passed": False,
+                            "elapsed_s": 0.0,
+                            "detail": {
+                                "reason": "sim_never_ready",
+                                "vision": vision,
+                                "overlay": overlay,
+                            },
+                        },
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
             return len(scenarios)
 
         for s in scenarios:
@@ -933,7 +954,12 @@ def test(
         # requested vision/overlay config is identical.
         configs = scenario_sim_configs("sim")
         if not configs:
-            print("Warning: no sim scenarios found in capabilities.toml")
+            print(
+                "No sim scenarios declared in tests/capabilities.toml (platforms must "
+                "include 'sim'). Refusing to report a vacuous e2e pass.",
+                file=sys.stderr,
+            )
+            raise typer.Exit(int(ExitCode.PRECONDITION))
 
         import atexit
 
