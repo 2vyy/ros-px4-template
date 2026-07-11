@@ -104,10 +104,6 @@ def _gz_px4_stack(context, *args, **kwargs):
     world = LaunchConfiguration("world").perform(context)
     model = LaunchConfiguration("model").perform(context)
     headless = LaunchConfiguration("headless").perform(context).lower() == "true"
-    speed = float(LaunchConfiguration("speed").perform(context))
-    if speed <= 0 or speed > 1.0:
-        print(f"[sim_full] WARNING: speed factor {speed} is invalid, capping to 1.0", flush=True)
-        speed = 1.0
 
     project_root = Path(__file__).resolve().parents[2]
     px4_dir = _require_px4_dir()
@@ -129,7 +125,6 @@ def _gz_px4_stack(context, *args, **kwargs):
                 "PX4_GZ_SERVER_CFG": server_config,
                 "SIM_WORLD": world,
                 "SIM_MODEL": model,
-                "SIM_SPEED": f"{speed}",
                 "HEADLESS_FLAG": "1" if headless else "",
             },
             name="gz_px4_stack",
@@ -201,7 +196,6 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("log_dir", default_value=str(project_root / "logs")),
             DeclareLaunchArgument("vision", default_value="none"),
             DeclareLaunchArgument("headless", default_value="false"),
-            DeclareLaunchArgument("speed", default_value="1.0"),
             DeclareLaunchArgument("param_overlay", default_value=""),
             SetEnvironmentVariable(name="GZ_IP", value="127.0.0.1"),
             SetEnvironmentVariable(name="GZ_SIM_RESOURCE_PATH", value=gz_paths),

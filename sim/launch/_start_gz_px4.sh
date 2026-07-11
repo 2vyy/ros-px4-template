@@ -9,7 +9,6 @@
 #   PX4_GZ_PLUGINS_DIR gz_plugins build dir
 #   PX4_GZ_SERVER_CFG  PX4 gz server.config path
 #   SIM_WORLD SIM_MODEL  world and model names
-#   SIM_SPEED          real-time speed factor as a string (e.g. 1.0)
 #   HEADLESS_FLAG      "1" for headless, else empty
 #
 # We do NOT pre-start `gz sim`. PX4 runs WITHOUT PX4_GZ_STANDALONE, so its rcS
@@ -22,16 +21,13 @@ set -e
 
 export GZ_IP=127.0.0.1
 
-# CRITICAL: only export PX4_SIM_SPEED_FACTOR for non-realtime runs. Setting it at
-# all makes PX4's rcS (px4-rc.gzsim) call the gz set_physics service, which sends
-# real_time_factor but leaves max_step_size unset, so protobuf defaults it to 0,
-# overwriting the world's 0.004 step. The zero step makes physics integration blow
-# up: after arming the vehicle climbs away uncontrollably (the altitude "runaway").
-# At the default speed=1.0 we omit it and the world's own real-time settings apply.
-# (verified: omitting it gives a clean 3 m offboard hold.)
-if [ "$SIM_SPEED" != "1.0" ]; then
-  export PX4_SIM_SPEED_FACTOR="$SIM_SPEED"
-fi
+# CRITICAL: never export PX4_SIM_SPEED_FACTOR, and never call the gz set_physics
+# service on a running stack (not from here, not from wait_ready, not by hand).
+# The env var makes PX4's rcS (px4-rc.gzsim) call set_physics; and ANY set_physics
+# call, even with values identical to the running physics and issued pre-arm on a
+# grounded vehicle, latently corrupts PX4's altitude estimate: z runs away to
+# kilometers once the vehicle arms (verified 2026-07-11, plans/065 spike truth
+# table). Physics settings come solely from the world SDF loaded at boot.
 
 export GZ_SIM_RESOURCE_PATH="$GZ_PATHS"
 export PX4_GZ_WORLDS="$PX4_GZ_WORLDS_DIR"
