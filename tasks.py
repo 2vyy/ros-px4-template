@@ -998,7 +998,9 @@ def scenario(
         _resolve_scenario_script(name)
         print(
             f"No declared sim config for '{name}' in tests/capabilities.toml — "
-            "running against the existing sim (start one with `just sim` first)."
+            "running against the existing sim (start one with `just sim` first). "
+            f"To make `just scenario {name}` boot the right sim, add the entry "
+            'with platforms = ["sim"] (see `just scenario-new` output).'
         )
         print(f"Running scenario test: {name}...")
         passed = False
@@ -1056,10 +1058,11 @@ def scenario_new(
     print(f"[capabilities.{cap_id}]")
     print('description = "TODO: what this scenario verifies"')
     print('status = "unverified"')
-    print("platforms = []")
+    print('platforms = ["sim"]')
     print(f'scenario_file = "{name}.py"')
     print('sim_vision = "none"')
     print('sim_overlay = "auto_arm"\n')
+    print("   (platforms declares where it runs; `just cap mark` records verification)")
     print(f"  3. Run it:  just scenario {name}")
 
 
