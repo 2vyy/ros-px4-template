@@ -632,9 +632,6 @@ def sim(
     world: str = typer.Option("default", "--world", help="World file name"),
     model: str = typer.Option("x500", "--model", help="Airframe model"),
     vision: str = typer.Option("false", "--vision", help="Enable vision/aruco detection"),
-    speed: float = typer.Option(
-        1.0, "--speed", help="Gazebo physics speed (<=1.0, headless only)."
-    ),
     overlay: str = typer.Option(
         "", "--overlay", help="Param overlay: auto_arm | inspect | hover (default: none, disarmed)."
     ),
@@ -648,12 +645,6 @@ def sim(
 
     Never holds the terminal. Watch with `just log tail`; stop with `just stop`.
     """
-    if speed <= 0 or speed > 1.0:
-        print(f"--speed must be in (0, 1.0], got {speed}", file=sys.stderr)
-        raise typer.Exit(int(ExitCode.USAGE))
-    if gui and speed != 1.0:
-        print(f"--speed {speed} ignored with --gui (headless only)")
-        speed = 1.0
     if overlay and overlay not in ("auto_arm", "inspect", "hover"):
         print(f"--overlay must be auto_arm|inspect|hover, got {overlay!r}", file=sys.stderr)
         raise typer.Exit(int(ExitCode.USAGE))
@@ -683,7 +674,6 @@ def sim(
         f"model:={model}",
         f"headless:={headless_val}",
         f"log_dir:={LOG_DIR}",
-        f"speed:={speed}",
         f"vision:={vision_arg}",
         *overlay_args,
     ]
@@ -707,10 +697,6 @@ def sim(
             "tools/wait_ready.py",
             "--timeout",
             str(timeout),
-            "--speed",
-            str(speed),
-            "--world",
-            world,
         ],
         cwd=str(ROOT),
     )
@@ -955,8 +941,6 @@ def _run_e2e_sim_group(
                     "tools/wait_ready.py",
                     "--timeout",
                     "180",
-                    "--speed",
-                    "1.0",
                 ],
                 check=True,
                 cwd=str(ROOT),

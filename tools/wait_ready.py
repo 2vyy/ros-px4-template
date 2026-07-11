@@ -117,45 +117,10 @@ def _px4_standby() -> bool:
     return _GCS_PARAMS_FLAG.exists()
 
 
-def _set_physics_speed(speed: float, world: str) -> bool:
-    update_rate = int(speed * 250)
-    try:
-        r = subprocess.run(
-            [
-                "gz",
-                "service",
-                "-s",
-                f"/world/{world}/set_physics",
-                "--reqtype",
-                "gz.msgs.Physics",
-                "--reptype",
-                "gz.msgs.Boolean",
-                "--timeout",
-                "2000",
-                "--req",
-                f"real_time_factor: {speed}, real_time_update_rate: {update_rate}, max_step_size: 0.004",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        return "data: true" in r.stdout
-    except Exception:
-        return False
-
-
 @app.command()
 def main(
     timeout: int = typer.Option(180, "--timeout", help="Seconds before giving up"),
-    speed: float = typer.Option(1.0, "--speed", help="Physics speed factor (must not exceed 1.0)"),
-    world: str = typer.Option("default", "--world", help="Gazebo world name (for set_physics)"),
 ) -> None:
-    if speed <= 0 or speed > 1.0:
-        typer.echo(
-            f"Error: --speed must be between 0 (exclusive) and 1.0 (inclusive), got {speed}",
-            err=True,
-        )
-        sys.exit(1)
     deadline = time.monotonic() + timeout
     typer.echo(f"Waiting for sim stack (timeout {timeout}s)...")
 
@@ -180,18 +145,13 @@ def main(
                 typer.echo("  [OK] GCS params committed (PX4 ready)")
 
         if rosbridge_ok and topic_ok and standby_ok:
-            # Only throttle physics for faster-than-realtime runs. At speed 1.0 the world
-            # SDF already provides real_time_factor=1.0 / real_time_update_rate=250 /
-            # max_step_size=0.004, so calling set_physics is redundant — and dangerous: it
-            # re-initialises the Gazebo integrator, which destabilises an already-airborne
-            # vehicle (e.g. under the auto_arm overlay) and triggers the altitude runaway.
-            # Skip it entirely at the default speed.
-            if speed == 1.0:
-                typer.echo("  [OK] Physics at realtime (world SDF defaults; set_physics skipped)")
-            elif _set_physics_speed(speed, world):
-                typer.echo(f"  [OK] Gazebo physics speed throttled to {speed}x")
-            else:
-                typer.echo("  [WARN] Failed to set Gazebo physics speed (might run unthrottled)")
+            # NEVER call the gz set_physics service here (or anywhere on a running
+            # stack). Verified 2026-07-11 (plans/065 spike): ANY set_physics call,
+            # even with values identical to the running physics and issued pre-arm
+            # on a grounded vehicle, latently corrupts PX4's altitude estimate: z
+            # runs away to kilometers once the vehicle arms. Physics comes solely
+            # from the world SDF at boot.
+            typer.echo("  [OK] Physics at realtime (world SDF defaults)")
             typer.echo("Stack ready.")
             raise typer.Exit(0)
 

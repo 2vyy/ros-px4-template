@@ -11,6 +11,12 @@ and close to the dead-reckoned estimate (within `override_max_jump_m`). This is
 the relocalization hook: a known-marker fix nudges the SoT pose without letting
 a bad fix teleport the vehicle.
 
+Divergence watchdog (observational only, never alters the published pose): when
+|z| exceeds `divergence_z_m` (default 500 m) a single ERROR line is logged, and
+an info line when the estimate returns in bounds. A silently diverged estimator
+(z at kilometers while the stack looks healthy) is a known PX4/gz failure mode;
+the ERROR makes it greppable the moment it starts.
+
 =============================================================================
 ROS 2 Interface
 Subscriptions:
@@ -74,12 +80,15 @@ class PositionNode(Node):
         self.declare_parameter("log_dir", "./logs")
         self.declare_parameter("override_timeout_s", 0.5)
         self.declare_parameter("override_max_jump_m", 10.0)
+        self.declare_parameter("divergence_z_m", 500.0)
 
         self._topic = _POSITION_TOPIC
         self._frame_id = str(self.get_parameter("frame_id").value)
         self._child_frame_id = str(self.get_parameter("child_frame_id").value)
         self._override_timeout_s = float(self.get_parameter("override_timeout_s").value)
         self._override_max_jump_m = float(self.get_parameter("override_max_jump_m").value)
+        self._divergence_z_m = float(self.get_parameter("divergence_z_m").value)
+        self._diverged = False
         self.slog = StructuredLogger(self)
 
         self._frame = Px4LocalFrame()
@@ -134,6 +143,16 @@ class PositionNode(Node):
                         y=y_enu,
                         z=z_enu,
                     )
+
+        if abs(z_enu) > self._divergence_z_m:
+            if not self._diverged:
+                self._diverged = True
+                self.slog.error(
+                    "position estimate diverged", z_enu=z_enu, bound_m=self._divergence_z_m
+                )
+        elif self._diverged:
+            self._diverged = False
+            self.slog.info("position estimate back in bounds", z_enu=z_enu)
 
         stamp = self.get_clock().now().to_msg()
 

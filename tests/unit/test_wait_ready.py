@@ -60,34 +60,14 @@ def test_timeout_reports_standby_state():
     assert "standby=False" in result.output
 
 
-def test_set_physics_uses_world_arg():
-    calls = []
-
-    class Result:
-        stdout = "data: true"
-
-    def fake_run(argv, **kwargs):
-        calls.append(argv)
-        return Result()
-
-    with patch("wait_ready.subprocess.run", fake_run):
-        assert wait_ready._set_physics_speed(0.5, "marker_field") is True
-
-    assert "/world/marker_field/set_physics" in calls[0]
-
-
-def test_speed_below_one_passes_world_through():
+def test_set_physics_path_is_gone():
+    """Guard against reintroduction: ANY live gz set_physics call latently corrupts
+    PX4's altitude estimate (plans/065 spike truth table), so wait_ready must have
+    no speed option and no set_physics helper."""
+    assert not hasattr(wait_ready, "_set_physics_speed")
     runner = CliRunner()
-    with (
-        patch("wait_ready._topic_live", return_value=True),
-        patch("wait_ready._rosbridge_ws_ok", return_value=True),
-        patch("wait_ready._px4_standby", return_value=True),
-        patch("wait_ready._set_physics_speed", return_value=True) as set_physics,
-    ):
-        result = runner.invoke(app, ["--timeout", "5", "--speed", "0.5", "--world", "foo"])
-
-    assert result.exit_code == 0
-    set_physics.assert_called_once_with(0.5, "foo")
+    result = runner.invoke(app, ["--timeout", "5", "--speed", "0.5"])
+    assert result.exit_code != 0
 
 
 # ── _px4_standby unit tests ──────────────────────────────────────────────────
