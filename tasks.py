@@ -20,8 +20,10 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import typer
@@ -282,6 +284,105 @@ def _resolve_scenario_script(name: str) -> Path:
     if available:
         print(f"Available: {', '.join(available)}", file=sys.stderr)
     raise typer.Exit(1) from None
+
+
+E2E_STATE = LOG_DIR / "e2e_state.json"
+E2E_PIDFILE = LOG_DIR / "e2e.pid"
+
+
+def _e2e_write_state(state: dict) -> None:
+    """Atomically persist e2e progress for `just e2e-status` polling."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = E2E_STATE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, E2E_STATE)
+
+
+def _pid_running(pidfile: Path) -> bool:
+    try:
+        os.kill(int(pidfile.read_text().strip()), 0)
+        return True
+    except (ValueError, ProcessLookupError, FileNotFoundError):
+        return False
+    except PermissionError:
+        return True
+
+
+def _e2e_run(configs: list[dict], speed: float = 1.0) -> None:
+    """The e2e supervisor loop: one isolated sim per group, incremental state.
+
+    Runs inline for `just test e2e --wait`; otherwise as the detached
+    `e2e-worker` process. Raises typer.Exit with the run's exit code.
+    """
+    import atexit
+
+    def cleanup():
+        print("Cleaning up E2E simulation...")
+        _teardown()
+
+    # Safety net: ensure any leaked sim is reaped even if the process is killed
+    # mid-group (each group also tears down its own sim in a finally block).
+    atexit.register(cleanup)
+
+    gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
+    group_items = _e2e_sim_groups(configs)
+    state = {
+        "status": "running",
+        "started_at": time.time(),
+        "finished_at": None,
+        "speed": speed,
+        "groups": [
+            {"vision": v, "overlay": o, "scenarios": s, "state": "pending", "fails": 0}
+            for v, o, s in group_items
+        ],
+    }
+    _e2e_write_state(state)
+
+    try:
+        fails = 0
+        (LOG_DIR / "latest.log").write_text("", encoding="utf-8")
+        for idx, (vision, overlay, scenarios) in enumerate(group_items):
+            state["groups"][idx]["state"] = "running"
+            _e2e_write_state(state)
+            group_fails = _run_e2e_sim_group(
+                vision,
+                overlay,
+                scenarios,
+                gz_resource=gz_resource,
+                audit_topics=idx == len(group_items) - 1,
+            )
+            fails += group_fails
+            state["groups"][idx]["state"] = "done"
+            state["groups"][idx]["fails"] = group_fails
+            _e2e_write_state(state)
+
+        print("Summarizing execution log...")
+        _summarize_logs_silent()
+
+        print("Generating E2E Report...")
+        res_report = subprocess.run(["uv", "run", "python", "tools/e2e_report.py"], cwd=str(ROOT))
+
+        if fails > 0 or res_report.returncode != 0:
+            state["status"] = "failed"
+            _print_failure_digest()
+            raise typer.Exit(int(ExitCode.FAIL))
+        state["status"] = "passed"
+        print("E2E cycle finished successfully (all scenarios passed).")
+
+    except Exception as e:
+        if state["status"] == "running":
+            print(f"E2E run interrupted: {e}", file=sys.stderr)
+            raise typer.Exit(1) from None
+        raise
+    finally:
+        # A worker that dies with status still "running" (unhandled crash,
+        # SIGTERM from `just stop`) is reported as aborted by e2e-status.
+        if state["status"] == "running":
+            state["status"] = "aborted"
+        state["finished_at"] = time.time()
+        _e2e_write_state(state)
+        cleanup()
+        atexit.unregister(cleanup)
 
 
 def _e2e_sim_groups(configs: list[dict]) -> list[tuple[str, str, list[str]]]:
@@ -647,6 +748,25 @@ def sim(
 @app.command()
 def stop():
     """Exhaustive cold teardown of the whole stack (no process survives)."""
+    # Kill a detached e2e supervisor first so it cannot relaunch sims while
+    # teardown runs; its state file records the abort for `just e2e-status`.
+    if E2E_PIDFILE.exists():
+        try:
+            pid = int(E2E_PIDFILE.read_text().strip())
+            os.killpg(pid, signal.SIGTERM)
+            print(f"Stopped e2e supervisor (pid {pid}).")
+        except (ValueError, ProcessLookupError, PermissionError):
+            pass
+        E2E_PIDFILE.unlink(missing_ok=True)
+        if E2E_STATE.exists():
+            try:
+                state = json.loads(E2E_STATE.read_text(encoding="utf-8"))
+                if state.get("status") == "running":
+                    state["status"] = "aborted"
+                    state["finished_at"] = time.time()
+                    _e2e_write_state(state)
+            except json.JSONDecodeError:
+                pass
     ok = _teardown()
     raise typer.Exit(int(ExitCode.OK) if ok else int(ExitCode.FAIL))
 
@@ -898,8 +1018,14 @@ def _run_e2e_sim_group(
 def test(
     type: str = typer.Argument("unit", help="Test type: unit, scenario, e2e"),
     arg: str = typer.Option("", "--arg", help="Scenario name (required for scenario test)"),
+    wait: bool = typer.Option(False, "--wait", help="e2e only: block until the run finishes."),
 ):
-    """Run tests. Types: unit (default), scenario (requires --arg=<name>), e2e."""
+    """Run tests. Types: unit (default), scenario (requires --arg=<name>), e2e.
+
+    e2e detaches by default: it boots the cycle in a background supervisor and
+    returns after an E2E STARTED verdict. Poll with `just e2e-status`; stop
+    with `just stop`. Pass --wait for the old blocking behavior.
+    """
 
     if type == "unit":
         print("Running unit tests...")
@@ -929,6 +1055,14 @@ def test(
     elif type == "e2e":
         print("starting e2e headless cycle...")
 
+        if E2E_PIDFILE.exists() and _pid_running(E2E_PIDFILE):
+            print(
+                "An e2e run is already in progress (logs/e2e.pid). "
+                "Watch: just e2e-status. Stop: just stop.",
+                file=sys.stderr,
+            )
+            raise typer.Exit(int(ExitCode.PRECONDITION))
+
         # Clear per-run logs, keeping build/install cache intact
         print("Clearing previous simulation logs...")
         LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -946,8 +1080,6 @@ def test(
             print("Preflight check failed. Aborting E2E cycle.", file=sys.stderr)
             raise typer.Exit(int(ExitCode.PRECONDITION)) from None
 
-        gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
-
         # Run each declared scenario against its own freshly launched, isolated sim.
         # Scenarios land, disarm, and mutate controller parameters during cleanup,
         # so sharing a sim can leak state into the next scenario even when the
@@ -961,49 +1093,56 @@ def test(
             )
             raise typer.Exit(int(ExitCode.PRECONDITION))
 
-        import atexit
+        if wait:
+            _e2e_run(configs)
+            return
 
-        def cleanup():
-            print("Cleaning up E2E simulation...")
-            _teardown()
+        # Seed the state file before spawning so `just e2e-status` never sees
+        # a live pid with no state (the worker overwrites it on startup).
+        group_items = _e2e_sim_groups(configs)
+        _e2e_write_state(
+            {
+                "status": "running",
+                "started_at": time.time(),
+                "finished_at": None,
+                "speed": 1.0,
+                "groups": [
+                    {"vision": v, "overlay": o, "scenarios": s, "state": "pending", "fails": 0}
+                    for v, o, s in group_items
+                ],
+            }
+        )
+        out_fh = (LOG_DIR / "e2e.log").open("w", encoding="utf-8")
+        proc = subprocess.Popen(
+            ["uv", "run", "python", "tasks.py", "e2e-worker"],
+            stdout=out_fh,
+            stderr=subprocess.STDOUT,
+            preexec_fn=os.setsid,
+            cwd=str(ROOT),
+        )
+        E2E_PIDFILE.write_text(str(proc.pid))
+        n = len(group_items)
+        print(
+            f"E2E STARTED: {len(configs)} scenario(s) in {n} group(s), "
+            f"est ~{max(1, round(n * 65 / 60))} min. "
+            "Watch: just e2e-status | just log tail. Stop: just stop."
+        )
 
-        # Safety net: ensure any leaked sim is reaped even if the process is killed
-        # mid-group (each group also tears down its own sim in a finally block).
-        atexit.register(cleanup)
 
-        try:
-            fails = 0
-            (LOG_DIR / "latest.log").write_text("", encoding="utf-8")
-            group_items = _e2e_sim_groups(configs)
-            for idx, (vision, overlay, scenarios) in enumerate(group_items):
-                is_last = idx == len(group_items) - 1
-                fails += _run_e2e_sim_group(
-                    vision,
-                    overlay,
-                    scenarios,
-                    gz_resource=gz_resource,
-                    audit_topics=is_last,
-                )
+@app.command("e2e-worker", hidden=True)
+def e2e_worker(
+    speed: float = typer.Option(1.0, "--speed", help="Physics speed factor."),
+) -> None:
+    """Internal: the detached e2e supervisor. Launched by `just test e2e`."""
+    configs = scenario_sim_configs("sim")
+    _e2e_run(configs, speed=speed)
 
-            print("Summarizing execution log...")
-            _summarize_logs_silent()
 
-            print("Generating E2E Report...")
-            res_report = subprocess.run(
-                ["uv", "run", "python", "tools/e2e_report.py"], cwd=str(ROOT)
-            )
-
-            if fails > 0 or res_report.returncode != 0:
-                _print_failure_digest()
-                raise typer.Exit(int(ExitCode.FAIL))
-            print("E2E cycle finished successfully (all scenarios passed).")
-
-        except Exception as e:
-            print(f"E2E run interrupted: {e}", file=sys.stderr)
-            raise typer.Exit(1) from None
-        finally:
-            cleanup()
-            atexit.unregister(cleanup)
+@app.command("e2e-status")
+def e2e_status_cmd() -> None:
+    """Print progress/verdict of the current or last e2e run (poll while detached)."""
+    res = subprocess.run(["uv", "run", "python", "tools/e2e_status.py"], cwd=str(ROOT))
+    raise typer.Exit(res.returncode)
 
 
 @app.command()

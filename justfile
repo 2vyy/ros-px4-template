@@ -68,6 +68,10 @@ scenario-new *args:
 scenario-status *args:
     @just _run scenario-status "$@"
 
+# Print progress/verdict of the current or last detached e2e run
+e2e-status:
+    @just _run e2e-status
+
 # View JSON workspace status snapshot (nodes, live status, capabilities)
 status:
     @just _run status
