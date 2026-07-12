@@ -20,17 +20,11 @@ import rclpy
 from cv_bridge import CvBridge
 from px4_ros_msgs.msg import MarkerDetection
 from rclpy.node import Node
-from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo, Image
 
 from ros_px4_template_core.lib.aruco_detector import detect_markers
 from ros_px4_template_core.lib.frames import camera_to_body
-
-_RELIABLE_QOS = QoSProfile(
-    reliability=ReliabilityPolicy.RELIABLE,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=10,
-)
+from ros_px4_template_core.nodes.qos import RELIABLE_QOS
 
 
 class ArucoPosePublisher(Node):
@@ -47,9 +41,9 @@ class ArucoPosePublisher(Node):
         self._camera_matrix: np.ndarray | None = None
         self._dist_coeffs: np.ndarray | None = None
 
-        self.create_subscription(Image, "/camera/image_raw", self._image_cb, _RELIABLE_QOS)
-        self.create_subscription(CameraInfo, "/camera/camera_info", self._info_cb, _RELIABLE_QOS)
-        self._pub = self.create_publisher(MarkerDetection, "/drone/marker_detection", _RELIABLE_QOS)
+        self.create_subscription(Image, "/camera/image_raw", self._image_cb, RELIABLE_QOS)
+        self.create_subscription(CameraInfo, "/camera/camera_info", self._info_cb, RELIABLE_QOS)
+        self._pub = self.create_publisher(MarkerDetection, "/drone/marker_detection", RELIABLE_QOS)
 
     def _info_cb(self, msg: CameraInfo) -> None:
         if self._camera_matrix is None:

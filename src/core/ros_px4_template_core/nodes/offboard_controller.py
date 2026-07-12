@@ -41,7 +41,6 @@ from px4_msgs.msg import (
 from px4_ros_msgs.msg import ControllerStatus
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Empty
 
 from ros_px4_template_core.lib import events, offboard_fsm, offboard_latches
@@ -53,18 +52,7 @@ from ros_px4_template_core.lib.setpoint_hold import (
 )
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 from ros_px4_template_core.lib.target_pose import target_yaw_from_quaternion
-
-_PX4_QOS = QoSProfile(
-    reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.TRANSIENT_LOCAL,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=10,
-)
-_RELIABLE_QOS = QoSProfile(
-    reliability=ReliabilityPolicy.RELIABLE,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=10,
-)
+from ros_px4_template_core.nodes.qos import LATCHED_QOS, PX4_QOS, RELIABLE_QOS
 
 _PX4_CUSTOM_MAIN_MODE_OFFBOARD = 6
 
@@ -130,42 +118,37 @@ class OffboardController(Node):
         self.add_on_set_parameters_callback(_on_set_params)
 
         self.create_subscription(
-            PoseStamped, "/drone/target_pose", self._target_pose_cb, _RELIABLE_QOS
+            PoseStamped, "/drone/target_pose", self._target_pose_cb, RELIABLE_QOS
         )
-        self.create_subscription(Odometry, "/drone/odom", self._odom_cb, _RELIABLE_QOS)
+        self.create_subscription(Odometry, "/drone/odom", self._odom_cb, RELIABLE_QOS)
         self.create_subscription(
             Vector3Stamped,
             "/drone/local_origin",
             self._local_origin_cb,
-            QoSProfile(
-                reliability=ReliabilityPolicy.RELIABLE,
-                durability=DurabilityPolicy.TRANSIENT_LOCAL,
-                history=HistoryPolicy.KEEP_LAST,
-                depth=1,
-            ),
+            LATCHED_QOS,
         )
         self.create_subscription(
-            VehicleStatus, "/fmu/out/vehicle_status_v1", self._status_cb, _PX4_QOS
+            VehicleStatus, "/fmu/out/vehicle_status_v1", self._status_cb, PX4_QOS
         )
         self.create_subscription(
             VehicleCommandAck,
             "/fmu/out/vehicle_command_ack",
             self._command_ack_cb,
-            _PX4_QOS,
+            PX4_QOS,
         )
-        self.create_subscription(Empty, "/drone/land_command", self._land_cb, _RELIABLE_QOS)
+        self.create_subscription(Empty, "/drone/land_command", self._land_cb, RELIABLE_QOS)
 
         self._pub_setpoint = self.create_publisher(
-            TrajectorySetpoint, "/fmu/in/trajectory_setpoint", _PX4_QOS
+            TrajectorySetpoint, "/fmu/in/trajectory_setpoint", PX4_QOS
         )
         self._pub_offboard_mode = self.create_publisher(
-            OffboardControlMode, "/fmu/in/offboard_control_mode", _PX4_QOS
+            OffboardControlMode, "/fmu/in/offboard_control_mode", PX4_QOS
         )
         self._pub_vehicle_cmd = self.create_publisher(
-            VehicleCommand, "/fmu/in/vehicle_command", _PX4_QOS
+            VehicleCommand, "/fmu/in/vehicle_command", PX4_QOS
         )
         self._pub_status = self.create_publisher(
-            ControllerStatus, "/drone/controller_status", _RELIABLE_QOS
+            ControllerStatus, "/drone/controller_status", RELIABLE_QOS
         )
 
         rate = float(self.get_parameter("setpoint_rate_hz").value)

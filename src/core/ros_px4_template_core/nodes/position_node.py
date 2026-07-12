@@ -37,7 +37,6 @@ from geometry_msgs.msg import PoseStamped, Vector3Stamped
 from nav_msgs.msg import Odometry
 from px4_msgs.msg import VehicleLocalPosition
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 from ros_px4_template_core.lib.frames import (
     enu_quaternion_from_yaw,
@@ -47,27 +46,9 @@ from ros_px4_template_core.lib.frames import (
 )
 from ros_px4_template_core.lib.px4_local_frame import Px4LocalFrame
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
+from ros_px4_template_core.nodes.qos import LATCHED_QOS, ODOM_QOS, PX4_QOS
 
 _POSITION_TOPIC = "/fmu/out/vehicle_local_position_v1"
-
-_PX4_QOS = QoSProfile(
-    reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.TRANSIENT_LOCAL,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=10,
-)
-_ODOM_QOS = QoSProfile(
-    reliability=ReliabilityPolicy.RELIABLE,
-    durability=DurabilityPolicy.VOLATILE,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=10,
-)
-_LATCHED_QOS = QoSProfile(
-    reliability=ReliabilityPolicy.RELIABLE,
-    durability=DurabilityPolicy.TRANSIENT_LOCAL,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=1,
-)
 
 
 class PositionNode(Node):
@@ -96,12 +77,10 @@ class PositionNode(Node):
         self._override: tuple[float, float, float, float] | None = None
         self._override_time = 0.0
 
-        self.create_subscription(VehicleLocalPosition, self._topic, self._position_cb, _PX4_QOS)
-        self.create_subscription(PoseStamped, "/drone/pose_override", self._override_cb, _ODOM_QOS)
-        self._pub_odom = self.create_publisher(Odometry, "/drone/odom", _ODOM_QOS)
-        self._pub_origin = self.create_publisher(
-            Vector3Stamped, "/drone/local_origin", _LATCHED_QOS
-        )
+        self.create_subscription(VehicleLocalPosition, self._topic, self._position_cb, PX4_QOS)
+        self.create_subscription(PoseStamped, "/drone/pose_override", self._override_cb, ODOM_QOS)
+        self._pub_odom = self.create_publisher(Odometry, "/drone/odom", ODOM_QOS)
+        self._pub_origin = self.create_publisher(Vector3Stamped, "/drone/local_origin", LATCHED_QOS)
         self.slog.info("position_node ready", topic=self._topic)
 
     def _override_cb(self, msg: PoseStamped) -> None:
