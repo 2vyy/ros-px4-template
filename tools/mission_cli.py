@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "core"))
 
 from ros_px4_template_core.lib.mission.loader import MissionError, load_mission_file
 from ros_px4_template_core.lib.mission.registry import known_behaviors, known_guards
+from ros_px4_template_core.lib.mission.simulate import marker_below_script, simulate
 from ros_px4_template_core.lib.mission.types import Mission
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -196,6 +197,65 @@ def show_cmd(
         typer.echo(f"cannot load {name}: {type(e).__name__}: {e}", err=True)
         raise typer.Exit(2) from None
     typer.echo(describe_mission(m))
+
+
+@app.command("sim")
+def sim_cmd(
+    name: str = typer.Argument(..., help="Mission name (e.g. 'demo') or path to a .yaml"),
+    tick_rate_hz: float = typer.Option(10.0, "--tick-rate", help="Engine ticks per sim-second"),
+    max_ticks: int = typer.Option(3000, "--max-ticks", help="Give up (stall) after this many"),
+) -> None:
+    """Simulate a mission's GRAPH LOGIC over a kinematic model (no sim boot).
+
+    Verifies transitions/guards/stalls, NOT flight dynamics. Exit 0 when the
+    mission terminates (or reaches steady state for a terminal-less mission),
+    exit 1 on a stall (max-ticks without termination), exit 2 on a load error.
+    """
+    path = mission_path(name)
+    if not path.is_file():
+        typer.echo(f"no such mission file: {path}", err=True)
+        raise typer.Exit(2)
+    try:
+        m = load_mission_file(path)
+    except Exception as e:  # surface any load error to the CLI user
+        typer.echo(f"cannot load {name}: {type(e).__name__}: {e}", err=True)
+        raise typer.Exit(2) from None
+
+    # Auto-plant a marker for marker/center missions so their guards can fire.
+    wants_marker = any(
+        "marker" in sd.behavior or "center" in sd.behavior for sd in m.states.values()
+    )
+    result = simulate(
+        m,
+        tick_rate_hz=tick_rate_hz,
+        max_ticks=max_ticks,
+        script=marker_below_script() if wants_marker else None,
+    )
+
+    dt = 1.0 / tick_rate_hz
+    typer.echo(f"tick   0.0s  {m.initial}")
+    for e in result.events:
+        if e.get("event") != "TRANSITION":
+            continue
+        t = float(e["trigger"]["now"])
+        typer.echo(f"tick {t:6.1f}s  {e['from']} -> {e['to']}  ({e['guard']})")
+
+    sim_s = result.ticks * dt
+    if result.terminated:
+        typer.echo(
+            f"OK {name}: terminated in {result.final_state} after {sim_s:.1f} sim-s ({result.ticks} ticks)"
+        )
+        raise typer.Exit(0)
+    if not m.terminal:
+        typer.echo(
+            f"OK {name}: steady state in {result.final_state} after {sim_s:.1f} sim-s (no terminal states)"
+        )
+        raise typer.Exit(0)
+    typer.echo(
+        f"FAIL {name}: stalled in {result.final_state} after {sim_s:.1f} sim-s ({result.ticks} ticks)",
+        err=True,
+    )
+    raise typer.Exit(1)
 
 
 @app.command("schema")
