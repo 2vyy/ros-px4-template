@@ -151,7 +151,7 @@ Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing
   4. `just check` then verify with `just status` or `ros2 node list`.
 - New libraries go in `src/core/ros_px4_template_core/lib/`. Add unit tests in `tests/unit/`. `lib/` must remain `rclpy` free where possible (see `StructuredLogger` Protocol pattern).
 - Always use `StructuredLogger` for agent-facing diagnostics. Call `self.slog.close()` from `destroy_node`.
-- Missions are data-driven YAML state graphs. New behaviors/guards go in `src/core/ros_px4_template_core/lib/mission/` and are registered in `src/core/ros_px4_template_core/lib/mission/registry.py`; missions are loaded by `src/core/ros_px4_template_core/lib/mission/loader.py`. Do not embed phase logic in `src/core/ros_px4_template_core/nodes/mission_manager.py`.
+- Missions are data-driven YAML state graphs. New behaviors/guards go in `src/core/ros_px4_template_core/lib/mission/` and are registered in `src/core/ros_px4_template_core/lib/mission/registry.py`; missions are loaded by `src/core/ros_px4_template_core/lib/mission/loader.py`. Do not embed phase logic in `src/core/ros_px4_template_core/nodes/mission_manager.py`. After adding a behavior or guard, regenerate the schema (`just mission schema > schemas/mission.schema.json`) and add its row to the `docs/MISSIONS.md` Behaviors/Guards table (both are unit-enforced).
 - New scenarios go in `tests/scenarios/<NN>_<name>.py` using `spin_until` and `PX4_QOS` from `tests/scenarios/_common.py`. Scaffold a runnable stub with `just scenario-new <NN>_<name>` (writes the `Scenario` boilerplate and prints the `capabilities.toml` snippet to add), then edit the `done()` predicate. Each must end by calling `write_report`, which prints a rich one-line verdict (`PASS`/`FAIL <name> <detail> <Ns>`); pass a real `detail` (waypoint error, hold time, or the fail reason), never a bare pass. Add a capability entry in `tests/capabilities.toml`: `platforms = ["sim"]` declares intent (enables `just scenario` and e2e to boot the declared sim config); `status` stays `"unverified"` until `just cap mark <id> sim` after a PASS.
 - Do not commit `.env`, `logs/`, `build/`, `install/`, or `log/`.
 
@@ -167,24 +167,10 @@ For any file search or grep in the current git-indexed directory, use fff search
 For anything relating to viewing or searching for technical information, docs, issues, or projects on GitHub, use the rich `gh` cli tool.
 Use rtk (rust-token-killer) for trimmed-down common unix / dev commands.
 
-# Codebase Knowledge Graph (codebase-memory-mcp)
+# Code intelligence
 
-Optional: when a repo is indexed, prefer graph tools for structural code questions (callers, definitions, architecture).
-
-## Priority Order
-1. `search_graph` — find functions, classes, routes, variables by pattern
-2. `trace_path` — trace who calls a function or what it calls
-3. `get_code_snippet` — read specific function/class source code
-4. `query_graph` — run Cypher queries for complex patterns
-5. `get_architecture` — high-level project summary
-
-## When to fall back to grep/glob/Read/Write
-- Searching for string literals, error messages, config values
-- Searching non-code files (Dockerfiles, shell scripts, configs)
-- Editing files (use Read + StrReplace/Write, not shell redirects)
-- When MCP tools return insufficient results
-
-## Examples
-- Find a handler: `search_graph(name_pattern=".*OrderHandler.*")`
-- Who calls it: `trace_path(function_name="OrderHandler", direction="inbound")`
-- Read source: `get_code_snippet(qualified_name="pkg/orders.OrderHandler")`
+The repo is indexed by CodeGraph (`.codegraph/`). For structural questions
+(callers, definitions, blast radius), prefer `codegraph explore "<symbols or
+question>"` (shell) or the `codegraph_explore` MCP tool over grep + file
+reads. Fall back to `rg` / file reads for string literals, configs, and
+non-code files.
