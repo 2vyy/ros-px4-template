@@ -43,6 +43,12 @@ def tick(ctx: MissionContext, mission: Mission, inputs: Inputs) -> Command:
         fired = _first_fired(outgoing, inputs, signals)
         tier = "mission"
 
+    if fired is not None and fired.dst == ctx.state:
+        # Persistent condition, already in the target state: do not re-enter.
+        # No event, no scratch wipe, no state change -- the behavior keeps its
+        # scratch (e.g. hold_safe freezes its target where the fault occurred).
+        fired = None
+
     if fired is not None:
         ctx.events.append(
             {

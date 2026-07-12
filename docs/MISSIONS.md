@@ -125,6 +125,13 @@ lawnmower `search`, if `geofence_breach` trips it diverts to `return_to_origin`
 instead of continuing the pattern — exactly the non-linear behavior a search
 mission needs.
 
+A safety (or mission) edge whose target IS the current state does not re-enter
+it: while the condition persists the engine leaves the state, scratch, and event
+log untouched, so a `hold_safe` freezes its target where the fault occurred
+rather than re-capturing the drifting live pose each tick. A persisting safety
+condition also keeps the mission tier suppressed, so a `hold_safe -> resume` edge
+only fires once the condition itself clears.
+
 ### Terminal states
 
 States listed in `terminal` have no outgoing **mission** transitions evaluated,
