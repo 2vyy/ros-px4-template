@@ -44,7 +44,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Empty
 
-from ros_px4_template_core.lib import events, offboard_fsm
+from ros_px4_template_core.lib import events, offboard_fsm, offboard_latches
 from ros_px4_template_core.lib.frames import enu_setpoint_to_px4_ned, heading_ned_from_enu_yaw
 from ros_px4_template_core.lib.offboard_fsm import NAV_STATE_OFFBOARD
 from ros_px4_template_core.lib.setpoint_hold import (
@@ -105,16 +105,8 @@ class OffboardController(Node):
         self._last_offboard_try = 0.0
         self._current_pos_enu = (0.0, 0.0, 0.0)
         self._setpoint_enu = (0.0, 0.0, self._target_alt)
-        self._armed = False
+        self._latches = offboard_latches.Latches()  # armed + the three safety latches
         self._nav_state = 0
-        self._disarm_latched = False
-        self._failsafe_active = False
-        self._failsafe_latched = False
-        self._landing = False
-        self._landing_latched = False
-        self._arm_failed = False
-        self._arm_fail_reason = ""
-        self._px4_ever_disarmed = False
         self._xrce_connect_time: float | None = None
         self._last_target_pose_time: float | None = None
         self._target_pose_stale = False
@@ -128,28 +120,11 @@ class OffboardController(Node):
         def _on_set_params(params) -> SetParametersResult:
             for p in params:
                 if p.name == "auto_arm" and bool(p.value):
-                    if self._failsafe_active:
-                        self.slog.event(events.FAILSAFE_LATCH_CLEAR_REJECTED)
-                        return SetParametersResult(
-                            successful=False,
-                            reason="cannot clear latches while PX4 failsafe is active",
-                        )
-                    if self._landing and self._armed:
-                        self.slog.event(events.LANDING_LATCH_CLEAR_REJECTED)
-                        return SetParametersResult(
-                            successful=False,
-                            reason="cannot clear landing latch while landing hand-off is active",
-                        )
-                    if self._disarm_latched:
-                        self._disarm_latched = False
-                        self.slog.event(events.AUTO_ARM_LATCH_CLEARED_BY_PARAM, latch="disarm")
-                    if self._failsafe_latched:
-                        self._failsafe_latched = False
-                        self.slog.event(events.AUTO_ARM_LATCH_CLEARED_BY_PARAM, latch="failsafe")
-                    if self._landing_latched:
-                        self._landing_latched = False
-                        self._landing = False
-                        self.slog.event(events.AUTO_ARM_LATCH_CLEARED_BY_PARAM, latch="landing")
+                    ok, reason, evs = offboard_latches.try_clear_auto_arm(self._latches)
+                    for name, kw in evs:
+                        self.slog.event(name, **kw)
+                    if not ok:
+                        return SetParametersResult(successful=False, reason=reason)
             return SetParametersResult(successful=True)
 
         self.add_on_set_parameters_callback(_on_set_params)
@@ -261,37 +236,23 @@ class OffboardController(Node):
         )
 
     def _status_cb(self, msg: VehicleStatus) -> None:
-        was_armed = self._armed
-        self._armed = msg.arming_state == VehicleStatus.ARMING_STATE_ARMED
         self._nav_state = int(msg.nav_state)
-        if was_armed and not self._armed:
-            self._disarm_latched = True
-            self.slog.event(events.AUTO_ARM_DISABLED_ON_DISARM)
-        was_failsafe = self._failsafe_active
-        self._failsafe_active = bool(msg.failsafe)
-        if self._failsafe_active and not was_failsafe:
-            self._failsafe_latched = True
-            self.slog.event(events.FAILSAFE_MODE_COMMANDS_LATCHED)
-        elif not self._failsafe_active and was_failsafe:
-            self.slog.event(events.FAILSAFE_CLEARED_LIVE)
-        if (
-            not self._px4_ever_disarmed
-            and msg.arming_state == VehicleStatus.ARMING_STATE_DISARMED
-            and msg.pre_flight_checks_pass
+        for name in offboard_latches.on_vehicle_status(
+            self._latches,
+            armed=msg.arming_state == VehicleStatus.ARMING_STATE_ARMED,
+            failsafe=bool(msg.failsafe),
+            disarmed=msg.arming_state == VehicleStatus.ARMING_STATE_DISARMED,
+            preflight_ok=bool(msg.pre_flight_checks_pass),
         ):
-            self._px4_ever_disarmed = True
-            self.slog.event("PX4_DISARMED_OBSERVED")
+            self.slog.event(name)
 
     def _land_cb(self, _msg: Empty) -> None:
-        if self._landing:
-            return
-        # Set the inhibit BEFORE commanding NAV_LAND: once PX4 switches
-        # nav_state away from OFFBOARD, an unlatched FSM would immediately try
-        # to re-request OFFBOARD/arm and fight the lander.
-        self._landing = True
-        self._landing_latched = True
-        self._vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
-        self.slog.event(events.LAND_COMMAND_RECEIVED)
+        # on_land_command sets the inhibit BEFORE we command NAV_LAND: once PX4
+        # switches nav_state away from OFFBOARD, an unlatched FSM would
+        # immediately try to re-request OFFBOARD/arm and fight the lander.
+        if offboard_latches.on_land_command(self._latches):
+            self._vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+            self.slog.event(events.LAND_COMMAND_RECEIVED)
 
     def _command_ack_cb(self, msg: VehicleCommandAck) -> None:
         if msg.command == VehicleCommand.VEHICLE_CMD_NAV_LAND:
@@ -315,14 +276,8 @@ class OffboardController(Node):
         self.slog.event(
             events.ARM_ACK_DENIED, result=result, reason=reason, param1=float(msg.result_param1)
         )
-        if result in (
-            VehicleCommandAck.VEHICLE_CMD_RESULT_UNSUPPORTED,
-            VehicleCommandAck.VEHICLE_CMD_RESULT_FAILED,
-        ):
-            if not self._arm_failed:
-                self._arm_failed = True
-                self._arm_fail_reason = reason
-                self.slog.error("Arm command failed terminally", reason=reason, result=result)
+        if offboard_latches.on_arm_ack(self._latches, result, reason):
+            self.slog.error("Arm command failed terminally", reason=reason, result=result)
 
     def _elapsed(self) -> float:
         if self._start_time_ns == 0:
@@ -332,9 +287,9 @@ class OffboardController(Node):
     def _update_state_machine(self) -> None:
         self._auto_arm = offboard_fsm.auto_arm_allowed(
             bool(self.get_parameter("auto_arm").value),
-            disarm_latched=self._disarm_latched,
-            failsafe_latched=self._failsafe_latched,
-            landing_latched=self._landing_latched,
+            disarm_latched=self._latches.disarm_latched,
+            failsafe_latched=self._latches.failsafe_latched,
+            landing_latched=self._latches.landing_latched,
         )
         xrce_elapsed = (
             (self.get_clock().now().nanoseconds / 1e9 - self._xrce_connect_time)
@@ -345,12 +300,12 @@ class OffboardController(Node):
             offboard_fsm.FsmInputs(
                 elapsed_s=self._elapsed(),
                 auto_arm=self._auto_arm,
-                armed=self._armed,
-                arm_failed=self._arm_failed,
+                armed=self._latches.armed,
+                arm_failed=self._latches.arm_failed,
                 xrce_connected=self._xrce_connect_time is not None,
                 xrce_elapsed_s=xrce_elapsed,
                 offboard_heartbeats_sent=self._offboard_heartbeats_sent,
-                px4_ever_disarmed=self._px4_ever_disarmed,
+                px4_ever_disarmed=self._latches.px4_ever_disarmed,
                 nav_state=self._nav_state,
                 arm_delay_s=self._arm_delay_s,
                 last_arm_try_s=self._last_arm_try,
@@ -409,7 +364,7 @@ class OffboardController(Node):
         status = ControllerStatus()
         status.header.stamp = self.get_clock().now().to_msg()
         status.state = "TARGET_STALE" if self._target_pose_stale else self._state
-        status.armed = self._armed
+        status.armed = self._latches.armed
         status.altitude_enu_m = float(self._current_pos_enu[2])
         status.position_error_m = float(math.dist(self._current_pos_enu, mission_active))
         self._pub_status.publish(status)
