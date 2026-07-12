@@ -61,6 +61,34 @@ just mission show <name>          # states, transitions, and terminal set of a l
 runtime, so a misspelled behavior or a transition to a nonexistent state surfaces
 here instead of after a ~16-30s Gazebo + PX4 SITL boot.
 
+## Simulating a mission (no sim boot)
+
+`just mission validate` proves a mission *parses*; `just scenario` proves it
+*flies* but costs a Gazebo + PX4 boot. `just mission sim <name>` fills the gap:
+it ticks the real engine over a crude kinematic model and reports whether the
+graph actually *progresses* to a terminal state, in under a second.
+
+```bash
+just mission sim demo             # prints the phase trace + verdict; exit 0/1
+```
+
+```
+tick   0.0s  takeoff
+tick   1.5s  takeoff -> follow  (armed_at_altitude)
+tick  16.5s  follow -> done  (waypoints_done)
+OK demo: terminated in done after 16.6 sim-s (166 ticks)
+```
+
+Exit 0 when the mission terminates (or reaches steady state for a terminal-less
+mission), exit 1 on a stall (a guard that never fires -- the "stuck in `takeoff`
+forever" bug an agent needs surfaced), exit 2 on a load error. Marker missions
+get a marker auto-planted directly below the drone so their guards fire.
+
+Honest caveat: this verifies GRAPH LOGIC (transitions, guards, stalls), NOT
+flight dynamics. The straight-line kinematic model does not model control,
+estimation, or physics; the live scenario tier remains the flight gate. It is
+the fast inner loop for mission-graph edits, not a replacement for a sim run.
+
 ## Editor schema
 
 Each `config/missions/*.yaml` starts with a `# yaml-language-server: $schema=...`

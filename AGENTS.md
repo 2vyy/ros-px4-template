@@ -71,6 +71,7 @@ Sim flags: `just sim [--gui] [--world <world>] [--model <model>] [--vision <bool
 | Tier | Command | Needs |
 |------|---------|-------|
 | Fast | `just check` | Nothing running |
+| Mission logic | `just mission sim <name>` | Nothing running |
 | Graph | `just log topics` | `just sim` running |
 | Live | `just scenario 01_arm_takeoff` | Full sim |
 | All-in-one | `just test e2e` | `just setup` done, ports free |
