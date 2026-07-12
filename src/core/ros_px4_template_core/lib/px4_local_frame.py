@@ -1,6 +1,7 @@
 """Stateful PX4 local-frame tracker: latch the takeoff origin (NED) and track EKF resets.
 
-Read path (``observe``): PX4 local NED -> takeoff-anchored ENU (no yaw rotation).
+Read path (``observe``): PX4 local NED minus accumulated EKF-reset deltas ->
+takeoff-anchored ENU (no yaw rotation; the pose stays continuous across resets).
 Write path (``setpoint_origin_ned``): latched origin + accumulated EKF-reset deltas,
 so streamed setpoints stay on the same physical point across resets.
 """
@@ -60,8 +61,12 @@ class Px4LocalFrame:
             else:
                 self.home_z_ned = z_ned
                 local_z = 0.0
-        local_x = x_ned - (self.home_x_ned or 0.0)
-        local_y = y_ned - (self.home_y_ned or 0.0)
+        # Subtract accumulated EKF-reset deltas so the anchored pose is continuous
+        # across resets (write path adds them back via setpoint_origin_ned). On the
+        # first sample all adjusts are 0.0, so this is a no-op then.
+        local_x = x_ned - (self.home_x_ned or 0.0) - self.x_adjust_ned
+        local_y = y_ned - (self.home_y_ned or 0.0) - self.y_adjust_ned
+        local_z = local_z - self.z_adjust_ned
         return ned_to_enu(local_x, local_y, local_z)
 
     @property

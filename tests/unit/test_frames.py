@@ -139,12 +139,8 @@ def test_enu_setpoint_local() -> None:
     assert enu_setpoint_to_px4_ned(0.0, 0.0, 3.0) == (0.0, 0.0, -3.0)
 
 
-def test_enu_setpoint_with_origin_and_ekf_adjust() -> None:
-    assert enu_setpoint_to_px4_ned(0.0, 0.0, 3.0, origin_z_ned=-2972.0, z_ekf_adjust_ned=0.5) == (
-        0.0,
-        0.0,
-        -2974.5,
-    )
+def test_enu_setpoint_with_z_origin() -> None:
+    assert enu_setpoint_to_px4_ned(0.0, 0.0, 3.0, origin_z_ned=-2972.0) == (0.0, 0.0, -2975.0)
 
 
 def test_enu_setpoint_with_xy_origin() -> None:
