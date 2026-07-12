@@ -31,7 +31,7 @@ def test_ready_blocks_until_standby():
     runner = CliRunner()
     call_count = 0
 
-    def fake_standby() -> bool:
+    def fake_standby(not_before: float) -> bool:
         nonlocal call_count
         call_count += 1
         return call_count >= 3  # fails first two polls
@@ -73,13 +73,30 @@ def test_set_physics_path_is_gone():
 # ── _px4_standby unit tests ──────────────────────────────────────────────────
 
 
-def test_px4_standby_true_when_flag_exists(tmp_path, monkeypatch):
+def test_px4_standby_true_when_flag_fresh(tmp_path, monkeypatch):
+    import os
+
     flag = tmp_path / "gcs_params_flag"
     flag.write_text("12345.6")
+    os.utime(flag, (5000.0, 5000.0))
     import wait_ready
 
     monkeypatch.setattr(wait_ready, "_GCS_PARAMS_FLAG", flag)
-    assert wait_ready._px4_standby() is True
+    assert wait_ready._px4_standby(4000.0) is True  # mtime 5000 >= start 4000
+
+
+def test_px4_standby_false_when_flag_stale(tmp_path, monkeypatch):
+    # A flag left behind by a previous session (mtime before this waiter started)
+    # must NOT satisfy the standby gate.
+    import os
+
+    flag = tmp_path / "gcs_params_flag"
+    flag.write_text("12345.6")
+    os.utime(flag, (1000.0, 1000.0))
+    import wait_ready
+
+    monkeypatch.setattr(wait_ready, "_GCS_PARAMS_FLAG", flag)
+    assert wait_ready._px4_standby(2000.0) is False  # mtime 1000 < start 2000
 
 
 def test_px4_standby_false_when_flag_missing(tmp_path, monkeypatch):
@@ -87,4 +104,4 @@ def test_px4_standby_false_when_flag_missing(tmp_path, monkeypatch):
     import wait_ready
 
     monkeypatch.setattr(wait_ready, "_GCS_PARAMS_FLAG", flag)
-    assert wait_ready._px4_standby() is False
+    assert wait_ready._px4_standby(0.0) is False

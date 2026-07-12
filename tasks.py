@@ -649,18 +649,21 @@ def sim(
         print(f"--overlay must be auto_arm|inspect|hover, got {overlay!r}", file=sys.stderr)
         raise typer.Exit(int(ExitCode.USAGE))
 
-    # Preflight (precondition class).
+    # Idempotent: cold-tear-down any existing stack BEFORE preflight, so
+    # re-running just sim recycles a live stack instead of aborting when
+    # preflight sees the still-occupied ports 8888/9090.
+    if (LOG_DIR / "sim.pid").exists():
+        print("Existing stack found — tearing it down first.")
+        _teardown()
+
+    # Preflight (precondition class). A pidless crashed stack still holding a
+    # port fails here with an accurate "run: just sim-stop" message.
     res = subprocess.run(
         ["uv", "run", "python", "tools/preflight.py", "--mode=headless"], cwd=str(ROOT)
     )
     if res.returncode != 0:
         print("Preflight failed. Aborting launch.", file=sys.stderr)
         raise typer.Exit(int(ExitCode.PRECONDITION))
-
-    # Idempotent: cold-tear-down any existing stack, then boot fresh.
-    if (LOG_DIR / "sim.pid").exists():
-        print("Existing stack found — tearing it down first.")
-        _teardown()
 
     _smart_build(build)
 
@@ -836,19 +839,21 @@ def hw(
     Same no-terminal-capture contract as `just sim`. Watch with `just log tail`,
     stop with `just stop`.
     """
-    res = subprocess.run(["uv", "run", "python", "tools/preflight.py", "--mode=hw"], cwd=str(ROOT))
-    if res.returncode != 0:
-        print("Preflight failed. Aborting hardware launch.", file=sys.stderr)
-        raise typer.Exit(int(ExitCode.PRECONDITION))
     if vehicle:
         vehicle_path = ROOT / "vehicles" / f"{vehicle}.yaml"
         if not vehicle_path.is_file():
             print(f"Vehicle overlay not found: {vehicle_path}", file=sys.stderr)
             raise typer.Exit(int(ExitCode.USAGE))
 
+    # Idempotent: cold-tear-down any existing stack BEFORE preflight (see sim()).
     if (LOG_DIR / "sim.pid").exists():
         print("Existing stack found — tearing it down first.")
         _teardown()
+
+    res = subprocess.run(["uv", "run", "python", "tools/preflight.py", "--mode=hw"], cwd=str(ROOT))
+    if res.returncode != 0:
+        print("Preflight failed. Aborting hardware launch.", file=sys.stderr)
+        raise typer.Exit(int(ExitCode.PRECONDITION))
 
     _smart_build(build)
 

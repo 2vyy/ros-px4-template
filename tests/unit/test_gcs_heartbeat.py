@@ -10,8 +10,26 @@ import gcs_heartbeat
 def test_param_table_is_arming_enablers_only() -> None:
     names = {name for name, _, _ in gcs_heartbeat._PARAMS}
 
-    assert names == {"COM_ARM_WO_GPS", "CBRK_SUPPLY_CHK", "COM_SPOOLUP_TIME", "EKF2_GPS_CHECK"}
+    assert names == {
+        "COM_ARM_WO_GPS",
+        "CBRK_SUPPLY_CHK",
+        "COM_SPOOLUP_TIME",
+        "EKF2_GPS_CHECK",
+        "EKF2_GPS_CTRL",
+    }
     assert all(not name.startswith(("SIM_GZ_", "MPC_THR")) for name in names)
+
+
+def test_param_table_matches_startup_exports() -> None:
+    # The boot-time authoritative copy lives in sim/launch/_start_gz_px4.sh as
+    # `export PX4_PARAM_<NAME>=`; the runtime re-send copy is _PARAMS. Drift
+    # between the two is a latent arming/EKF bug, so pin them equal permanently.
+    import re
+
+    script = Path(__file__).resolve().parents[2] / "sim" / "launch" / "_start_gz_px4.sh"
+    exported = set(re.findall(r"^export PX4_PARAM_(\w+)=", script.read_text(), re.MULTILINE))
+    names = {name for name, _, _ in gcs_heartbeat._PARAMS}
+    assert exported == names
 
 
 def test_param_types_valid() -> None:

@@ -23,10 +23,14 @@ _PARAMS: tuple[tuple[str, float, str], ...] = (
     # Arming enablers only. Do NOT push SIM_GZ_EC_MIN / MPC_THR_* — stock thrust
     # calibration gives stable offboard hold (verified vs bare PX4 SITL); the old
     # EC_MIN=0 override broke flight and is gone.
+    # Keep in lockstep with the PX4_PARAM_* exports in
+    # sim/launch/_start_gz_px4.sh (boot-time authoritative copy); the parity test
+    # in test_gcs_heartbeat.py fails if the two lists drift.
     ("COM_ARM_WO_GPS", 1, "INT32"),
     ("CBRK_SUPPLY_CHK", 894281, "INT32"),
     ("COM_SPOOLUP_TIME", 0.0, "REAL32"),
     ("EKF2_GPS_CHECK", 0, "INT32"),
+    ("EKF2_GPS_CTRL", 7, "INT32"),
 )
 
 _CONNECT_TIMEOUT_S = 120.0

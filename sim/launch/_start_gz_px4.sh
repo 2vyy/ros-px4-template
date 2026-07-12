@@ -39,6 +39,8 @@ export LD_LIBRARY_PATH="$PX4_GZ_PLUGINS_DIR:${LD_LIBRARY_PATH}"
 
 # Applied at STARTUP (reliable) rather than via gcs_heartbeat over lossy UDP.
 # Arming/EKF reliability: allow GPS fusion without strict SITL checks, arm w/o GPS.
+# Keep in lockstep with tools/gcs_heartbeat.py:_PARAMS (runtime re-send copy);
+# the parity test in test_gcs_heartbeat.py fails if these two lists drift.
 export PX4_PARAM_COM_ARM_WO_GPS=1
 export PX4_PARAM_CBRK_SUPPLY_CHK=894281
 export PX4_PARAM_COM_SPOOLUP_TIME=0.0
