@@ -56,5 +56,8 @@ def test_unknown_guard_rejected() -> None:
 
 def test_committed_schema_matches_generated() -> None:
     committed = json.loads(_SCHEMA_FILE.read_text(encoding="utf-8"))
-    msg = "stale schemas/mission.schema.json; regenerate with 'just mission schema'"
+    msg = (
+        "stale schemas/mission.schema.json; "
+        "regenerate with 'just mission schema > schemas/mission.schema.json'"
+    )
     assert committed == build_schema(), msg

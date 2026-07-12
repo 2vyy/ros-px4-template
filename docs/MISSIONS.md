@@ -277,6 +277,9 @@ episode issues a fresh `/drone/land_command`.
    `test_mission_guards.py`.
 3. Reference it by name from a mission YAML. The loader validates the name on
    load.
+4. Regenerate the editor schema: `just mission schema > schemas/mission.schema.json`
+   (a unit test fails if the committed file drifts from the registry).
+5. Add a row to the Behaviors / Guards table above (a unit test enforces this too).
 
 ## Topics
 
