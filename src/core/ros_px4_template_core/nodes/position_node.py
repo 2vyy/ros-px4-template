@@ -23,7 +23,8 @@ Subscriptions:
     /fmu/out/vehicle_local_position_v1  [px4_msgs/VehicleLocalPosition]
     /drone/pose_override  [geometry_msgs/PoseStamped]  — optional relocalization fix
 Publishers:
-    /drone/odom          [nav_msgs/Odometry]            anchored ENU pose+yaw+twist
+    /drone/odom          [nav_msgs/Odometry]            anchored ENU pose+yaw+twist;
+                         pose.covariance[0] = 0.0 valid / -1.0 PX4 estimate invalid
     /drone/local_origin  [geometry_msgs/Vector3Stamped] effective NED setpoint origin
 =============================================================================
 """
@@ -74,6 +75,8 @@ class PositionNode(Node):
 
         self._frame = Px4LocalFrame()
         self._have_pose = False
+        self._last_pose_enu: tuple[float, float, float, float] | None = None
+        self._estimate_valid = True
         self._override: tuple[float, float, float, float] | None = None
         self._override_time = 0.0
 
@@ -91,37 +94,50 @@ class PositionNode(Node):
         self._override_time = self.get_clock().now().nanoseconds * 1e-9
 
     def _position_cb(self, msg: VehicleLocalPosition) -> None:
-        if not (msg.xy_valid and msg.z_valid):
-            return
-        x_enu, y_enu, z_enu = self._frame.observe(
-            float(msg.x),
-            float(msg.y),
-            float(msg.z),
-            z_global=bool(msg.z_global),
-            xy_reset_counter=int(msg.xy_reset_counter),
-            delta_x=float(msg.delta_xy[0]),
-            delta_y=float(msg.delta_xy[1]),
-            z_reset_counter=int(msg.z_reset_counter),
-            delta_z=float(msg.delta_z),
-        )
-        yaw_enu = enu_yaw_from_heading(float(msg.heading))
+        valid = bool(msg.xy_valid and msg.z_valid)
+        if not valid:
+            # Estimate invalid: hold the last valid pose and flag it via
+            # covariance[0] below so the mission's estimate_invalid guard fires.
+            # Do NOT feed the invalid sample into the frame -- it would corrupt
+            # the takeoff anchor and EKF-reset bookkeeping.
+            if self._last_pose_enu is None:
+                return  # never anchored yet; nothing meaningful to publish
+            x_enu, y_enu, z_enu, yaw_enu = self._last_pose_enu
+        else:
+            x_enu, y_enu, z_enu = self._frame.observe(
+                float(msg.x),
+                float(msg.y),
+                float(msg.z),
+                z_global=bool(msg.z_global),
+                xy_reset_counter=int(msg.xy_reset_counter),
+                delta_x=float(msg.delta_xy[0]),
+                delta_y=float(msg.delta_xy[1]),
+                z_reset_counter=int(msg.z_reset_counter),
+                delta_z=float(msg.delta_z),
+            )
+            yaw_enu = enu_yaw_from_heading(float(msg.heading))
 
-        if self._override is not None:
-            now_s = self.get_clock().now().nanoseconds * 1e-9
-            if now_s - self._override_time <= self._override_timeout_s:
-                ox, oy, oz, oyaw = self._override
-                if math.dist((ox, oy, oz), (x_enu, y_enu, z_enu)) <= self._override_max_jump_m:
-                    x_enu, y_enu, z_enu, yaw_enu = ox, oy, oz, oyaw
-                else:
-                    self.slog.warn(
-                        "pose_override rejected (jump too large)",
-                        ox=ox,
-                        oy=oy,
-                        oz=oz,
-                        x=x_enu,
-                        y=y_enu,
-                        z=z_enu,
-                    )
+            if self._override is not None:
+                now_s = self.get_clock().now().nanoseconds * 1e-9
+                if now_s - self._override_time <= self._override_timeout_s:
+                    ox, oy, oz, oyaw = self._override
+                    if math.dist((ox, oy, oz), (x_enu, y_enu, z_enu)) <= self._override_max_jump_m:
+                        x_enu, y_enu, z_enu, yaw_enu = ox, oy, oz, oyaw
+                    else:
+                        self.slog.warn(
+                            "pose_override rejected (jump too large)",
+                            ox=ox,
+                            oy=oy,
+                            oz=oz,
+                            x=x_enu,
+                            y=y_enu,
+                            z=z_enu,
+                        )
+            self._last_pose_enu = (x_enu, y_enu, z_enu, yaw_enu)
+
+        if valid != self._estimate_valid:
+            self._estimate_valid = valid
+            self.slog.event("ESTIMATE_VALID" if valid else "ESTIMATE_INVALID", z=z_enu)
 
         if abs(z_enu) > self._divergence_z_m:
             if not self._diverged:
@@ -148,10 +164,17 @@ class PositionNode(Node):
         odom.pose.pose.orientation.y = qy
         odom.pose.pose.orientation.z = qz
         # PX4 velocity is NED; ned_to_enu maps it to ENU (vx_enu=ve, vy_enu=vn, vz_enu=-vd).
-        vx_enu, vy_enu, vz_enu = ned_to_enu(float(msg.vx), float(msg.vy), float(msg.vz))
+        # On an invalid estimate the velocity is untrustworthy: publish zeros.
+        if valid:
+            vx_enu, vy_enu, vz_enu = ned_to_enu(float(msg.vx), float(msg.vy), float(msg.vz))
+        else:
+            vx_enu = vy_enu = vz_enu = 0.0
         odom.twist.twist.linear.x = vx_enu
         odom.twist.twist.linear.y = vy_enu
         odom.twist.twist.linear.z = vz_enu
+        # covariance[0]: 0.0 = valid, -1.0 = PX4 estimate invalid (ROS convention for
+        # an unknown pose). mission_manager reads this to drive the estimate_invalid guard.
+        odom.pose.covariance[0] = 0.0 if valid else -1.0
         self._pub_odom.publish(odom)
 
         ox2, oy2, oz2 = self._frame.setpoint_origin_ned
