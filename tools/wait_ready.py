@@ -5,8 +5,10 @@ Readiness criteria (all three must pass):
   1. /fmu/out/vehicle_local_position_v1 appears in `ros2 topic list`
      (confirms PX4 SITL + MicroXRCEAgent are up and publishing telemetry).
   2. rosbridge WebSocket port 9090 is open.
-  3. gcs_heartbeat has committed PX4 params (/tmp/gcs_params_flag exists),
-     confirming MAVLink GCS link is established and PX4 is responsive.
+  3. gcs_heartbeat has committed PX4 params (a FRESH /tmp/gcs_params_flag,
+     mtime at/after this waiter started), confirming the MAVLink GCS link is
+     established and PX4 is responsive. The freshness check stops a flag left
+     behind by an unclean exit from false-READYing a new boot.
 
 Exit 0 on ready, 1 on timeout.
 """
@@ -107,14 +109,20 @@ def _topic_live(topic: str) -> bool:
         return False
 
 
-def _px4_standby() -> bool:
-    """Return True if gcs_heartbeat has committed PX4 params (flag file present).
+def _px4_standby(not_before: float) -> bool:
+    """Return True if gcs_heartbeat wrote a FRESH params-committed flag.
 
-    The flag is written by gcs_heartbeat when PX4 acknowledges a Params committed
-    event. It persists through arm transitions, unlike arming_state DDS polling.
-    Deleted by sim_cleanup on each stop so stale state does not carry over.
+    Fresh = flag mtime at/after ``not_before`` (this waiter's start), so a flag
+    left behind by a previous session's unclean exit never false-READYs this
+    boot. The flag is written by gcs_heartbeat when PX4 acknowledges a Params
+    committed event; it persists through arm transitions, unlike arming_state
+    DDS polling. sim_cleanup normally deletes it on stop; the mtime gate covers
+    the case where an unclean exit left it behind.
     """
-    return _GCS_PARAMS_FLAG.exists()
+    try:
+        return _GCS_PARAMS_FLAG.stat().st_mtime >= not_before
+    except FileNotFoundError:
+        return False
 
 
 @app.command()
@@ -122,6 +130,10 @@ def main(
     timeout: int = typer.Option(180, "--timeout", help="Seconds before giving up"),
 ) -> None:
     deadline = time.monotonic() + timeout
+    # Wall-clock reference for the params-flag freshness gate (mtime is wall clock).
+    # wait_ready is invoked after the stack spawns, so this session's flag is always
+    # written later; a flag from a previous session is older and correctly rejected.
+    not_before = time.time()
     typer.echo(f"Waiting for sim stack (timeout {timeout}s)...")
 
     rosbridge_ok = False
@@ -140,7 +152,7 @@ def main(
                 typer.echo("  [OK] rosbridge :9090 WebSocket responding")
 
         if not standby_ok:
-            standby_ok = _px4_standby()
+            standby_ok = _px4_standby(not_before)
             if standby_ok:
                 typer.echo("  [OK] GCS params committed (PX4 ready)")
 
