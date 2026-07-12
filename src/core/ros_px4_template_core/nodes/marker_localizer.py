@@ -21,7 +21,6 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from px4_ros_msgs.msg import MarkerDetection
 from rclpy.node import Node
-from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 from ros_px4_template_core.lib.frames import (
     drone_pose_from_marker,
@@ -30,10 +29,7 @@ from ros_px4_template_core.lib.frames import (
 )
 from ros_px4_template_core.lib.marker_map import parse_marker_map
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
-
-_RELIABLE_QOS = QoSProfile(
-    reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10
-)
+from ros_px4_template_core.nodes.qos import RELIABLE_QOS
 
 
 class MarkerLocalizer(Node):
@@ -61,11 +57,11 @@ class MarkerLocalizer(Node):
             self.slog.info("marker_map: skipped malformed entry", detail=w)
         self._yaw = 0.0
 
-        self.create_subscription(Odometry, "/drone/odom", self._odom_cb, _RELIABLE_QOS)
+        self.create_subscription(Odometry, "/drone/odom", self._odom_cb, RELIABLE_QOS)
         self.create_subscription(
-            MarkerDetection, "/drone/marker_detection", self._detection_cb, _RELIABLE_QOS
+            MarkerDetection, "/drone/marker_detection", self._detection_cb, RELIABLE_QOS
         )
-        self._pub = self.create_publisher(PoseStamped, "/drone/pose_override", _RELIABLE_QOS)
+        self._pub = self.create_publisher(PoseStamped, "/drone/pose_override", RELIABLE_QOS)
         self.slog.info("marker_localizer ready", markers=sorted(self._map))
 
     def _odom_cb(self, msg: Odometry) -> None:

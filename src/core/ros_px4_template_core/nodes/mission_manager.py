@@ -38,7 +38,6 @@ from px4_ros_msgs.msg import ControllerStatus, MarkerDetection, MissionStatus
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Empty
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -52,16 +51,8 @@ from ros_px4_template_core.lib.mission.types import Inputs
 from ros_px4_template_core.lib.mission_inputs import MissionManagerState, build_inputs
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 from ros_px4_template_core.lib.target_pose import target_yaw_to_quaternion
+from ros_px4_template_core.nodes.qos import PX4_QOS, RELIABLE_QOS
 
-_RELIABLE_QOS = QoSProfile(
-    reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10
-)
-_PX4_QOS = QoSProfile(
-    reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.TRANSIENT_LOCAL,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=10,
-)
 _STABLE_FRESH_S = 0.3  # a detection counts toward stability if newer than this
 _DEFAULT_MISSION = "config/missions/hover.yaml"
 
@@ -115,42 +106,42 @@ class MissionManager(Node):
             ControllerStatus,
             "/drone/controller_status",
             self._controller_cb,
-            _RELIABLE_QOS,
+            RELIABLE_QOS,
             callback_group=self._sub_group,
         )
         self.create_subscription(
-            Odometry, "/drone/odom", self._odom_cb, _RELIABLE_QOS, callback_group=self._sub_group
+            Odometry, "/drone/odom", self._odom_cb, RELIABLE_QOS, callback_group=self._sub_group
         )
         self.create_subscription(
             MarkerDetection,
             "/drone/marker_detection",
             self._detection_cb,
-            _RELIABLE_QOS,
+            RELIABLE_QOS,
             callback_group=self._sub_group,
         )
         self.create_subscription(
             BatteryStatus,
             "/fmu/out/battery_status_v1",
             self._battery_cb,
-            _PX4_QOS,
+            PX4_QOS,
             callback_group=self._sub_group,
         )
         self.create_subscription(
             VehicleStatus,
             "/fmu/out/vehicle_status_v1",
             self._vehicle_status_cb,
-            _PX4_QOS,
+            PX4_QOS,
             callback_group=self._sub_group,
         )
 
-        self._pub_target = self.create_publisher(PoseStamped, "/drone/target_pose", _RELIABLE_QOS)
+        self._pub_target = self.create_publisher(PoseStamped, "/drone/target_pose", RELIABLE_QOS)
         self._pub_status = self.create_publisher(
-            MissionStatus, "/drone/mission_status", _RELIABLE_QOS
+            MissionStatus, "/drone/mission_status", RELIABLE_QOS
         )
         self._pub_markers = self.create_publisher(
-            MarkerArray, "/drone/mission_markers", _RELIABLE_QOS
+            MarkerArray, "/drone/mission_markers", RELIABLE_QOS
         )
-        self._pub_land = self.create_publisher(Empty, "/drone/land_command", _RELIABLE_QOS)
+        self._pub_land = self.create_publisher(Empty, "/drone/land_command", RELIABLE_QOS)
 
         rate = float(self.get_parameter("tick_rate_hz").value)
         self.create_timer(1.0 / rate, self._tick, callback_group=self._tick_group)

@@ -16,6 +16,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 # Matches PX4 uXRCE-DDS publisher QoS (rmw_qos_profile_sensor_data).
+# Deliberate copy of nodes/qos.PX4_QOS (scenario scripts run without src/ on the path).
 PX4_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
     durability=DurabilityPolicy.TRANSIENT_LOCAL,
