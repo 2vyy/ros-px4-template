@@ -97,20 +97,19 @@ def enu_setpoint_to_px4_ned(
     origin_x_ned: float = 0.0,
     origin_y_ned: float = 0.0,
     origin_z_ned: float | None = None,
-    z_ekf_adjust_ned: float = 0.0,
 ) -> tuple[float, float, float]:
     """Convert an anchored-ENU setpoint to PX4 local NED for ``TrajectorySetpoint``.
 
     ``origin_*_ned`` shift the anchored frame back onto PX4's EKF-local frame. When
     ``origin_z_ned`` is set (``VehicleLocalPosition.z_global``), the boot altitude is
-    added so setpoints match PX4's fused ``z``. ``z_ekf_adjust_ned`` mirrors
-    ``MulticopterPositionControl::adjustSetpointForEKFResets`` for streamed setpoints.
+    added so setpoints match PX4's fused ``z``. EKF-reset compensation already lives
+    in ``origin_*_ned`` (``Px4LocalFrame.setpoint_origin_ned``); do not re-apply it.
     """
     x_ned, y_ned, z_local = enu_to_ned(x_enu, y_enu, z_enu)
     if origin_z_ned is not None:
-        z_ned = origin_z_ned + z_local + z_ekf_adjust_ned
+        z_ned = origin_z_ned + z_local
     else:
-        z_ned = z_local + z_ekf_adjust_ned
+        z_ned = z_local
     return origin_x_ned + x_ned, origin_y_ned + y_ned, z_ned
 
 
