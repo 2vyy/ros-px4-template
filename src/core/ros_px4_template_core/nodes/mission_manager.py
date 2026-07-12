@@ -45,11 +45,11 @@ from visualization_msgs.msg import Marker, MarkerArray
 from ros_px4_template_core.lib import events
 from ros_px4_template_core.lib.frames import enu_yaw_from_quaternion
 from ros_px4_template_core.lib.mission.commands import GoTo, Land
-from ros_px4_template_core.lib.mission.detection import Detection
 from ros_px4_template_core.lib.mission.engine import MissionContext, tick
 from ros_px4_template_core.lib.mission.loader import load_mission_file
 from ros_px4_template_core.lib.mission.telemetry import usable_battery_remaining
 from ros_px4_template_core.lib.mission.types import Inputs
+from ros_px4_template_core.lib.mission_inputs import MissionManagerState, build_inputs
 from ros_px4_template_core.lib.structured_logger import StructuredLogger
 from ros_px4_template_core.lib.target_pose import target_yaw_to_quaternion
 
@@ -209,60 +209,37 @@ class MissionManager(Node):
             self._have_vehicle_status = True
 
     def _snapshot(self, now: float) -> Inputs:
-        dets: tuple[Detection, ...] = ()
-        stability: dict[int, int] = {}
+        # Copy the locked fields, run the pure builder, and persist the (possibly
+        # zeroed) marker stability back -- all under one lock, atomic like before.
         with self._state_lock:
-            pos_enu = self._pos_enu
-            yaw_enu = self._yaw_enu
-            have_odom = self._have_odom
-            odom_time = self._odom_time
-            armed = self._armed
-            ctrl_alt = self._ctrl_alt
-            estimate_ok = self._estimate_ok
-            marker_offset_body = self._marker_offset_body
-            marker_id_seen = self._marker_id_seen
-            marker_time = self._marker_time
-            marker_stability = self._marker_stability
-            battery_remaining = self._battery_remaining
-            have_battery = self._have_battery
-            battery_time = self._battery_time
-            failsafe_active = self._failsafe_active
-            have_vehicle_status = self._have_vehicle_status
-            vehicle_status_time = self._vehicle_status_time
-            if marker_offset_body is None or now - marker_time > 1.0:
-                self._marker_stability = 0
-                marker_stability = 0
-
-        if marker_offset_body is not None and now - marker_time <= 1.0:
-            dets = (
-                Detection(
-                    id=marker_id_seen,
-                    offset_body_flu=marker_offset_body,
-                    stamp=marker_time,
-                ),
+            state = MissionManagerState(
+                pos_enu=self._pos_enu,
+                yaw_enu=self._yaw_enu,
+                have_odom=self._have_odom,
+                odom_time=self._odom_time,
+                armed=self._armed,
+                ctrl_alt=self._ctrl_alt,
+                estimate_ok=self._estimate_ok,
+                marker_offset_body=self._marker_offset_body,
+                marker_id_seen=self._marker_id_seen,
+                marker_time=self._marker_time,
+                marker_stability=self._marker_stability,
+                battery_remaining=self._battery_remaining,
+                have_battery=self._have_battery,
+                battery_time=self._battery_time,
+                failsafe_active=self._failsafe_active,
+                have_vehicle_status=self._have_vehicle_status,
+                vehicle_status_time=self._vehicle_status_time,
             )
-            if now - marker_time <= _STABLE_FRESH_S:
-                stability = {marker_id_seen: marker_stability}
-        z_eff = max(pos_enu[2], ctrl_alt)
-        return Inputs(
-            now=now,
-            pose_enu=(pos_enu[0], pos_enu[1], z_eff),
-            yaw_enu=yaw_enu,
-            armed=armed,
-            altitude_ok=z_eff >= self._takeoff_alt - self._takeoff_alt_tol,
-            estimate_ok=estimate_ok,
-            detections=dets,
-            detection_stability=stability,
-            input_ages={
-                "odom": (now - odom_time) if have_odom else float("inf"),
-                "battery": (now - battery_time) if have_battery else float("inf"),
-                "vehicle_status": (
-                    (now - vehicle_status_time) if have_vehicle_status else float("inf")
-                ),
-            },
-            battery_remaining=battery_remaining,
-            failsafe_active=failsafe_active,
-        )
+            inputs, marker_stability = build_inputs(
+                now,
+                state,
+                takeoff_alt=self._takeoff_alt,
+                takeoff_alt_tol=self._takeoff_alt_tol,
+                stable_fresh_s=_STABLE_FRESH_S,
+            )
+            self._marker_stability = marker_stability
+        return inputs
 
     def _tick(self) -> None:
         now = self.get_clock().now().nanoseconds / 1e9
