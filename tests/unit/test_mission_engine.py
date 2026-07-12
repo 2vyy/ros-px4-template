@@ -118,6 +118,96 @@ def _precision_land_mission() -> Mission:
     )
 
 
+def _recovery_mission() -> Mission:
+    """hold_safe has an outgoing mission edge, to show recovery once safety clears."""
+    return Mission(
+        initial="run",
+        states={
+            "run": StateDef("run", "hold", {"z": 3.0}),
+            "hold_safe": StateDef("hold_safe", "hold", {}),
+            "resumed": StateDef("resumed", "hold", {}),
+        },
+        safety=(TransitionDef(None, "estimate_invalid", {}, "hold_safe"),),
+        transitions=(TransitionDef("hold_safe", "reached", {}, "resumed"),),
+        terminal=frozenset({"resumed"}),
+    )
+
+
+def _self_loop_mission() -> Mission:
+    return Mission(
+        initial="spin",
+        states={"spin": StateDef("spin", "hold", {"z": 3.0})},
+        safety=(),
+        transitions=(TransitionDef("spin", "reached", {}, "spin"),),
+        terminal=frozenset(),
+    )
+
+
+def test_persistent_safety_does_not_re_enter_or_wipe_scratch() -> None:
+    """A safety edge whose target is the current state is a no-op: no repeated
+    TRANSITION event, and the hold target captured on entry FREEZES even as the
+    live pose drifts (the fault-point-freeze property)."""
+    ctx = MissionContext(state="takeoff")
+    m = _mission()
+    cmd1 = tick(ctx, m, _inputs(now=0.0, pose_enu=(1.0, 2.0, 3.0), estimate_ok=False))
+    assert ctx.state == "hold_safe"
+    assert isinstance(cmd1, GoTo)
+    frozen = (cmd1.x, cmd1.y, cmd1.z)
+
+    cmd2 = tick(ctx, m, _inputs(now=0.1, pose_enu=(5.0, 6.0, 3.0), estimate_ok=False))
+    cmd3 = tick(ctx, m, _inputs(now=0.2, pose_enu=(9.0, 9.0, 3.0), estimate_ok=False))
+    assert ctx.state == "hold_safe"
+    assert isinstance(cmd2, GoTo)
+    assert isinstance(cmd3, GoTo)
+    assert (cmd2.x, cmd2.y, cmd2.z) == frozen
+    assert (cmd3.x, cmd3.y, cmd3.z) == frozen
+
+    evs = [e for e in ctx.events if e["event"] == "TRANSITION"]
+    assert len(evs) == 1
+    assert evs[0]["to"] == "hold_safe"
+
+
+def test_safety_persists_suppresses_mission_tier_until_cleared() -> None:
+    """While the safety condition holds, the mission tier stays suppressed; once
+    it clears, the mission-tier edge out of hold_safe fires."""
+    ctx = MissionContext(state="hold_safe")
+    m = _recovery_mission()
+    tick(ctx, m, _inputs(pose_enu=(0.0, 0.0, 3.0), estimate_ok=False))
+    assert ctx.state == "hold_safe"  # reached=True, but safety suppresses the mission tier
+    tick(ctx, m, _inputs(pose_enu=(0.0, 0.0, 3.0), estimate_ok=True))
+    assert ctx.state == "resumed"
+
+
+def test_mission_tier_self_loop_is_noop() -> None:
+    ctx = MissionContext(state="spin")
+    m = _self_loop_mission()
+    for t in (0.0, 0.1, 0.2):
+        tick(ctx, m, _inputs(now=t, pose_enu=(0.0, 0.0, 3.0)))
+    assert ctx.state == "spin"
+    assert not [e for e in ctx.events if e["event"] == "TRANSITION"]
+    assert ctx.scratch.get("spin")  # scratch survived, not wiped every tick
+
+
+def test_simulate_persistent_safety_logs_one_transition() -> None:
+    """End to end over demo.yaml: a lost estimate held from t=5 s logs exactly
+    one hold_safe TRANSITION, not one per tick (the churn this plan fixes)."""
+    from pathlib import Path
+
+    from ros_px4_template_core.lib.mission.loader import load_mission_file
+    from ros_px4_template_core.lib.mission.simulate import SimVehicle, simulate
+
+    demo = Path(__file__).resolve().parents[2] / "config" / "missions" / "demo.yaml"
+    m = load_mission_file(demo)
+
+    def script(now: float, v: SimVehicle) -> None:
+        if now >= 5.0:
+            v.estimate_ok = False
+
+    result = simulate(m, max_ticks=200, script=script)
+    to_safe = [e for e in result.events if e.get("to") == "hold_safe"]
+    assert len(to_safe) == 1
+
+
 def test_reentry_reinitializes_descend_scratch_from_current_altitude() -> None:
     """Re-entering `descend` after a `reacquire` detour must not carry over the
     previous episode's z_cmd -- it re-derives descent from the CURRENT pose,
