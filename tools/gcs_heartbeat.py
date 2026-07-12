@@ -9,6 +9,7 @@ the system/component ID and send the param overrides.
 
 from __future__ import annotations
 
+import math
 import struct
 import sys
 import time
@@ -60,6 +61,78 @@ def _send_params(conn: mavutil.mavudp) -> None:
         )
 
 
+def _param_value_matches(received: float, expected: float, type_str: str) -> bool:
+    """True if a PARAM_VALUE float echoes the value we set.
+
+    INT32 params travel as the int's raw bytes reinterpreted as float32 (the same
+    union convention _send_params encodes), so decode the received float the same
+    way before comparing. REAL32 params compare with a small tolerance.
+    """
+    if type_str == "INT32":
+        (as_int,) = struct.unpack(">i", struct.pack(">f", received))
+        return as_int == int(expected)
+    return math.isclose(received, float(expected), rel_tol=1e-6, abs_tol=1e-9)
+
+
+def _confirm_params(conn: mavutil.mavudp, timeout_s: float = 2.0) -> tuple[bool, list[str]]:
+    """Request each _PARAMS entry back and check PX4 echoes the value we set.
+
+    Returns ``(all_confirmed, missing_names)``. Never raises: a param that does
+    not echo a matching value within its per-param slice of ``timeout_s`` is
+    reported missing. ``timeout_s`` is kept short so this cannot starve the GCS
+    heartbeat cadence (PX4 drops the link after ~3 s of silence).
+    """
+    per_param = timeout_s / max(len(_PARAMS), 1)
+    missing: list[str] = []
+    for name, value, type_str in _PARAMS:
+        conn.mav.param_request_read_send(
+            conn.target_system, conn.target_component, name.encode("utf-8"), -1
+        )
+        deadline = time.monotonic() + per_param
+        confirmed = False
+        while time.monotonic() < deadline:
+            msg = conn.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.2)
+            if msg is None:
+                continue
+            pid = msg.param_id
+            if isinstance(pid, bytes):
+                pid = pid.decode("utf-8", "ignore")
+            if pid.rstrip("\x00") != name:
+                continue
+            if _param_value_matches(msg.param_value, value, type_str):
+                confirmed = True
+                break
+        if not confirmed:
+            missing.append(name)
+    return (not missing, missing)
+
+
+def _send_and_confirm(conn: mavutil.mavudp, attempts: int = 3) -> None:
+    """Send params, confirm them via PARAM_VALUE read-back, then write the flag.
+
+    Writes _PARAMS_FLAG regardless of confirmation: the boot-time PX4_PARAM_*
+    env exports already applied these (see _start_gz_px4.sh), so READY is not
+    held hostage to a lossy GCS link. The log now distinguishes confirmed from
+    the missing names -- the diagnostic that was absent before.
+    """
+    ok = False
+    missing: list[str] = []
+    for _ in range(attempts):
+        _send_params(conn)
+        ok, missing = _confirm_params(conn)
+        if ok:
+            break
+    if ok:
+        print("[gcs_heartbeat] Params confirmed by PX4.", flush=True)
+    else:
+        print(
+            f"[gcs_heartbeat] WARNING: params NOT confirmed: {missing} "
+            "(boot-time env exports remain in effect)",
+            flush=True,
+        )
+    _PARAMS_FLAG.write_text(str(time.time()))
+
+
 def main() -> None:
     print("[gcs_heartbeat] Connecting to PX4 SITL on UDP 18570...", flush=True)
     conn = mavutil.mavlink_connection("udpout:127.0.0.1:18570")
@@ -94,12 +167,8 @@ def main() -> None:
         flush=True,
     )
 
-    # Retry param_set a few times — UDP is lossy.
-    for _ in range(5):
-        _send_params(conn)
-        time.sleep(0.3)
-
-    _PARAMS_FLAG.write_text(str(time.time()))
+    # Send + confirm via PARAM_VALUE read-back (UDP is lossy), then flag committed.
+    _send_and_confirm(conn)
     print("[gcs_heartbeat] Params committed. Sending heartbeats...", flush=True)
     last_heartbeat_time = time.monotonic()
     need_send_params = False
@@ -137,10 +206,7 @@ def main() -> None:
 
         if need_send_params and time.monotonic() - last_heartbeat_time < 1.0:
             print("[gcs_heartbeat] Re-sending parameters to restarted PX4 SITL...", flush=True)
-            for _ in range(3):
-                _send_params(conn)
-                time.sleep(0.1)
-            _PARAMS_FLAG.write_text(str(time.time()))
+            _send_and_confirm(conn)
             print("[gcs_heartbeat] Params committed.", flush=True)
             need_send_params = False
 

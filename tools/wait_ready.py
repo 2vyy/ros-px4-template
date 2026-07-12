@@ -5,10 +5,11 @@ Readiness criteria (all three must pass):
   1. /fmu/out/vehicle_local_position_v1 appears in `ros2 topic list`
      (confirms PX4 SITL + MicroXRCEAgent are up and publishing telemetry).
   2. rosbridge WebSocket port 9090 is open.
-  3. gcs_heartbeat has committed PX4 params (a FRESH /tmp/gcs_params_flag,
-     mtime at/after this waiter started), confirming the MAVLink GCS link is
-     established and PX4 is responsive. The freshness check stops a flag left
-     behind by an unclean exit from false-READYing a new boot.
+  3. gcs_heartbeat has committed and confirmed PX4 params (a FRESH
+     /tmp/gcs_params_flag, mtime at/after this waiter started), confirming the
+     MAVLink GCS link is established and PX4 is responsive. gcs_heartbeat now
+     reads each param back via PARAM_VALUE before writing the flag. The
+     freshness check stops a flag left by an unclean exit false-READYing a boot.
 
 Exit 0 on ready, 1 on timeout.
 """
