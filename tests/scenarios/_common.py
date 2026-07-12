@@ -54,9 +54,16 @@ def trigger_auto_arm() -> bool:
     return ok
 
 
-def trigger_cleanup() -> None:
-    """Disable auto-arming and command the drone to land."""
-    param_ok = _ros2("param", "set", "/offboard_controller", "auto_arm", "false")
+def trigger_cleanup(disable_auto_arm: bool = True) -> None:
+    """Command the drone to land; unless disabled, also turn auto-arming back off.
+
+    A passive scenario (``auto_arm=False``) never set auto_arm, so it skips the
+    param-set half. The land command stays unconditional -- harmless for a
+    scenario that never armed.
+    """
+    param_ok = True
+    if disable_auto_arm:
+        param_ok = _ros2("param", "set", "/offboard_controller", "auto_arm", "false")
     land_ok = _ros2(
         "topic",
         "pub",
@@ -137,6 +144,8 @@ class Scenario(abc.ABC):
 
     name: str
     timeout_s: float = 60.0
+    auto_arm: bool = True  # opt out (False) for passive scenarios that must not arm
+    _arm_trigger_ok: bool | None = None
 
     @abc.abstractmethod
     def make_node(self) -> Node:
@@ -154,9 +163,15 @@ class Scenario(abc.ABC):
         """Extra fields to include in the JSON report."""
         return {}
 
+    def _detail(self) -> dict:
+        """report_detail() plus the arm-trigger status, merged into every exit path."""
+        return {**self.report_detail(), "arm_trigger_ok": self._arm_trigger_ok}
+
     async def run(self) -> bool:
         rclpy.init()
-        trigger_auto_arm()
+        # None when this scenario opts out of arming; otherwise the trigger result, so a
+        # timeout can distinguish "arm param-set failed" from "vehicle did not fly".
+        self._arm_trigger_ok = trigger_auto_arm() if self.auto_arm else None
         started = time.monotonic()
         node: Node | None = None
         try:
@@ -165,16 +180,14 @@ class Scenario(abc.ABC):
                 await asyncio.wait_for(spin_until(node, self.done), timeout=self.timeout_s)
             except TimeoutError:
                 elapsed = time.monotonic() - started
-                write_report(
-                    self.name, False, elapsed, {"reason": "timeout", **self.report_detail()}
-                )
+                write_report(self.name, False, elapsed, {"reason": "timeout", **self._detail()})
                 return False
             elapsed = time.monotonic() - started
             reason = self.fail_reason()
             if reason is not None:
-                write_report(self.name, False, elapsed, {"reason": reason, **self.report_detail()})
+                write_report(self.name, False, elapsed, {"reason": reason, **self._detail()})
                 return False
-            write_report(self.name, True, elapsed, self.report_detail())
+            write_report(self.name, True, elapsed, self._detail())
             return True
         except Exception as exc:
             elapsed = time.monotonic() - started
@@ -182,11 +195,15 @@ class Scenario(abc.ABC):
                 self.name,
                 False,
                 elapsed,
-                {"reason": "exception", "exc": f"{type(exc).__name__}: {exc}"},
+                {
+                    "reason": "exception",
+                    "exc": f"{type(exc).__name__}: {exc}",
+                    "arm_trigger_ok": self._arm_trigger_ok,
+                },
             )
             return False
         finally:
-            trigger_cleanup()
+            trigger_cleanup(disable_auto_arm=self.auto_arm)
             if node is not None:
                 node.destroy_node()
             if rclpy.ok():
