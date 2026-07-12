@@ -4,7 +4,8 @@
 ROS 2 Interface
 Subscriptions:
     /drone/controller_status    [px4_ros_msgs/ControllerStatus]
-    /drone/odom                 [nav_msgs/Odometry]   (position_node SoT pose)
+    /drone/odom                 [nav_msgs/Odometry]   (position_node SoT pose;
+                                pose.covariance[0] < 0 means estimate invalid)
     /drone/marker_detection     [px4_ros_msgs/MarkerDetection]
     /fmu/out/battery_status_v1  [px4_msgs/BatteryStatus]
     /fmu/out/vehicle_status_v1  [px4_msgs/VehicleStatus]  (failsafe only)
@@ -157,10 +158,14 @@ class MissionManager(Node):
         q = pose.orientation
         pos_enu = (pose.position.x, pose.position.y, pose.position.z)
         yaw_enu = enu_yaw_from_quaternion(q.w, q.x, q.y, q.z)
+        # position_node flags a bad PX4 estimate as covariance[0] = -1.0; a
+        # non-negative value means valid. Drives the estimate_invalid safety guard.
+        estimate_ok = msg.pose.covariance[0] >= 0.0
         odom_time = self.get_clock().now().nanoseconds / 1e9
         with self._state_lock:
             self._pos_enu = pos_enu
             self._yaw_enu = yaw_enu
+            self._estimate_ok = estimate_ok
             self._have_odom = True
             self._odom_time = odom_time
 

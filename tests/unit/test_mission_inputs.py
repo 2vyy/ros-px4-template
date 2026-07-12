@@ -99,3 +99,12 @@ def test_battery_remaining_passes_through() -> None:
     assert inp.battery_remaining is None
     inp2, _ = _build(0.0, battery_remaining=0.42)
     assert inp2.battery_remaining == 0.42
+
+
+def test_estimate_ok_passes_through() -> None:
+    # position_node -> covariance[0] -> _odom_cb -> snapshot -> Inputs.estimate_ok
+    # is what lets the estimate_invalid safety guard fire (plan 050).
+    inp, _ = _build(0.0, estimate_ok=True)
+    assert inp.estimate_ok is True
+    inp2, _ = _build(0.0, estimate_ok=False)
+    assert inp2.estimate_ok is False
