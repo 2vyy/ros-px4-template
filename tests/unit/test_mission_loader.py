@@ -66,3 +66,29 @@ def test_unknown_initial_rejected() -> None:
     doc["mission"]["initial"] = "ghost"
     with pytest.raises(MissionError, match="initial"):
         load_mission_dict(doc)
+
+
+def _doc_with_waypoints(wps: list) -> dict:
+    doc = _doc()
+    doc["mission"]["states"]["follow"]["params"] = {"waypoints": wps}
+    return doc
+
+
+def test_inline_waypoint_arity_2_rejected_at_load() -> None:
+    with pytest.raises(MissionError, match="waypoint entry 0"):
+        load_mission_dict(_doc_with_waypoints([[1, 2]]))
+
+
+def test_inline_waypoint_arity_5_rejected_at_load() -> None:
+    with pytest.raises(MissionError, match="waypoints"):
+        load_mission_dict(_doc_with_waypoints([[1, 2, 3, 90, 5]]))
+
+
+def test_inline_waypoint_valid_arities_load() -> None:
+    m = load_mission_dict(_doc_with_waypoints([[1, 2, 3], [4, 5, 6, 90]]))
+    assert len(m.states["follow"].params["waypoints"]) == 2
+
+
+def test_inline_waypoint_non_numeric_rejected_at_load() -> None:
+    with pytest.raises(MissionError, match="waypoints"):
+        load_mission_dict(_doc_with_waypoints([["a", 2, 3]]))

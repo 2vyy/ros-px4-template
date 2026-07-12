@@ -6,6 +6,7 @@ from pathlib import Path
 
 import yaml
 
+from ros_px4_template_core.lib.mission.behaviors import _split_waypoint_entry
 from ros_px4_template_core.lib.mission.registry import known_behaviors, known_guards
 from ros_px4_template_core.lib.mission.types import Mission, StateDef, TransitionDef
 from ros_px4_template_core.lib.waypoint_mission import load_path_yaml
@@ -23,6 +24,14 @@ def _resolve_waypoints(params: dict, base_dir: Path | None) -> dict:
         wps = load_path_yaml(p)
         params = dict(params)
         params["waypoints"] = [(w.x, w.y, w.z) for w in wps]
+    if "waypoints" in params:
+        # Fail a malformed inline waypoint at LOAD, not on every tick inside
+        # follow_waypoints (the behavior's docstring promises load/first-tick).
+        for i, entry in enumerate(params["waypoints"]):
+            try:
+                _split_waypoint_entry(tuple(entry), i)
+            except (ValueError, TypeError) as e:
+                raise MissionError(f"state waypoints: {e}") from e
     return params
 
 
