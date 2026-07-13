@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Repo-local x500 with a downward monocular camera (plans/062 spike).
+
+  Differences from PX4's stock x500_mono_cam_down (read-only reference under
+  PX4_DIR/Tools/simulation/gz/models/):
+    - sensor is named 'camera' (PX4 uses 'imager'), so the Gazebo topic
+      /world/<w>/model/<m>_0/link/camera_link/sensor/camera/image matches
+      _vision_bridge's template in sim/launch/sim_full.launch.py.
+    - 640x480 @ 20 Hz instead of 1280x960 @ 30 Hz (cheaper to render, still
+      enough resolution for 0.2 m markers at competition altitudes).
+    - camera link defined inline (no model://mono_cam include) so we own the
+      sensor name and geometry.
+
+  Nadir geometry mirrors PX4's: camera_link is pitched +90deg (0 1.5707 0)
+  relative to base_link so the optical axis points straight down. The detector
+  (nodes/aruco_pose_publisher.py) assumes exactly this nadir OpenCV-optical
+  mounting for its camera->body-FLU extrinsic.
+
+  PX4 resolves this via PX4_SIM_MODEL=gz_x500_mono_cam_down: the airframe comes
+  from PX4 (4014_gz_x500_mono_cam_down) and the model resolves to THIS file
+  because sim/models is first on GZ_SIM_RESOURCE_PATH (_gz_paths).
+-->
+<sdf version='1.9'>
+  <model name='x500_mono_cam_down'>
+    <self_collide>false</self_collide>
+    <include merge='true'>
+      <uri>x500</uri>
+    </include>
+    <link name="camera_link">
+      <!-- 6 cm below base_link so the x500's own arms/props stay out of the
+           downward cone; pitched +90deg for a nadir optical axis. -->
+      <pose relative_to="base_link">0 0 -0.06 0 1.5707 0</pose>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>0.050</mass>
+        <inertia>
+          <ixx>0.00004</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.00004</iyy>
+          <iyz>0</iyz>
+          <izz>0.00004</izz>
+        </inertia>
+      </inertial>
+      <visual name="camera_housing">
+        <geometry>
+          <box>
+            <size>0.02 0.04 0.04</size>
+          </box>
+        </geometry>
+      </visual>
+      <sensor name="camera" type="camera">
+        <gz_frame_id>camera_link</gz_frame_id>
+        <pose>0 0 0 0 0 0</pose>
+        <camera>
+          <!-- ~57deg FOV (not PX4's 1.74 rad ~100deg fisheye): at 3 m altitude a
+               0.25 m marker spans ~50 px, enough to resolve the DICT_4X4_50 grid.
+               A wide fisheye renders the marker as an unresolvable ~20 px blob. -->
+          <horizontal_fov>1.0</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>3000</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <update_rate>20</update_rate>
+        <visualize>true</visualize>
+      </sensor>
+      <gravity>true</gravity>
+      <velocity_decay />
+    </link>
+    <joint name="CameraJoint" type="fixed">
+      <parent>base_link</parent>
+      <child>camera_link</child>
+    </joint>
+  </model>
+</sdf>
