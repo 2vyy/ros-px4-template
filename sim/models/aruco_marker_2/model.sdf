@@ -5,14 +5,16 @@
     <link name="link">
       <visual name="visual">
         <geometry>
-          <box>
-            <size>0.25 0.25 0.01</size>
-          </box>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.25 0.25</size>
+          </plane>
         </geometry>
         <material>
           <pbr>
             <metal>
-              <albedo_map>materials/textures/aruco_marker_2.png</albedo_map>
+              <albedo_map>model://aruco_marker_2/materials/textures/aruco_marker_2.png</albedo_map>
+              <emissive_map>model://aruco_marker_2/materials/textures/aruco_marker_2.png</emissive_map>
               <roughness>1.0</roughness>
               <metalness>0.0</metalness>
             </metal>
