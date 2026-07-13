@@ -84,13 +84,27 @@ def test_scenario_sim_configs_reads_vision_and_overlay(tmp_path: Path) -> None:
                 "status": "idea",
                 "sim_vision": "aruco",
                 "sim_overlay": "auto_arm",
+                "sim_model": "x500_mono_cam_down",
+                "sim_world": "marker_field",
             },
         },
     )
     result = scenario_sim_configs("sim", registry=reg)
     assert result == [
-        {"scenario": "01_arm_takeoff", "vision": "none", "overlay": "hover"},
-        {"scenario": "05_aruco_hover", "vision": "aruco", "overlay": "auto_arm"},
+        {
+            "scenario": "01_arm_takeoff",
+            "vision": "none",
+            "overlay": "hover",
+            "model": "x500",
+            "world": "default",
+        },
+        {
+            "scenario": "05_aruco_hover",
+            "vision": "aruco",
+            "overlay": "auto_arm",
+            "model": "x500_mono_cam_down",
+            "world": "marker_field",
+        },
     ]
 
 
@@ -108,7 +122,15 @@ def test_scenario_sim_configs_defaults_when_fields_missing(tmp_path: Path) -> No
         },
     )
     result = scenario_sim_configs("sim", registry=reg)
-    assert result == [{"scenario": "03_waypoint", "vision": "none", "overlay": "auto_arm"}]
+    assert result == [
+        {
+            "scenario": "03_waypoint",
+            "vision": "none",
+            "overlay": "auto_arm",
+            "model": "x500",
+            "world": "default",
+        }
+    ]
 
 
 def _load_from(path: Path) -> dict:

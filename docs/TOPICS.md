@@ -56,6 +56,19 @@ A `(vision)` suffix on the Dir marks a topic published only under
 `--vision aruco`; `just log topics` skips its presence check unless run with
 `--vision`.
 
+### Camera inputs (camera model only)
+
+`aruco_pose_publisher` subscribes to `/camera/image_raw`
+(`sensor_msgs/msg/Image`) and `/camera/camera_info`
+(`sensor_msgs/msg/CameraInfo`), both `RELIABLE`. These are bridged from Gazebo by
+`_vision_bridge` (`sim_full.launch.py`) ONLY when the sim runs a camera-equipped
+model whose sensor is named `camera` (e.g. `sim/models/x500_mono_cam_down`). The
+default `x500` publishes no camera, so on the synthetic scenarios these topics do
+not exist and detections are fabricated instead. They are deliberately NOT in the
+audited tables above (their presence depends on the model, not `--vision`);
+scenario `09_aruco_hover_real` is the real end-to-end camera-pipeline check. See
+[docs/SIM.md](SIM.md) and `plans/062-findings.md`.
+
 ## Adding a topic
 
 1. Publish or subscribe in a node under `src/core/ros_px4_template_core/nodes/` and update that module's ROS 2 Interface docstring.

@@ -34,11 +34,19 @@ unpaused pre-start corrupts EKF2 timing, see the `_start_gz_px4.sh` header).
 The `default` world keeps the original PX4-starts-Gazebo path byte-identical.
 All three repo worlds now launch via `just sim --world <name>`.
 
-The stock `x500` model in this template has no bridged camera topic, so
-these worlds are GUI and manual flight practice only, not an automated
-perception capability. `--vision aruco` in `sim_full.launch.py` bridges a
-camera topic only if the selected model publishes one; the current x500
-does not. Scenarios `05_aruco_hover` and `06_search_relocalize` remain
-synthetic (fabricated detections) by design and do not depend on these
-worlds. A future camera-equipped vehicle model could turn these environments
-into true perception scenarios without changing their geometry.
+**Perception: synthetic (default) vs real (camera model).** The stock `x500`
+publishes no camera, so `--vision aruco` on it bridges nothing and scenarios
+`05_aruco_hover` / `06_search_relocalize` / `08_precision_land` fabricate
+`/drone/marker_detection` by design — the fast, non-rendering tier and the only
+path for `--world default`. For REAL perception, `sim/models/x500_mono_cam_down`
+adds a downward camera whose sensor is named `camera` (matching `_vision_bridge`);
+booting `just sim --world marker_field --model x500_mono_cam_down --vision aruco`
+bridges `/camera/image_raw` and `aruco_pose_publisher` detects the rendered
+marker (~0.06 m median horizontal error at 3 m, plans/062). Scenario
+`09_aruco_hover_real` exercises this end to end and runs in `just test e2e` via
+its `sim_model`/`sim_world` fields in `tests/capabilities.toml`.
+
+Marker assets need an `<emissive_map>` to render in the gz camera SENSOR: a PBR
+`albedo_map` alone renders the marker as a solid black square (no error) that
+`detectMarkers` cannot decode. Fixed for markers 0/1/2; see the comment in
+`sim/models/aruco_marker_0/model.sdf` and `plans/062-findings.md`.
