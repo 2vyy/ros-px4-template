@@ -1007,13 +1007,24 @@ def _run_e2e_sim_group(
 def test(
     type: str = typer.Argument("unit", help="Test type: unit, scenario, e2e"),
     arg: str = typer.Option("", "--arg", help="Scenario name (required for scenario test)"),
-    wait: bool = typer.Option(False, "--wait", help="e2e only: block until the run finishes."),
+    detach: bool = typer.Option(
+        False,
+        "--detach",
+        help="e2e only: run in a background supervisor; poll with just e2e-status.",
+    ),
+    wait: bool = typer.Option(
+        False,
+        "--wait",
+        hidden=True,
+        help="Deprecated: e2e blocks by default; this flag is a no-op.",
+    ),
 ):
     """Run tests. Types: unit (default), scenario (requires --arg=<name>), e2e.
 
-    e2e detaches by default: it boots the cycle in a background supervisor and
-    returns after an E2E STARTED verdict. Poll with `just e2e-status`; stop
-    with `just stop`. Pass --wait for the old blocking behavior.
+    e2e blocks by default: it captures the terminal for the whole cycle and ends
+    with the aggregate PASS/FAIL verdict and exit code. Pass --detach to run it
+    in a background supervisor instead (returns after an E2E STARTED verdict;
+    poll with `just e2e-status`, stop with `just stop`).
     """
 
     if type == "unit":
@@ -1082,7 +1093,9 @@ def test(
             )
             raise typer.Exit(int(ExitCode.PRECONDITION))
 
-        if wait:
+        if not detach:
+            # Blocking by default: capture the terminal, end with the aggregate
+            # verdict and exit code. `--wait` is the deprecated no-op alias.
             _e2e_run(configs)
             return
 

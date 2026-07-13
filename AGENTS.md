@@ -38,7 +38,7 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | Simulation & Run | `just sim [flags]` | Smart-builds, boots detached, waits till ready, prints verdict, returns. Never holds the terminal. Flags: `--gui`, `--world`, `--model`, `--vision`, `--overlay`, `--record`, `--no-build`, `--timeout` |
 | Real Hardware | `just hw [flags]` | Same detached + verdict contract for the serial flight controller |
 | Lifecycle | `just stop` | Exhaustive cold teardown; no process survives |
-| Verification suite | `just test [type]` / `just scenario <name>` | Smart-builds first. Types: `unit`, `e2e`. e2e detaches; poll with `just e2e-status` (or `--wait` to block) |
+| Verification suite | `just test [type]` / `just scenario <name>` | Smart-builds first. Types: `unit`, `e2e`. e2e blocks by default (captures terminal, ends with PASS/FAIL); `--detach` runs it in the background, poll with `just e2e-status` |
 | Forensic toolkit | `just log [subcmd]` | Observability helper: `summary`, `tail`, `topics` |
 | Capabilities | `just cap [subcmd]` | Exposes verified capabilities: `show`, `mark` |
 
@@ -56,7 +56,8 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | Stop everything | `just stop` (exhaustive cold teardown) |
 | Run unit tests | `just test` |
 | Run a live scenario | `just scenario <name>` (e.g. `just scenario 01_arm_takeoff`) |
-| Run headless E2E cycle (detached) | `just test e2e` |
+| Run headless E2E cycle (blocks) | `just test e2e` |
+| Run E2E detached (background) | `just test e2e --detach` |
 | Poll a detached e2e run | `just e2e-status` |
 | Tail structured logs live | `just log tail` |
 | View live workspace status | `just status` |
@@ -94,7 +95,7 @@ Every command ends in a concise English verdict that states what was verified, n
 
 `just sim` boots disarmed by default; pass `--overlay auto_arm` (or trigger it from a scenario) to arm. Launch never holds the terminal: `just sim` returns after the verdict, the stack runs in the background, `just log tail` watches it, `just stop` ends it.
 
-`just test e2e` follows the same contract: it returns after an `E2E STARTED` verdict and the cycle runs detached. `just e2e-status` exits 0 (finished, all pass), 1 (finished with failures, or run aborted/supervisor died), 2 (no run found), 3 (still running; output includes group progress and a `last activity Ns ago` age to tell slow from wedged). `just test e2e --wait` blocks like before; `just stop` also kills a detached run.
+`just test e2e` blocks by default: it holds the terminal for the whole cycle and ends with the aggregate PASS/FAIL verdict and a fixed exit code (0 all pass, 1 any fail). Pass `--detach` to run it in a background supervisor instead: it returns after an `E2E STARTED` verdict and the cycle runs detached, watched with `just e2e-status` and stopped with `just stop`. `just e2e-status` exits 0 (finished, all pass), 1 (finished with failures, or run aborted/supervisor died), 2 (no run found), 3 (still running; output includes group progress and a `last activity Ns ago` age to tell slow from wedged). (`--wait` is a deprecated no-op alias, since blocking is now the default.)
 
 ## Reference
 
