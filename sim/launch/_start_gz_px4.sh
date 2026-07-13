@@ -9,14 +9,25 @@
 #   PX4_GZ_PLUGINS_DIR gz_plugins build dir
 #   PX4_GZ_SERVER_CFG  PX4 gz server.config path
 #   SIM_WORLD SIM_MODEL  world and model names
+#   SIM_WORLD_SDF      absolute path to the resolved <world>.sdf
+#   WORLD_IS_REPO      "1" when SIM_WORLD_SDF lives in our sim/worlds, else empty
 #   HEADLESS_FLAG      "1" for headless, else empty
 #
-# We do NOT pre-start `gz sim`. PX4 runs WITHOUT PX4_GZ_STANDALONE, so its rcS
-# starts Gazebo late in boot via ${PX4_GZ_WORLDS}/${world}.sdf and immediately
-# attaches gz_bridge, giving a clean lockstep boot. Pre-starting gz ourselves let
-# it free-run ~7-9 s before PX4 attached, corrupting IMU/baro timing to EKF2
-# divergence to a phantom altitude runaway. Flight uses stock thrust calibration
-# (no SIM_GZ_EC_MIN / MPC_THR overrides), verified to hold altitude.
+# Default (PX4-shipped) worlds: we do NOT pre-start `gz sim`. PX4 runs WITHOUT
+# PX4_GZ_STANDALONE, so its rcS starts Gazebo late in boot via
+# ${PX4_GZ_WORLDS}/${world}.sdf and immediately attaches gz_bridge, a clean
+# lockstep boot. This path is byte-identical to before and stays that way.
+#
+# Repo-only worlds (WORLD_IS_REPO=1): PX4's rcS clobbers PX4_GZ_WORLDS to its own
+# dir (via gz_env.sh), so it can never open our sim/worlds/<w>.sdf. We use PX4's
+# first-class "gazebo already running" branch instead: pre-start a PAUSED gz
+# server on the repo SDF, let PX4 detect and adopt it (that branch never sources
+# gz_env.sh, so no clobber), then unpause once PX4 has spawned the model. Pausing
+# is load-bearing: an unpaused pre-start free-ran ~7-9 s before PX4 attached,
+# corrupting IMU/baro timing to EKF2 divergence and a phantom altitude runaway
+# (plans/065). A paused server with no late-unpause deadlocked. This branch does
+# both: paused server + unpause on model-spawn. Flight uses stock thrust
+# calibration (no SIM_GZ_EC_MIN / MPC_THR overrides), verified to hold altitude.
 set -e
 
 export GZ_IP=127.0.0.1
@@ -54,6 +65,36 @@ export PX4_PARAM_EKF2_GPS_CTRL=7
 
 if [ "$HEADLESS_FLAG" = "1" ]; then
   export HEADLESS=1
+fi
+
+if [ "$WORLD_IS_REPO" = "1" ]; then
+  # Repo world: PX4 cannot open it (gz_env.sh clobbers PX4_GZ_WORLDS), so we
+  # pre-start a PAUSED server and let PX4 adopt it via its "already running" branch.
+  echo "[sim_full] Pre-starting paused gz server for repo world '$SIM_WORLD' ($SIM_WORLD_SDF)"
+  gz sim --verbose=1 -s "$SIM_WORLD_SDF" &   # NO -r: server starts paused
+  if [ "$HEADLESS_FLAG" != "1" ]; then
+    gz sim -g &                              # GUI client, mirrors PX4 rcS when not headless
+  fi
+  # Wait for the world to advertise its clock (this is PX4's own detection probe).
+  for _ in $(seq 1 60); do
+    gz topic -l 2>/dev/null | grep -qx "/world/${SIM_WORLD}/clock" && break
+    sleep 0.5
+  done
+  # Unpause watcher (forked before the exec below, so it survives). The strongest
+  # "PX4 attached and spawned" signal is the model instance existing; once it does,
+  # release physics so sim time barely advanced before lockstep.
+  (
+    for _ in $(seq 1 120); do
+      if gz model --list 2>/dev/null | grep -q "${SIM_MODEL}_0"; then
+        break
+      fi
+      sleep 0.5
+    done
+    sleep 1  # let gz_bridge finish attaching to the freshly spawned model
+    gz service -s "/world/${SIM_WORLD}/control" --reqtype gz.msgs.WorldControl \
+      --reptype gz.msgs.Boolean --timeout 2000 --req 'pause: false'
+    echo "[sim_full] repo world '${SIM_WORLD}' unpaused"
+  ) &
 fi
 
 echo "[sim_full] Starting PX4 (it starts Gazebo in lockstep) world='$SIM_WORLD' model='$SIM_MODEL'"
