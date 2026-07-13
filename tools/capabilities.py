@@ -61,11 +61,13 @@ def scenarios_for_platform(platform: str = "sim", registry: Path = REGISTRY) -> 
 def scenario_sim_configs(platform: str = "sim", registry: Path = REGISTRY) -> list[dict]:
     """Return per-scenario sim configs for the platform, in TOML order.
 
-    Each entry is ``{"scenario": <stem>, "vision": <str>, "overlay": <str>}``.
-    ``vision`` and ``overlay`` come from the ``sim_vision``/``sim_overlay`` fields
+    Each entry is ``{"scenario", "vision", "overlay", "model", "world"}``.
+    The fields come from ``sim_vision``/``sim_overlay``/``sim_model``/``sim_world``
     in the registry, letting the e2e harness launch an isolated sim per config so
-    hold scenarios and path scenarios don't share (and corrupt) one sim. Defaults
-    keep older registries working: vision="none", overlay="auto_arm".
+    hold scenarios and path scenarios don't share (and corrupt) one sim, and so a
+    perception scenario can boot a camera model + marker world while the synthetic
+    scenarios stay on the default model/world. Defaults keep older registries
+    working: vision="none", overlay="auto_arm", model="x500", world="default".
     """
     data = _load(registry)
     result = []
@@ -76,6 +78,8 @@ def scenario_sim_configs(platform: str = "sim", registry: Path = REGISTRY) -> li
                     "scenario": cap["scenario_file"].removesuffix(".py"),
                     "vision": cap.get("sim_vision", "none"),
                     "overlay": cap.get("sim_overlay", "auto_arm"),
+                    "model": cap.get("sim_model", "x500"),
+                    "world": cap.get("sim_world", "default"),
                 }
             )
     return result

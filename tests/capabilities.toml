@@ -74,3 +74,16 @@ scenario_file = "08_precision_land.py"
 sim_vision = "aruco"
 sim_overlay = "precision_land"
 last_verified = "2026-07-09"
+
+[capabilities.aruco_hover_real]
+description = "Vehicle detects a REAL rendered ArUco marker via the camera model and reports an accurate body-FLU offset (not fabricated)"
+status = "unverified"
+platforms = [
+    "sim",
+]
+scenario_file = "09_aruco_hover_real.py"
+sim_vision = "aruco"
+sim_overlay = "auto_arm"
+sim_model = "x500_mono_cam_down"
+sim_world = "marker_field"
+last_verified = ""

@@ -263,8 +263,9 @@ def _spawn_stack(
 
 
 def _resolve_scenario_config(name: str) -> dict | None:
-    """Return the declared ``{"scenario", "vision", "overlay"}`` config for a
-    scenario name from ``tests/capabilities.toml``, or ``None`` if not declared.
+    """Return the declared ``{"scenario", "vision", "overlay", "model", "world"}``
+    config for a scenario name from ``tests/capabilities.toml``, or ``None`` if not
+    declared.
     """
     for cfg in scenario_sim_configs("sim"):
         if cfg["scenario"] == name:
@@ -332,8 +333,16 @@ def _e2e_run(configs: list[dict], speed: float = 1.0) -> None:
         "finished_at": None,
         "speed": speed,
         "groups": [
-            {"vision": v, "overlay": o, "scenarios": s, "state": "pending", "fails": 0}
-            for v, o, s in group_items
+            {
+                "vision": v,
+                "overlay": o,
+                "model": m,
+                "world": w,
+                "scenarios": s,
+                "state": "pending",
+                "fails": 0,
+            }
+            for v, o, m, w, s in group_items
         ],
     }
     _e2e_write_state(state)
@@ -341,7 +350,7 @@ def _e2e_run(configs: list[dict], speed: float = 1.0) -> None:
     try:
         fails = 0
         (LOG_DIR / "latest.log").write_text("", encoding="utf-8")
-        for idx, (vision, overlay, scenarios) in enumerate(group_items):
+        for idx, (vision, overlay, model, world, scenarios) in enumerate(group_items):
             state["groups"][idx]["state"] = "running"
             _e2e_write_state(state)
             group_fails = _run_e2e_sim_group(
@@ -349,6 +358,8 @@ def _e2e_run(configs: list[dict], speed: float = 1.0) -> None:
                 overlay,
                 scenarios,
                 gz_resource=gz_resource,
+                model=model,
+                world=world,
                 audit_topics=idx == len(group_items) - 1,
             )
             fails += group_fails
@@ -385,9 +396,17 @@ def _e2e_run(configs: list[dict], speed: float = 1.0) -> None:
         atexit.unregister(cleanup)
 
 
-def _e2e_sim_groups(configs: list[dict]) -> list[tuple[str, str, list[str]]]:
-    """Return one isolated sim launch group per scenario config."""
-    return [(cfg["vision"], cfg["overlay"], [cfg["scenario"]]) for cfg in configs]
+def _e2e_sim_groups(configs: list[dict]) -> list[tuple[str, str, str, str, list[str]]]:
+    """Return one isolated sim launch group per scenario config.
+
+    Each tuple is ``(vision, overlay, model, world, [scenario])``. model/world let
+    a perception scenario boot a camera model + marker world in its own sim while
+    the synthetic scenarios stay on the default x500/default-world.
+    """
+    return [
+        (cfg["vision"], cfg["overlay"], cfg["model"], cfg["world"], [cfg["scenario"]])
+        for cfg in configs
+    ]
 
 
 def _needs_build() -> bool:
@@ -897,11 +916,13 @@ def _run_e2e_sim_group(
     scenarios: list[str],
     *,
     gz_resource: str,
+    model: str = "x500",
+    world: str = "default",
     audit_topics: bool = False,
 ) -> int:
-    """Launch one isolated headless sim for a ``(vision, overlay)`` config, wait for
-    readiness, run the given scenarios sequentially, optionally audit the topic
-    graph, then tear the sim down.
+    """Launch one isolated headless sim for a ``(vision, overlay, model, world)``
+    config, wait for readiness, run the given scenarios sequentially, optionally
+    audit the topic graph, then tear the sim down.
 
     Isolating each config keeps hold scenarios (hover overlay, no path) from racing
     the auto-flown waypoint mission that the demo path scenarios need. Returns the
@@ -910,7 +931,10 @@ def _run_e2e_sim_group(
     """
     pidfile = LOG_DIR / "sim.pid"
     latest = LOG_DIR / "latest.log"
-    banner = f"=== Sim group: vision={vision} overlay={overlay} ({', '.join(scenarios)}) ==="
+    banner = (
+        f"=== Sim group: vision={vision} overlay={overlay} model={model} world={world} "
+        f"({', '.join(scenarios)}) ==="
+    )
     with latest.open("a", encoding="utf-8") as fh:
         fh.write(banner + "\n")
     print(f"\n{banner}")
@@ -918,8 +942,8 @@ def _run_e2e_sim_group(
 
     launch_args = [
         str(ROOT / "sim" / "launch" / "sim_full.launch.py"),
-        "world:=default",
-        "model:=x500",
+        f"world:={world}",
+        f"model:={model}",
         "headless:=true",
         f"log_dir:={LOG_DIR}",
         f"vision:={vision}",
@@ -953,7 +977,7 @@ def _run_e2e_sim_group(
         except subprocess.CalledProcessError:
             print(
                 f"  [FAIL] sim never became ready; failing {len(scenarios)} scenario(s) "
-                f"in group (vision={vision} overlay={overlay})",
+                f"in group (vision={vision} overlay={overlay} model={model} world={world})",
                 file=sys.stderr,
             )
             # Write a failure report per scenario (same shape as write_report in
@@ -970,6 +994,8 @@ def _run_e2e_sim_group(
                                 "reason": "sim_never_ready",
                                 "vision": vision,
                                 "overlay": overlay,
+                                "model": model,
+                                "world": world,
                             },
                         },
                         indent=2,
@@ -997,7 +1023,10 @@ def _run_e2e_sim_group(
                 print("  [FAIL] topic graph violates docs/TOPICS.md", file=sys.stderr)
                 fails += 1
     finally:
-        print(f"Tearing down sim group (vision={vision} overlay={overlay})...")
+        print(
+            f"Tearing down sim group (vision={vision} overlay={overlay} "
+            f"model={model} world={world})..."
+        )
         _teardown()
 
     return fails
@@ -1109,8 +1138,16 @@ def test(
                 "finished_at": None,
                 "speed": 1.0,
                 "groups": [
-                    {"vision": v, "overlay": o, "scenarios": s, "state": "pending", "fails": 0}
-                    for v, o, s in group_items
+                    {
+                        "vision": v,
+                        "overlay": o,
+                        "model": m,
+                        "world": w,
+                        "scenarios": s,
+                        "state": "pending",
+                        "fails": 0,
+                    }
+                    for v, o, m, w, s in group_items
                 ],
             }
         )
@@ -1193,7 +1230,12 @@ def scenario(
     (LOG_DIR / "latest.log").write_text("", encoding="utf-8")
     try:
         fails = _run_e2e_sim_group(
-            cfg["vision"], cfg["overlay"], [cfg["scenario"]], gz_resource=gz_resource
+            cfg["vision"],
+            cfg["overlay"],
+            [cfg["scenario"]],
+            gz_resource=gz_resource,
+            model=cfg["model"],
+            world=cfg["world"],
         )
     finally:
         _summarize_logs_silent()
