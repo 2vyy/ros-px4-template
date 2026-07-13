@@ -22,16 +22,17 @@ zone, not code: do not pass 0.25 m as `marker_size_m`.
 
 ## Limitations
 
-**Live boot is currently blocked for repo-only worlds.** PX4's rcS
-(`px4-rc.gzsim`) sources `build/px4_sitl_default/rootfs/gz_env.sh`, which
-unconditionally resets `PX4_GZ_WORLDS` to PX4's own worlds directory, so
-Gazebo is asked to load `<PX4_DIR>/Tools/simulation/gz/worlds/<world>.sdf`
-and repo-only worlds fail with "Unable to find or download file". `default`
-still boots because PX4 ships its own `default.sdf`. Fixing this requires
-either modifying `PX4_DIR` (forbidden invariant) or reworking the PX4/Gazebo
-boot handoff in `sim/launch/_start_gz_px4.sh` (a separate plan; the handoff
-is timing-sensitive, see the header of that script). Until then these worlds
-validate with `gz sdf -k` but do not launch via `just sim --world ...`.
+**Boot path (default vs repo worlds).** PX4's rcS (`px4-rc.gzsim`) sources
+`build/px4_sitl_default/rootfs/gz_env.sh`, which unconditionally resets
+`PX4_GZ_WORLDS` to PX4's own worlds directory, so PX4 can only start Gazebo on
+worlds it ships (`default`). For repo-only worlds, `_start_gz_px4.sh`
+pre-starts a **paused** gz server on the repo SDF; PX4 then detects the running
+world and adopts it via its first-class "gazebo already running" branch (which
+never sources `gz_env.sh`, so no clobber). A watcher unpauses physics once PX4
+has spawned the model, keeping sim time from free-running before lockstep (an
+unpaused pre-start corrupts EKF2 timing, see the `_start_gz_px4.sh` header).
+The `default` world keeps the original PX4-starts-Gazebo path byte-identical.
+All three repo worlds now launch via `just sim --world <name>`.
 
 The stock `x500` model in this template has no bridged camera topic, so
 these worlds are GUI and manual flight practice only, not an automated

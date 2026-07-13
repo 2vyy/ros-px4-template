@@ -36,12 +36,18 @@ def _require_px4_dir() -> str:
     return value
 
 
-def _world_sdf(project_root: Path, px4_dir: str, world: str) -> tuple[str, str]:
+def _world_sdf(project_root: Path, px4_dir: str, world: str) -> tuple[str, str, bool]:
+    """Resolve a world name to (sdf_path, worlds_dir, is_repo_world).
+
+    is_repo_world is True when the SDF lives in our sim/worlds (PX4 does not ship
+    it, so it needs the pre-start-paused boot path in _start_gz_px4.sh). A False
+    result keeps the original PX4-starts-gz boot flow byte-identical.
+    """
     sim_worlds = project_root / "sim" / "worlds"
     px4_worlds = Path(px4_dir) / "Tools" / "simulation" / "gz" / "worlds"
     if (sim_worlds / f"{world}.sdf").exists():
-        return str(sim_worlds / f"{world}.sdf"), str(sim_worlds)
-    return str(px4_worlds / f"{world}.sdf"), str(px4_worlds)
+        return str(sim_worlds / f"{world}.sdf"), str(sim_worlds), True
+    return str(px4_worlds / f"{world}.sdf"), str(px4_worlds), False
 
 
 def _gz_paths(project_root: Path, px4_dir: str) -> str:
@@ -108,7 +114,7 @@ def _gz_px4_stack(context, *args, **kwargs):
     project_root = Path(__file__).resolve().parents[2]
     px4_dir = _require_px4_dir()
     build = _px4_build(px4_dir)
-    _world_sdf_path, px4_gz_worlds = _world_sdf(project_root, px4_dir, world)
+    world_sdf_path, px4_gz_worlds, world_is_repo = _world_sdf(project_root, px4_dir, world)
     gz_paths = _gz_paths(project_root, px4_dir)
     plugins = f"{build}/src/modules/simulation/gz_plugins"
     server_config = f"{px4_dir}/Tools/simulation/gz/server.config"
@@ -124,6 +130,8 @@ def _gz_px4_stack(context, *args, **kwargs):
                 "PX4_GZ_PLUGINS_DIR": plugins,
                 "PX4_GZ_SERVER_CFG": server_config,
                 "SIM_WORLD": world,
+                "SIM_WORLD_SDF": world_sdf_path,
+                "WORLD_IS_REPO": "1" if world_is_repo else "",
                 "SIM_MODEL": model,
                 "HEADLESS_FLAG": "1" if headless else "",
             },
