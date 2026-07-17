@@ -18,6 +18,7 @@ from cap_evidence import (
     dirty_flight_paths,
     flight_relevant,
     load_records,
+    report_is_fresh,
     write_record,
 )
 
@@ -154,6 +155,12 @@ def test_record_unknown_claim_is_usage_error() -> None:
     assert "NO SUCH LEAF CLAIM" in result.output
 
 
+def test_report_fresh_requires_mtime_at_or_after_commit() -> None:
+    assert report_is_fresh(101.0, 100.0)
+    assert report_is_fresh(100.0, 100.0)
+    assert not report_is_fresh(99.0, 100.0)
+
+
 def test_record_writes_pass_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     registry = {
         "capabilities": {
@@ -177,8 +184,8 @@ def test_record_writes_pass_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyP
             return SimpleNamespace(returncode=0, stdout="")
         if args[:3] == ["git", "rev-parse", "--short"]:
             return SimpleNamespace(returncode=0, stdout="abc1234\n")
-        if args[:3] == ["git", "show", "HEAD:tests/capabilities.toml"]:
-            return SimpleNamespace(returncode=0, stdout="")
+        if args == ["git", "show", "-s", "--format=%ct", "HEAD"]:
+            return SimpleNamespace(returncode=0, stdout="0\n")
         raise AssertionError(args)
 
     monkeypatch.setattr(subprocess, "run", fake_run)

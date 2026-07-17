@@ -71,6 +71,11 @@ def dirty_flight_paths(
     return flight_relevant(paths, scenario_file, claim)
 
 
+def report_is_fresh(report_mtime: float, commit_time: float) -> bool:
+    """Return whether the scenario report was written at or after HEAD."""
+    return report_mtime >= commit_time
+
+
 def build_record(
     claim: str,
     platform: str,

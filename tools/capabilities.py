@@ -66,6 +66,7 @@ def record(claim: str) -> None:
         build_record,
         changed_registry_claims,
         dirty_flight_paths,
+        report_is_fresh,
         write_record,
     )
 
@@ -146,6 +147,23 @@ def record(claim: str) -> None:
     commit = revision.stdout.strip()
     if revision.returncode != 0 or not commit:
         typer.echo("GIT REVISION FAILED: cannot identify evidence commit", err=True)
+        raise typer.Exit(3)
+    head_timestamp = subprocess.run(
+        ["git", "show", "-s", "--format=%ct", "HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        commit_time = float(head_timestamp.stdout.strip())
+        report_mtime = report_path.stat().st_mtime
+    except (OSError, ValueError):
+        typer.echo("REPORT FRESHNESS UNKNOWN: run the scenario again", err=True)
+        raise typer.Exit(3) from None
+    if head_timestamp.returncode != 0 or not report_is_fresh(report_mtime, commit_time):
+        typer.echo(
+            f"STALE REPORT: run `just scenario {stem}` after the current commit",
+            err=True,
+        )
         raise typer.Exit(3)
     conditions = {
         "world": entry.get("sim_world", "default"),

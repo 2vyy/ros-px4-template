@@ -136,6 +136,9 @@ just stop                         # exhaustive cold teardown of the whole stack
 just status                       # JSON status snapshot of running sim
 just scenario <name>              # live scenario (e.g. 01_arm_takeoff)
 just mission validate <name>      # validate a mission YAML in <1s, no sim
+just cap show                     # print derived capability rungs
+just cap plan [claim]             # print the dependency-first claims frontier
+just cap record <claim>           # commit fresh PASS evidence after a scenario
 just log summary                  # regenerate latest_summary.json
 just log topics                   # audit live topics vs docs/TOPICS.md
 just analyze                      # overlay+query the latest recorded run via skein
@@ -148,6 +151,7 @@ just analyze                      # overlay+query the latest recorded run via sk
 - [Topic owners and types](docs/TOPICS.md)
 - [rosbridge and ros-mcp-server](docs/MCP.md)
 - [Mission phases and YAML schema](docs/MISSIONS.md)
+- [Claims ladder and committed evidence](docs/CLAIMS.md)
 - [Record & analyze a run with skein](docs/SKEIN.md)
 - [Competition worlds and ArUco assets](docs/SIM.md)
 
