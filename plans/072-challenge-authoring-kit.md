@@ -227,7 +227,12 @@ dashes, no Unicode arrows). Sections:
 1. **Input**: what to extract from a rules document (arena geometry, marker
    ids/positions, required maneuvers, time/altitude limits, scoring events).
 2. **The loop** (ordered table: step, file(s), command, verify):
-   spec YAML (`sim/worlds/specs/`) → `just gen-markers --ids ...` (if new
+   claims first — decompose the rules doc into claim entries in
+   `tests/capabilities.toml` (one composite per scored task with `source` +
+   `params`, plus missing leaf claims; see docs/CLAIMS.md and the claims
+   ladder spec section 5; `just cap plan <challenge>` is the live build
+   order from here on) → spec YAML (`sim/worlds/specs/`) →
+   `just gen-markers --ids ...` (if new
    ids) → `just gen-world --spec ...` → mission YAML in `config/missions/`
    (link docs/MISSIONS.md schema; validate with `just mission validate`,
    dry-run with `just mission sim <name>`) → param overlay if needed

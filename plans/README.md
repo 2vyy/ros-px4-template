@@ -127,13 +127,15 @@ personally re-vetted against the code.
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 066  | Marker generator emits the flight-proven plane + emissive format; selectable IDs | P1 | S | — | DONE (2026-07-16, merged to main, commits `cbfcdaf`..`757c000`; full regeneration diff-clean; `--ids` and `just gen-markers` runtime-smoked; `just check`: 383 passed) |
-| 067  | Registry + CLI validation: `check_capabilities.py` in `just check`; `cap mark` rejects unknown ids; `--overlay` validated against the filesystem; scaffold snippet gains `sim_world`/`sim_model` | P1 | S | — | TODO |
-| 068  | CLI hygiene: preflight really probes UDP 8888; dead `just sim-stop` remedy; delete unreachable e2e `--speed` plumbing; verdict papercuts | P2 | S | after 067 lands (both edit `tasks.py`) | TODO |
+| 067  | Registry + CLI validation | P1 | S | — | ABSORBED (2026-07-17): registry validator + scaffold snippet moved into 074 (claims ladder); `--overlay` filesystem validation moved into 068; `cap mark` hardening moot (`cap mark` is deleted by 074). Plan file kept for history |
+| 068  | CLI hygiene: preflight really probes UDP 8888; dead `just sim-stop` remedy; delete unreachable e2e `--speed` plumbing; `--overlay` filesystem validation (ex-067); verdict papercuts | P2 | S | — | TODO |
 | 069  | Mission load-time validation: shallow-path `parents[2]` crash fixed; every behavior/guard probed once at load (bad params fail in ms, not mid-flight); `mission sim` wraps tick-time errors | P1 | S | — | TODO |
 | 070  | e2e report integrity: a scenario that crashes before writing its report gets a synthesized FAIL JSON (`crashed_before_report` / `no_report_written`); stale reports never trusted | P1 | S | — | TODO |
 | 071  | Scenario evidence hardening: shared `_fake_camera.py` (dedupe 05/06/08), independent PX4 cross-checks in 01/05/06, `pose_out_of_bounds` estimator tripwire | P2 | M | — | TODO |
 | 072  | Challenge authoring kit: `gen_world.py` (spec YAML → world SDF + marker map, golden-locked to marker_field) + `docs/CHALLENGES.md` rules-doc-to-verified-scenario playbook | P1 | M | 066 | TODO |
 | 073  | Rules assertion vocabulary: `altitude_ceiling` / `time_budget` / `keep_out_box` guards (+ `Inputs.mission_elapsed_s`), `HeldThroughout` scenario sampler | P2 | M | — | TODO |
+| 074  | Claims ladder core: derived rungs (declared/simulated/sim-flown + staleness), committed evidence ledger, `cap show/record/plan`, `requires` DAG, retire `cap mark` | P1 | L | — | TODO (spec: docs/superpowers/specs/2026-07-17-claims-ladder-design.md) |
+| 075  | Claims integration: mission `requires`, e2e DAG ordering + `prerequisite_failed` skipping, auto-recorded evidence, live ledger seeding | P1 | M | 074, 070; soft 069 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
@@ -146,25 +148,30 @@ were considered and deferred (machine-bound ~3x ceiling on 12 cores/15GiB).
 
 ## Dependency notes
 
-### Round 6 (2026-07-16)
+### Round 6 (2026-07-16; restructured 2026-07-17 around the claims ladder)
 
-- **Recommended order.** Pytest-only fixes first: 069, 070, then 067 and 068
-  SEQUENTIALLY (both edit `tasks.py`; disjoint regions but land one before
-  starting the other). Then 073 (mission library; independent, but its new
-  guards must satisfy 069's load probe — landing 069 first makes that
-  automatic). The two heavier ones last: 071 (needs a sim-capable operator
-  for its e2e gate, MED flakiness risk) and 072 (depends on 066, which is
-  already DONE; ends with a live world boot).
-- **File-collision clusters**: `tasks.py` by 067, 068, 070 (land
-  sequentially, trivial merges); `tests/scenarios/_common.py` by 071 and 073
-  (071's `pose_out_of_bounds`, 073's `HeldThroughout` — disjoint additions);
-  `docs/MISSIONS.md` + `schemas/mission.schema.json` by 073 only.
-- **Live-verification gates**: 071 (full e2e twice) and 072 (generated world
-  boots READY) need a sim operator; 067–070 and 073 are verifiable with
-  pytest/CLI alone (073's live smoke is optional regression confidence).
-- **072/073 interlock**: 072's CHALLENGES.md "representable vs verifiable"
-  section should list 073's guards once both land; whichever lands second
-  adds the cross-reference.
+Plan 067 was ABSORBED (validator + scaffold snippet into 074, overlay
+validation into 068). 074/075 implement the claims-ladder spec
+(`docs/superpowers/specs/2026-07-17-claims-ladder-design.md`).
+
+- **Recommended order**: 070, 069 (pytest-only fixes; 070 and 069 are what
+  074/075 build on), 068, then 074, then 075 (hard-depends 074 + 070; ends
+  with the live ledger-seeding e2e). Then 071 (live e2e gate, MED flakiness
+  risk), 072 (depends on DONE 066; its CHALLENGES.md gains the
+  claims-decomposition step from the spec, section 5), 073 (its guards must
+  satisfy 069's load probe; its `params` are what claim params compile
+  into).
+- **File-collision clusters**: `tasks.py` by 068, 070, 074, 075 (land in
+  that order, sequentially); `tools/capabilities.py` by 074 then 075;
+  `lib/mission/loader.py` by 069 then 075; `tests/scenarios/_common.py` by
+  071 and 073 (disjoint additions); `docs/MISSIONS.md` by 073 and 075
+  (disjoint sections); `docs/CLAIMS.md` created by 074, extended by 075.
+- **Live-verification gates**: 075 (seeding e2e + staleness probe), 071
+  (full e2e twice), 072 (generated world boots READY). 068, 069, 070, 073,
+  and 074 are verifiable with pytest/CLI alone.
+- **072/073/075 interlocks**: 072's CHALLENGES.md lists 073's guards and the
+  claims-decomposition step; whichever lands last adds the missing
+  cross-references.
 
 ### Findings considered and rejected / deferred — Round 6
 

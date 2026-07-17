@@ -38,6 +38,11 @@ round-trip:
 4. Verdict-contract papercuts: `just status` docstrings promise JSON but the
    output is English; `just analyze`'s success path ends with no verdict line
    (AGENTS.md: "Every command ends in a concise English verdict").
+5. (Absorbed from retired plan 067) `just sim --overlay` validates against a
+   hardcoded whitelist `("auto_arm", "inspect", "hover")` — `inspect.yaml`
+   does not exist, while three real overlays (`marker_hover`,
+   `precision_land`, `search_relocalize`, `yaw_demo`) are rejected. The
+   filesystem is the truth; the whitelist lies in both directions.
 
 ## Current state
 
@@ -174,7 +179,26 @@ Replace `just sim-stop` with `just stop` in both preflight messages
 → no matches. `uv run pytest tests/unit/test_e2e_status.py tests/unit/test_tasks_e2e_groups.py -q`
 → all pass.
 
-### Step 4: Verdict papercuts
+### Step 4: `--overlay` validated against the filesystem (from plan 067)
+
+In `tasks.py` `sim()` (whitelist at lines ~667-669 at `6ce9aec`; re-locate
+with `rg -n '"inspect"' tasks.py`), replace the hardcoded tuple check with:
+
+```python
+overlays_dir = ROOT / "config" / "params" / "overlays"
+valid = sorted(p.stem for p in overlays_dir.glob("*.yaml"))
+if overlay and overlay not in valid:
+    print(f"UNKNOWN OVERLAY '{overlay}'. Valid: {', '.join(valid)}", file=sys.stderr)
+    raise typer.Exit(int(ExitCode.USAGE))
+```
+
+**Verify**: `uv run python tasks.py sim --overlay nope --no-build` exits 2
+naming the six real overlays; `rg -n '"inspect"' tasks.py` → no matches.
+(Unit test: extract the `valid`-computation into a one-line helper only if
+a test file for tasks.py sim flags already exists — otherwise the smoke
+check above suffices; do not build new test scaffolding for one glob.)
+
+### Step 5: Verdict papercuts
 
 - `tools/status.py:4` docstring → "Concise English workspace snapshot (nodes,
   live status, capabilities)."; `tasks.py` `status()` docstring and the
@@ -206,6 +230,7 @@ Replace `just sim-stop` with `just stop` in both preflight messages
 - [ ] `rg -n -- "--speed" tasks.py` → no matches
 - [ ] `rg -n "speed" tools/e2e_status.py` → no matches
 - [ ] `rg -n "ANALYZED" tasks.py` → one match on the analyze success path
+- [ ] `rg -n '"inspect"' tasks.py` → no matches; `--overlay nope` exits 2 naming the real overlays
 - [ ] `just check` → exit 0
 - [ ] `plans/README.md` status row updated
 
