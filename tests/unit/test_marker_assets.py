@@ -24,7 +24,7 @@ def test_generator_matches_committed_models() -> None:
     emissive_map fix."""
     for marker_id in (0, 1, 2):
         committed = _ROOT / "sim" / "models" / f"aruco_marker_{marker_id}" / "model.sdf"
-        assert gma.build_model_sdf(marker_id) == committed.read_text(encoding="utf-8")
+        assert gma.build_model_sdf(marker_id).encode("utf-8") == committed.read_bytes()
 
 
 def test_physical_scale_constants() -> None:
