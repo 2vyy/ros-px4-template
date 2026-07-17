@@ -4,10 +4,8 @@
 from __future__ import annotations
 
 import tomllib
-from datetime import date
 from pathlib import Path
 
-import tomli_w
 import typer
 
 app = typer.Typer()
@@ -20,11 +18,6 @@ def _load(registry: Path = REGISTRY) -> dict:
     return tomllib.loads(registry.read_text(encoding="utf-8"))
 
 
-def _save(data: dict, registry: Path = REGISTRY) -> None:
-    registry.parent.mkdir(parents=True, exist_ok=True)
-    registry.write_text(tomli_w.dumps(data), encoding="utf-8")
-
-
 @app.command()
 def show() -> None:
     data = _load()
@@ -32,20 +25,6 @@ def show() -> None:
         status = cap.get("status", "unknown")
         platforms = ", ".join(cap.get("platforms", []))
         typer.echo(f"{name}: {status} [{platforms}] — {cap.get('description', '')}")
-
-
-@app.command()
-def mark(capability: str, platform: str) -> None:
-    data = _load()
-    caps = data.setdefault("capabilities", {})
-    entry = caps.setdefault(capability, {"description": "", "platforms": []})
-    platforms = set(entry.get("platforms", []))
-    platforms.add(platform)
-    entry["platforms"] = sorted(platforms)
-    entry["status"] = "verified"
-    entry["last_verified"] = date.today().isoformat()
-    _save(data)
-    typer.echo(f"Marked {capability} verified on {platform}")
 
 
 def scenarios_for_platform(platform: str = "sim", registry: Path = REGISTRY) -> list[str]:

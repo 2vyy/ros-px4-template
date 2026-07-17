@@ -597,6 +597,15 @@ def check():
     if res.returncode != 0:
         failed_steps.append("branch invariants")
 
+    print("Validating claims registry...")
+    res = subprocess.run(
+        ["uv", "run", "python", "tools/check_capabilities.py"],
+        cwd=str(ROOT),
+        env=env,
+    )
+    if res.returncode != 0:
+        failed_steps.append("claims registry")
+
     print("Checking agent docs identifiers...")
     res = subprocess.run(["uv", "run", "python", "tools/check_docs.py"], cwd=str(ROOT), env=env)
     if res.returncode != 0:
@@ -1267,13 +1276,14 @@ def scenario_new(
     print(f"  1. Edit the done() / report_detail() predicate in {target}")
     print("  2. Register it in tests/capabilities.toml, e.g.:\n")
     print(f"[capabilities.{cap_id}]")
-    print('description = "TODO: what this scenario verifies"')
-    print('status = "unverified"')
-    print('platforms = ["sim"]')
+    print('description = "TODO one-line claim"')
+    print('requires = ["arm_takeoff"]')
     print(f'scenario_file = "{name}.py"')
+    print('platforms = ["sim"]')
     print('sim_vision = "none"')
-    print('sim_overlay = "auto_arm"\n')
-    print("   (platforms declares where it runs; `just cap mark` records verification)")
+    print('sim_overlay = "auto_arm"')
+    print('sim_world = "default"')
+    print('sim_model = "x500"')
     print(f"  3. Run it:  just scenario {name}")
 
 

@@ -23,13 +23,11 @@ def test_scenarios_for_platform_sim(tmp_path: Path) -> None:
                 "description": "Arms and takes off",
                 "scenario_file": "01_arm_takeoff.py",
                 "platforms": ["sim"],
-                "status": "verified",
             },
             "hover_hold": {
                 "description": "Holds position",
                 "scenario_file": "02_hover_hold.py",
                 "platforms": ["sim"],
-                "status": "verified",
             },
         },
     )
@@ -46,12 +44,10 @@ def test_scenarios_for_platform_excludes_no_scenario_file(tmp_path: Path) -> Non
                 "description": "Arms",
                 "scenario_file": "01_arm_takeoff.py",
                 "platforms": ["sim"],
-                "status": "verified",
             },
             "manual_check": {
                 "description": "Manual",
                 "platforms": ["sim"],
-                "status": "verified",
             },
         },
     )
@@ -73,7 +69,6 @@ def test_scenario_sim_configs_reads_vision_and_overlay(tmp_path: Path) -> None:
                 "description": "Arms",
                 "scenario_file": "01_arm_takeoff.py",
                 "platforms": ["sim"],
-                "status": "verified",
                 "sim_vision": "none",
                 "sim_overlay": "hover",
             },
@@ -81,7 +76,6 @@ def test_scenario_sim_configs_reads_vision_and_overlay(tmp_path: Path) -> None:
                 "description": "Aruco",
                 "scenario_file": "05_aruco_hover.py",
                 "platforms": ["sim"],
-                "status": "idea",
                 "sim_vision": "aruco",
                 "sim_overlay": "auto_arm",
                 "sim_model": "x500_mono_cam_down",
@@ -117,7 +111,6 @@ def test_scenario_sim_configs_defaults_when_fields_missing(tmp_path: Path) -> No
                 "description": "Waypoints",
                 "scenario_file": "03_waypoint.py",
                 "platforms": ["sim"],
-                "status": "verified",
             },
         },
     )

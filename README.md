@@ -84,7 +84,7 @@ just sim              # Gazebo (headless), PX4 SITL, XRCE, ROS nodes, rosbridge
 
 ```bash
 just scenario 01_arm_takeoff
-just cap mark arm_takeoff sim
+just cap record arm_takeoff
 ```
 
 1. Stop everything:
