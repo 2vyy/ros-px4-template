@@ -73,7 +73,7 @@ round-trip; (b) add the highest-leverage competition capabilities that fit the
 | 040  | Rename the miscounted `setpoints_sent` FSM gate; delete a dead quat write | P3 | S | — | DONE (`test_offboard_fsm.py`: 7 tests; old-name grep clean; `just check`: 239 passed) |
 | 041  | Yaw control end to end (mission YAML to `TrajectorySetpoint.yaw`) | P1 | M | — | DONE (`just check`: 270 passed; `just scenario 07_yaw_control` PASS: setpoint_yaw_ned=0.000, vehicle_yaw_enu=1.562, err 0.009 rad; `just scenario 01_arm_takeoff` PASS with NaN yaw; `just cap mark yaw_control sim`) |
 | 042  | Precision landing on a marker (`center_land`, `Land` executed end to end) | P1 | M/L | 030 | DONE (`just check`: 297 passed; `just scenario 08_precision_land` PASS: landed xy_err=0.06m, froze_on_loss=True, reacquired=True, nav_land_ack=ACCEPTED, no rearm/OFFBOARD after hand-off; `just test e2e` all pass; `just cap mark precision_land sim`) |
-| 043  | Competition practice worlds + committed ArUco marker assets | P2 | M | soft: 031 | BLOCKED (live boot of repo-only worlds): assets/worlds/map/docs landed on branch; `just check` 313 passed; generator deterministic (2nd run diff-clean); `gz sdf -k` valid for all 4 worlds; default world regression READY 13.9s; BUT `just sim --world marker_field` / `landing_pad` NOT READY — PX4 rcS sources `build/px4_sitl_default/rootfs/gz_env.sh`, which unconditionally resets `PX4_GZ_WORLDS` to PX4's worlds dir, so repo-only worlds fail with "Unable to find or download file" (STOP: fix needs a PX4_DIR edit or a boot-handoff rework, both out of scope; see docs/SIM.md). GUI sign-off also pending. |
+| 043  | Competition practice worlds + committed ArUco marker assets | P2 | M | soft: 031 | BLOCKED (live boot of repo-only worlds): assets/worlds/map/docs landed on branch; `just check` 313 passed; generator deterministic (2nd run diff-clean); `gz sdf -k` valid for all 4 worlds; default world regression READY 13.9s; BUT `just sim --world marker_field` / `landing_pad` NOT READY — PX4 rcS sources `build/px4_sitl_default/rootfs/gz_env.sh`, which unconditionally resets `PX4_GZ_WORLDS` to PX4's worlds dir, so repo-only worlds fail with "Unable to find or download file" (STOP: fix needs a PX4_DIR edit or a boot-handoff rework, both out of scope; see docs/SIM.md). GUI sign-off also pending. **UNBLOCKED by 049** (merge fae5286): all 3 repo worlds now boot READY via pre-started paused gz. Everything except the human GUI eyeball is verified; the ONLY remaining step is a `just sim --world marker_field --gui` look by the operator, then flip this row to DONE. |
 | 044  | Battery/failsafe in mission `Inputs` (`battery_low` / `failsafe_active` guards) | P2 | M | — | DONE (`just check`: 286 passed; live: `/fmu/out/battery_status_v1` connected=true remaining=0.99995; forced `TRANSITION ... guard=battery_low` via temp mission; `just log topics` PASS; `just scenario 01_arm_takeoff` PASS) |
 
 #### Round 4b — toolchain/meta vetting follow-ups (2026-07-06, same base `ead4cc6`)
@@ -89,9 +89,136 @@ is superseded; these four close the real gaps found.
 | 047  | Machine-check AGENTS.md backticked identifiers exist (end the doc-drift bug class) | P2 | M | 035 | DONE (`check_docs.py`; 11 unit tests; kill-test flagged `sim_pose_adapter`; `just check`: 254 passed with docs step) |
 | 048  | Make bag/ULog recording opt-in (`just sim --record`, default off) | P3 | S | — | DONE (`--record` help; default `just sim` kept run count unchanged and stopped without ULog copy; `just sim --record` + `just analyze latest`; `just check`: 254 passed; `just test e2e`: 5 PASS) |
 
+### Round 5 (2026-07-10, against `01f94c7`) — competition acceleration + agent-verified e2e
+
+Audit lens (maintainer's ask): accelerate drone competition development,
+verification, and getting arbitrary scenarios working quickly and
+autonomously e2e-verified in sim. Reference repo: `~/Projects/raytheon-2026`.
+Deep audit, 6 parallel subagents, all findings re-vetted against the code.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 049  | Repo-only Gazebo worlds boot (`just sim --world <w>`; unblocks 043) | P1 | M | — | DONE (merge fae5286, commit fed0d2f): pre-start PAUSED gz server on the repo SDF, PX4 adopts it via its "gazebo already running" branch (never sources gz_env.sh, no clobber), unpause-watcher releases physics on model-spawn. `_world_sdf` returns is_repo, threaded to WORLD_IS_REPO/SIM_WORLD_SDF; default-world path byte-identical (gated by `if WORLD_IS_REPO=1`). Live-verified: marker_field READY 13.5s + full mission to `done` altitude held ~3m (z=2.99 at wp3), all 15 topics match; landing_pad/obstacle_course READY; aruco (PX4-only) READY via untouched original branch (prestart=0). NOTE: repo now ships `sim/worlds/default.sdf` (drift since plan authored) so `default` is itself a repo world and uses the pre-start path. `just check` 380 tests + new test_world_classification; `just test e2e` 7/7 PASS. PX4_DIR clean. |
+| 050  | Wire the `estimate_invalid` safety guard to a real PX4 validity signal | P1 | S | — | DONE (2026-07-12, merged to main @ 8bfd03b; commit 6b8f100; `just check` 368 passed). `position_node` publishes on every PX4 sample carrying validity in `odom.pose.covariance[0]` (0.0 valid / -1.0 invalid, ROS convention); invalid-but-anchored samples hold the last valid pose, skip `frame.observe` (anchor/EKF-reset safe), zero twist, edge-log ESTIMATE_VALID/INVALID. `mission_manager._odom_cb` reads `covariance[0] >= 0.0` into `_estimate_ok` under the lock (+1 passthrough test). LIVE-VERIFIED 2026-07-12: default demo mission flew takeoff->follow->done with `estimate_ok=True` in every transition trigger (read-path live, not the old dead constant) and zero `hold_safe`; `just scenario 01_arm_takeoff` PASS (z=2.999, phase=hover, 32.4s) with zero `hold_safe` and no `ESTIMATE_INVALID` -- the boot-flap false-positive STOP condition did not occur. |
+| 051  | EKF-reset deltas apply to the read path (pose continuous across resets); retire `z_ekf_adjust_ned` | P1 | S | — | DONE (2026-07-12, merged to main @ 402d148; commit 9bcdada; `just check` 372 passed). `Px4LocalFrame.observe` now subtracts the accumulated x/y/z EKF-reset adjust on the read path, so the anchored ENU pose stays continuous across resets (previously it jumped by the delta while setpoints shifted the opposite way). Characterization-first: pinned the no-reset multi-sample path, ran it against unmodified code, then fixed; it stays green untouched (the subtraction is a no-op with zero adjust). New tests: xy-reset continuity, z-reset continuity, and a round-trip proving a post-reset GoTo-to-current maps to the exact NED PX4 reports (zero motion). Removed dead `z_ekf_adjust_ned` from `enu_setpoint_to_px4_ned` (no caller passed it; would double-apply `setpoint_origin_ned`). LIVE-VERIFIED 2026-07-12: `just scenario 01_arm_takeoff` PASS (z=2.994, phase=hover, 32.7s) -- no-reset path unbroken in flight. |
+| 052  | Scaffolded scenarios boot their declared sim config (`platforms = ["sim"]`) | P1 | S | — | DONE (2026-07-11, merged to main @ 01eb78d) |
+| 053  | e2e enforces the scenario roster (no silent skips; never-ready groups reported; empty roster fails) | P1 | S | — | DONE (2026-07-11, merged to main @ 4f56ebc) |
+| 054  | Sub-second mission verification: engine-level `simulate()` over real mission YAMLs + `just mission sim` | P1 | M | — | DONE (2026-07-12, merged to main @ 4609c6f; `lib/mission/simulate.py` + 15 tests in `test_mission_sim.py` (globs config/missions/, all 6 terminate) + `just mission sim <name>`; `just check` 335 passed. Note: hover.yaml is terminal-at-start, not terminal-less as the plan text assumed — test derives from the real YAML. Finding: `loader.py:74` `parents[2]` raises IndexError on a mission path <3 dirs deep, so `just mission sim /tmp/x.yaml` exits 2 not a clean stall; loader is out of scope here, candidate for a tiny follow-up) |
+| 055  | Boot reliability: teardown-before-preflight, stale READY-flag freshness, arming-param parity | P2 | S | — | DONE (2026-07-12, merged to main @ abb65da; commit e50dea6; `just check` 374 passed). Three fixes: (1) `just sim`/`hw` tear down an existing stack BEFORE preflight so re-running recycles instead of aborting on busy 8888/9090 (usage-error validation still first); (2) `wait_ready._px4_standby(not_before)` gates on params-flag mtime >= this waiter's start, so a flag left by an unclean exit can't false-READY a fresh boot (+3 mtime unit tests); (3) added `EKF2_GPS_CTRL=7` to `gcs_heartbeat._PARAMS` (was boot-exported but missing from the runtime re-send) + a parity unit test pinning `_PARAMS` == the `PX4_PARAM_*` exports in `_start_gz_px4.sh` (kill-test shown: fails naming the dropped param) + lockstep comments. LIVE-VERIFIED 2026-07-12: `just sim` twice -> second printed "Existing stack found -- tearing it down first", recycled, READY 16.7s; `just scenario 01_arm_takeoff` PASS (z=3.005, 32.5s); `just stop` 0 survivors. |
+| 056  | `gcs_heartbeat` confirms params via PARAM_VALUE read-back before the READY flag | P2 | M | 055 | DONE (2026-07-12, merged to main @ 417727d; commit 14c6dcf; `just check` 378 passed). `gcs_heartbeat._send_and_confirm` now reads each param back via PARAM_VALUE (`_confirm_params`, decoding the INT32 byte-union the same way `_send_params` encodes it) before writing the flag, on BOTH the initial and post-restart re-send paths; logs "Params confirmed by PX4" or a WARNING naming the missing params. Flag still written on the warn path (boot-time PX4_PARAM_* exports remain in effect), so READY keeps working on a lossy link; confirm timeout is short (2s, per-param sliced) so it cannot starve the 3s heartbeat cadence. Fakeable unit tests incl. INT32 round-trip + missing-name. LIVE-VERIFIED 2026-07-12: boot logged "Params confirmed by PX4." at t=13.958 (PX4 SITL DOES answer PARAM_REQUEST_READ on the GCS link -- premise holds, STOP condition not hit); READY 15.6s (faster than ~16.8s baseline, blind sleeps removed); `just scenario 01_arm_takeoff` PASS (z=2.993, 33.6s). |
+| 057  | Characterization tests: offboard safety latches + mission_manager snapshot (pure extractions) | P2 | M | soft: 050 | DONE (2026-07-12, merged to main @ c22ba61; commit ecd9f4e; `just check` built the workspace + 367 passed). Extracted lib/offboard_latches.py (disarm/landing/failsafe latches, arm-fail, px4_ever_disarmed) and lib/mission_inputs.py (marker freshness/stability windows, z_eff, input_ages) as pure modules; both nodes delegate (no behavior change). 10 latch + 7 snapshot tests pin today's semantics incl. quirks. Live scenarios 08/01 remain operator regression sign-off. Note: 050 not landed, so _estimate_ok characterized as-is (still hardcoded True) |
+| 058  | Scenario assertions verify the flight: 03 independent motion, `arm_trigger_ok` detail, `auto_arm` opt-out | P2 | S | — | DONE (2026-07-12, merged to main @ 958bb57; commit d2128a2; `just check` 378 passed). Scenario 03 now subscribes to PX4's own `/fmu/out/vehicle_local_position_v1`, tracks per-waypoint min ENU distance the airframe achieved, and `fail_reason` catches an index that advanced while the vehicle missed a waypoint (>0.8m) -- previously it passed purely on `mission_manager`'s self-reported `waypoint_index`. `Scenario` base captures `trigger_auto_arm()` into `arm_trigger_ok` on every exit path (timeout/fail/pass/exception) via `_detail()`, so a timeout distinguishes arm-param failure from no-fly; added `Scenario.auto_arm` opt-out (default True) with `trigger_cleanup(disable_auto_arm=...)`. LIVE-VERIFIED 2026-07-12: `just scenario 03_waypoint` PASS `wp_min_dists=[0.01,0.08,0.05]` (all < 0.8), `arm_trigger_ok=true` in JSON; `just test e2e` 7/7 PASS (exit 0, no regression). |
+| 059  | Engine polish: safety edges stop re-firing into their own state; inline waypoints fail at load | P2 | S | 054 | DONE (2026-07-12, merged to main @ 6cd4125; commits 1fb1c96 engine self-transition no-op + e12a7aa loader inline-waypoint validation; `just check` 343 passed; 90 lines of engine tests incl. a `simulate()` end-to-end proving one hold_safe TRANSITION not per-tick churn; all six missions still validate. Live scenarios 06/08 remain operator regression sign-off) |
+| 060  | Doc-drift net: MISSIONS.md tables machine-checked, schema-regen friction, check_docs widened, stale MCP block | P2 | M | — | DONE (2026-07-12, merged to main @ f568ec3; commits b25ade4 + 848232c; `just check` all pass). A: test_missions_doc.py enforces MISSIONS.md tables == registry (6 behaviors/15 guards; kill-test demonstrated). B: checklist + AGENTS.md bullet + schema drift message name the regen redirect. C: check_docs scans README+docs/*.md with per-file attribution, validates typer subcommands, resolves lib/nodes src-path abbrev, skips [x] placeholders, excludes aspirational BACKLOG.md; 60->242 tokens checked, 0 real drift found. D: stale codebase-memory-mcp block replaced with a CodeGraph note (5 allowlist entries removed) |
+| 061  | Shared `lib/qos.py` for the 5 copy-pasted QoS profiles; name the detection-freshness constant | P3 | S | — | DONE (2026-07-12, merged to main @ c4694d5; commit 517f8db; `just check` 367 passed, clean build). Consolidated the 4 QoS profiles (PX4/reliable/odom/latched) into a single module and rewired all five nodes; `offboard_controller`'s inline `/drone/local_origin` profile now uses shared `LATCHED_QOS`; `grep QoSProfile( nodes/` now hits only the one module. Byte-identical values, no behavior change. STOP condition hit: `lib/qos.py` trips the deliberate `lib/ruff.toml` rclpy ban (keeps lib/ sim-blind), so per maintainer decision the module landed at `nodes/qos.py`, not `lib/` -- ban untouched. The freshness literal was already named (`_MARKER_FRESH_S` in `lib/mission_inputs.py`, plan 057), so nothing to rename. Live `just log topics` 12-OK + scenario 01 remain operator regression sign-off. |
+| 062  | Camera perception spike: real pixels → ArUco detections in sim (design/spike) | P1 (direction) | L | 049 | DONE (branch advisor/062-camera-spike): SUCCESS. Built `sim/models/x500_mono_cam_down` (repo-local nadir camera x500, sensor named `camera` to match _vision_bridge, 640x480@20Hz, 1.0rad FOV; spawns via PX4's gz_bridge reusing PX4 airframe gz_x500_mono_cam_down, no PX4_DIR edit; our model wins over PX4's via GZ_SIM_RESOURCE_PATH order). Live-proved pixels→detection: id 0, ~0.06m median horizontal error at 3.3m (target <0.15m; 134/147 valid over hover). Two keystone findings, both fixed: (1) gz camera SENSOR renders a PBR albedo_map marker as SOLID BLACK — needs `emissive_map` (same PNG, model:// URI) to be detectable; fixed markers 0/1/2. (2) PX4's stock 1.74rad fisheye makes a 0.25m marker ~20px (unresolvable) at 3m; narrowed to 1.0rad (~50px). RTF stayed realtime (wait_ready gate), ~15Hz sustained, boot ~17-21s. Findings: plans/062-findings.md. **Productized** (branch feat/aruco-real-detection, commit 9577bb3): threaded `sim_model`+`sim_world` through the scenario harness (capabilities.py/tasks.py) and added scenario `09_aruco_hover_real` (real-pixel detection, best-window median ~0.09m, guard 0.20m) to the e2e roster (now 8 scenarios); camera inputs documented in TOPICS.md (prose, not audited). Still open: 08 real-detection variant, optional attitude de-rotation in aruco_pose_publisher. |
+| 063  | Coverage path generator | — | — | — | REMOVED (2026-07-12, maintainer decision) |
+| 064  | `just test e2e` detaches; `just e2e-status` polling (kills the agent-stall failure mode) | P1 | M | — | DONE |
+| 065  | e2e at lockstep 2x: safe set_physics path + sim-time scenario timers (exact-same verification) | P1 | M | 064, 049 | REJECTED (2026-07-16; the plan's own spike disproved its mechanism: ANY live `gz set_physics` call, even a no-op payload sent pre-arm, latently corrupts PX4's z estimate. Faster-than-realtime remains possible only as a from-boot world-SDF design; recorded in docs/BACKLOG.md. The spike's truth table stays in the plan file as reference) |
+
+### Round 6 (2026-07-16, against `6ce9aec`) — final-state hardening + challenge authoring
+
+Audit lens (maintainer's ask): put the project in a good final state for its
+end-goal — an agent receives a rules document / challenge spec and
+independently builds, tests, and verifies a representative scenario — with
+NO abstraction scope creep. 7 parallel category audits, all findings
+personally re-vetted against the code.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 066  | Marker generator emits the flight-proven plane + emissive format; selectable IDs | P1 | S | — | DONE (2026-07-16, merged to main, commits `cbfcdaf`..`757c000`; full regeneration diff-clean; `--ids` and `just gen-markers` runtime-smoked; `just check`: 383 passed) |
+| 067  | Registry + CLI validation: `check_capabilities.py` in `just check`; `cap mark` rejects unknown ids; `--overlay` validated against the filesystem; scaffold snippet gains `sim_world`/`sim_model` | P1 | S | — | TODO |
+| 068  | CLI hygiene: preflight really probes UDP 8888; dead `just sim-stop` remedy; delete unreachable e2e `--speed` plumbing; verdict papercuts | P2 | S | after 067 lands (both edit `tasks.py`) | TODO |
+| 069  | Mission load-time validation: shallow-path `parents[2]` crash fixed; every behavior/guard probed once at load (bad params fail in ms, not mid-flight); `mission sim` wraps tick-time errors | P1 | S | — | TODO |
+| 070  | e2e report integrity: a scenario that crashes before writing its report gets a synthesized FAIL JSON (`crashed_before_report` / `no_report_written`); stale reports never trusted | P1 | S | — | TODO |
+| 071  | Scenario evidence hardening: shared `_fake_camera.py` (dedupe 05/06/08), independent PX4 cross-checks in 01/05/06, `pose_out_of_bounds` estimator tripwire | P2 | M | — | TODO |
+| 072  | Challenge authoring kit: `gen_world.py` (spec YAML → world SDF + marker map, golden-locked to marker_field) + `docs/CHALLENGES.md` rules-doc-to-verified-scenario playbook | P1 | M | 066 | TODO |
+| 073  | Rules assertion vocabulary: `altitude_ceiling` / `time_budget` / `keep_out_box` guards (+ `Inputs.mission_elapsed_s`), `HeldThroughout` scenario sampler | P2 | M | — | TODO |
+
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
+064 and 065 were added 2026-07-11 from profiling the first live e2e run
+(~8 min wall: ~4m10s flight, ~3m20s boot/teardown; an agent tool-cap made it
+~20 min): 064 detaches e2e (fixes the stall), 065 runs physics at lockstep 2x
+with sim-time scenario timers. Execute 064 before 065. Parallel sim groups
+were considered and deferred (machine-bound ~3x ceiling on 12 cores/15GiB).
+065 was subsequently REJECTED by its own spike (2026-07-16, see its row).
+
 ## Dependency notes
+
+### Round 6 (2026-07-16)
+
+- **Recommended order.** Pytest-only fixes first: 069, 070, then 067 and 068
+  SEQUENTIALLY (both edit `tasks.py`; disjoint regions but land one before
+  starting the other). Then 073 (mission library; independent, but its new
+  guards must satisfy 069's load probe — landing 069 first makes that
+  automatic). The two heavier ones last: 071 (needs a sim-capable operator
+  for its e2e gate, MED flakiness risk) and 072 (depends on 066, which is
+  already DONE; ends with a live world boot).
+- **File-collision clusters**: `tasks.py` by 067, 068, 070 (land
+  sequentially, trivial merges); `tests/scenarios/_common.py` by 071 and 073
+  (071's `pose_out_of_bounds`, 073's `HeldThroughout` — disjoint additions);
+  `docs/MISSIONS.md` + `schemas/mission.schema.json` by 073 only.
+- **Live-verification gates**: 071 (full e2e twice) and 072 (generated world
+  boots READY) need a sim operator; 067–070 and 073 are verifiable with
+  pytest/CLI alone (073's live smoke is optional regression confidence).
+- **072/073 interlock**: 072's CHALLENGES.md "representable vs verifiable"
+  section should list 073's guards once both land; whichever lands second
+  adds the cross-reference.
+
+### Findings considered and rejected / deferred — Round 6
+
+Vetted personally against the code at `6ce9aec`; surfaced by the audit but
+not planned this round:
+
+- **`tasks.py` e2e-supervisor extraction** (move the detach/worker/state
+  machinery into `tools/`) — NOT PLANNED. Working, unit-covered, and the
+  extraction is churn without a defect behind it. Revisit only if a second
+  supervisor (hardware e2e) appears. Recorded in docs/BACKLOG.md.
+- **Env-sourcing consolidation** (justfile `_run` + tasks.py both source) —
+  still DEFERRED, unchanged from the Round 4b policy note.
+- **`lark` dev-dependency re-verification** — NOT PLANNED. Round 4b already
+  established ROS Jazzy `launch_testing` imports it; nothing changed.
+- **Forward-facing obstacle sensor spike** (perceive the `obstacle_course`
+  pylons) — NOT PLANNED as a spike; instead 072's CHALLENGES.md documents
+  the perception boundary honestly (obstacles are representable, not
+  verifiable). Real perception work is a future round with DIR-02/DIR-04.
+- **`visit_order` mission guard** — REJECTED during 073 design: the mission
+  state graph natively expresses ordering (states + transitions); a guard
+  duplicating it is abstraction creep.
+- **TEST-06 scenario-timeout consolidation** — NOT PLANNED. Timeouts are
+  per-scenario tuning values, not duplication.
+- **Perception slice completion** (attitude de-rotation in
+  aruco_pose_publisher + an 08 real-pixel variant) and **from-boot 2x e2e
+  design** — DEFERRED by maintainer choice this round (direction options
+  offered and declined); both recorded in docs/BACKLOG.md so they survive.
+- **advisor/020 branch** — superseded, not merged: main already carries the
+  `_state_lock` snapshot work (plan 057); the branch's diff is historical.
+  Safe to delete whenever.
+
+### Round 5 (2026-07-10)
+
+- **Recommended order.** Pipeline integrity first (all pytest-verifiable):
+  052, 053, 054. Then safety/correctness: 050, 051 (051 writes its
+  characterization test BEFORE the fix), 055, 056 (after 055 — same file),
+  057 (after 050 so it characterizes the real `estimate_ok` semantics), 058,
+  059 (after 054 — uses its harness), 060, 061. The live-heavy pair last:
+  049 (needs a sim operator), then 062 (hard-depends on 049).
+- **File-collision clusters** (land sequentially): `mission_manager.py` is
+  touched by 050, 057, 061 (in that order); `offboard_controller.py` by 057
+  then 061; `tools/gcs_heartbeat.py` by 055 then 056; `tasks.py` by 052, 053,
+  055 (disjoint regions, trivial merges); `docs/MISSIONS.md` by 054,
+  059, 060 (disjoint sections).
+- **Live-verification gates** (sim-capable operator sign-off before DONE):
+  049, 062 (inherently live); 050, 051, 055, 056, 058, 061 each end with a
+  scenario/e2e gate their plan names. 052, 053, 054, 057, 059, 060 are
+  verifiable with pytest/CLI alone (059's scenario runs are regression
+  confidence, listed in its plan).
+- **049 vet note**: the audit subagent recommended a relative-traversal
+  `PX4_GZ_WORLD` fix; personal vetting REJECTED it (`PX4_GZ_WORLD` doubles as
+  the world NAME in `px4-rc.gzsim`'s `check_scene_info` and model spawn — a
+  path value breaks the boot later). Plan 049 specifies the
+  pre-started-paused-gz + late-unpause mechanism instead.
 
 ### Round 4 (2026-07-06)
 
@@ -257,6 +384,46 @@ verified and deliberately left alone:
 - `tests/capabilities.toml` + `cap mark` — load-bearing: `scenario_sim_configs()`
   drives e2e group scheduling (`tasks.py:734`), not just a registry.
 - `tools/status.py`, `tools/e2e_report.py`, the detached-sim contract.
+
+## Findings considered and rejected / deferred — Round 5 (2026-07-10)
+
+Vetted personally against the code at `01f94c7`; surfaced by the audit but
+not planned (or folded into a plan) this round:
+
+- **Relative-traversal `PX4_GZ_WORLD` world-boot fix** — REJECTED during
+  vetting (see 049 vet note above). Recorded so it is not re-proposed.
+- **`z_ekf_adjust_ned` unwired parameter** (frames.py) — FOLDED into plan 051
+  (removed; redundant with the adjust already in `setpoint_origin_ned`).
+- **Unconditional `trigger_auto_arm()` in the scenario base class** — FOLDED
+  into plan 058 as an `auto_arm` opt-out class attribute (all current
+  scenarios want arming; latent trap only).
+- **`check_topics` "ros2 not sourced" masquerades as all-topics-missing** —
+  NOT PLANNED. Only reachable by invoking the tool outside the `just`
+  wrapper (which always sources ROS); low value. Revisit if direct
+  invocations become a workflow.
+- **Detection-freshness magic `1.0` literal** — FOLDED into plan 061.
+- **DIR-02 moving-target follow / follow-to-land** — grounded demand
+  (raytheon challenge2_rover/challenge2_search land on a moving rover) but
+  NOT SELECTED this round; sequenced naturally after the 062 camera spike.
+- **DIR-04 obstacle mapping → OccupancyGrid** — real demand (raytheon
+  obstacle_mapper.py; the template ships an `obstacle_course` world with no
+  way to perceive it) but hard-depends on 062; deferred to the
+  productization round.
+- **DIR-05 rectangular field boundary + RViz visuals** — NOT SELECTED.
+  (Previously cross-referenced plan 063's `--field` args; 063 was removed by
+  maintainer decision on 2026-07-12.)
+- **DIR-06 route-interruption-on-detection** — REFUTED as a gap: the engine
+  already expresses it (`search_relocalize.yaml`'s `search --marker_stable-->`
+  transition). The only missing piece is a follow-target state (= DIR-02).
+- **Velocity/PID control (D-03)** — stays rejected per the Round 4
+  maintainer call. Noting for the record: raytheon evidence is substantial
+  (~1400-line pid_tuning package, per-axis PID in drone_controller), but the
+  template's position-setpoint design (PX4 owns the inner loop) is a
+  deliberate identity decision; the evidence does not override it.
+- **Security/perf/deps** — audit came back clean: pins current (ruff <0.16
+  blocks nothing at 0.15.21; ty floor admits latest; px4_msgs matches PX4
+  v1.17 target), no secrets in tracked files, hot paths allocation-light,
+  layering invariant holds.
 
 ## Findings considered and rejected / deferred — Round 4 (2026-07-06)
 

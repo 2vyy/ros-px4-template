@@ -166,7 +166,6 @@ Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing
 ## Rules
 For any file search or grep in the current git-indexed directory, use fff search mcp.
 For anything relating to viewing or searching for technical information, docs, issues, or projects on GitHub, use the rich `gh` cli tool.
-Use rtk (rust-token-killer) for trimmed-down common unix / dev commands.
 
 # Code intelligence
 
