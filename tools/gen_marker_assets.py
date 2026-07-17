@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Deterministic ArUco marker asset generator.
 
-Generates one static Gazebo model per marker ID: a thin, collision-free box
-whose top face is textured with a DICT_4X4_50 ArUco code padded with a white
-quiet zone.
+Generates one static Gazebo model per marker ID: a collision-free plane
+textured with a DICT_4X4_50 ArUco code padded with a white quiet zone.
 
 Physical scale (see plans/043-competition-worlds-assets.md):
 
@@ -37,7 +36,6 @@ TEXTURE_PIXELS = CODE_PIXELS + 2 * QUIET_ZONE_PIXELS  # 640
 
 CODE_SIZE_M = 0.2
 SURFACE_SIZE_M = CODE_SIZE_M * TEXTURE_PIXELS / CODE_PIXELS  # 0.25
-MODEL_THICKNESS_M = 0.01
 
 _MODEL_NAME_TEMPLATE = "aruco_marker_{id}"
 _TEXTURE_NAME_TEMPLATE = "aruco_marker_{id}.png"
@@ -98,9 +96,20 @@ def build_model_config(marker_id: int) -> str:
 
 
 def build_model_sdf(marker_id: int) -> str:
-    """Deterministic ``model.sdf``: a static, collision-free, thin textured box."""
+    """Deterministic ``model.sdf``: a static, collision-free textured plane."""
     name = model_name(marker_id)
     texture = texture_name(marker_id)
+    emissive_map_comment = (
+        "              <!-- emissive_map is load-bearing: in the gz Harmonic camera SENSOR\n"
+        "                   render, a PBR albedo_map alone renders the marker as a solid\n"
+        "                   black square (no error logged), so cv2.aruco.detectMarkers\n"
+        "                   never resolves the pattern. The emissive_map makes the marker\n"
+        "                   self-lit and its bit grid readable. Verified plans/062. Use a\n"
+        "                   model:// texture URI (relative paths are unreliable in the\n"
+        "                   sensor render context). -->\n"
+        if marker_id == 0
+        else ""
+    )
     return (
         '<?xml version="1.0"?>\n'
         '<sdf version="1.9">\n'
@@ -109,14 +118,17 @@ def build_model_sdf(marker_id: int) -> str:
         '    <link name="link">\n'
         '      <visual name="visual">\n'
         "        <geometry>\n"
-        "          <box>\n"
-        f"            <size>{SURFACE_SIZE_M} {SURFACE_SIZE_M} {MODEL_THICKNESS_M}</size>\n"
-        "          </box>\n"
+        "          <plane>\n"
+        "            <normal>0 0 1</normal>\n"
+        f"            <size>{SURFACE_SIZE_M} {SURFACE_SIZE_M}</size>\n"
+        "          </plane>\n"
         "        </geometry>\n"
         "        <material>\n"
         "          <pbr>\n"
         "            <metal>\n"
-        f"              <albedo_map>materials/textures/{texture}</albedo_map>\n"
+        f"{emissive_map_comment}"
+        f"              <albedo_map>model://{name}/materials/textures/{texture}</albedo_map>\n"
+        f"              <emissive_map>model://{name}/materials/textures/{texture}</emissive_map>\n"
         "              <roughness>1.0</roughness>\n"
         "              <metalness>0.0</metalness>\n"
         "            </metal>\n"

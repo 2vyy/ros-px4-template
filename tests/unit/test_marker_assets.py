@@ -10,11 +10,21 @@ import cv2
 import numpy as np
 import pytest
 
-_TOOLS_DIR = Path(__file__).resolve().parents[2] / "tools"
+_ROOT = Path(__file__).resolve().parents[2]
+_TOOLS_DIR = _ROOT / "tools"
 if str(_TOOLS_DIR) not in _sys.path:
     _sys.path.insert(0, str(_TOOLS_DIR))
 
 import gen_marker_assets as gma  # noqa: E402
+
+
+def test_generator_matches_committed_models() -> None:
+    """The committed models are live-verified (plans/062); the generator must
+    reproduce them byte-for-byte so a regeneration can never regress the
+    emissive_map fix."""
+    for marker_id in (0, 1, 2):
+        committed = _ROOT / "sim" / "models" / f"aruco_marker_{marker_id}" / "model.sdf"
+        assert gma.build_model_sdf(marker_id) == committed.read_text(encoding="utf-8")
 
 
 def test_physical_scale_constants() -> None:
@@ -78,7 +88,8 @@ def test_generate_all_writes_expected_tree(tmp_path: Path) -> None:
         assert f"{gma.SURFACE_SIZE_M} m" in config_text
 
         sdf_text = (model_dir / "model.sdf").read_text(encoding="utf-8")
-        assert f"{gma.SURFACE_SIZE_M} {gma.SURFACE_SIZE_M} {gma.MODEL_THICKNESS_M}" in sdf_text
+        assert "<plane>" in sdf_text
+        assert f"<size>{gma.SURFACE_SIZE_M} {gma.SURFACE_SIZE_M}</size>" in sdf_text
         assert gma.texture_name(marker_id) in sdf_text
 
 
