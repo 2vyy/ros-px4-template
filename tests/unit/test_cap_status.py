@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
+import pytest
+
+import cap_status
 from cap_status import RUNG_ORDER, RungInfo, derive_all, display, evidence_age
 
 _OK = lambda *_: (True, "")  # noqa: E731
@@ -43,6 +47,18 @@ def test_declared_when_artifacts_missing() -> None:
     out = derive_all(_reg(a=_leaf()), {}, lambda commit: [], _NO, _OK)
     assert out["a"].rung == "declared"
     assert "missing" in out["a"].reason
+
+
+def test_hw_only_leaf_cannot_reach_simulated_or_sim_flown() -> None:
+    out = derive_all(
+        _reg(a=_leaf(platforms=["hw"])),
+        {"a": [_ev()]},
+        lambda commit: [],
+        _OK,
+        _OK,
+    )
+    assert out["a"].rung == "declared"
+    assert "sim" in out["a"].reason
 
 
 def test_simulated_when_artifacts_ok_no_evidence() -> None:
@@ -158,3 +174,58 @@ def test_display_uses_exact_stale_form() -> None:
     assert display(RungInfo("sim-flown-stale", evidence=_ev("9d12d49"))) == (
         "sim-flown (stale, since 9d12d49)"
     )
+
+
+def test_real_changed_since_rejects_nonancestor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append(args)
+        return SimpleNamespace(returncode=1, stdout="")
+
+    monkeypatch.setattr(cap_status.subprocess, "run", fake_run)
+
+    assert cap_status.real_changed_since("orphan") is None
+    assert calls == [["git", "merge-base", "--is-ancestor", "orphan", "HEAD"]]
+
+
+def test_real_mission_probe_requires_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append(args)
+        return SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr(cap_status.subprocess, "run", fake_run)
+
+    assert cap_status.real_mission_ok("hover") == (True, "")
+    assert calls == [
+        [
+            "uv",
+            "run",
+            "python",
+            "tools/mission_cli.py",
+            "sim",
+            "hover",
+            "--require-terminal",
+        ]
+    ]
+
+
+def test_real_mission_failure_names_terminal_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cap_status.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=""),
+    )
+
+    ok, reason = cap_status.real_mission_ok("hover")
+
+    assert not ok
+    assert "just mission sim hover --require-terminal" in reason

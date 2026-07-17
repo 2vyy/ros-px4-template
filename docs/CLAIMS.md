@@ -52,11 +52,11 @@ declared < simulated < sim-flown-stale < sim-flown
 | Rung | Exact derivation criteria |
 |------|---------------------------|
 | `declared` | The entry exists and passes registry validation, but no higher rung is proven. |
-| `simulated` | The scenario, overlay, world, model, vision mode, and optional mission file resolve. If `mission` is set, `just mission sim <name>` must reach terminal. |
-| `sim-flown-stale` | Sim PASS evidence exists, but its commit is unknown or its diff to HEAD intersects a flight-relevant path. Displayed as `sim-flown (stale, since <commit>)`. |
-| `sim-flown` | The newest sim PASS evidence has a known commit and no flight-relevant diff from that commit to HEAD. |
+| `simulated` | The scenario, overlay, world, model, vision mode, and optional mission file resolve. If `mission` is set, `just mission sim <name> --require-terminal` must reach terminal. |
+| `sim-flown-stale` | Committed sim PASS evidence exists, but its commit is unknown or its diff to HEAD intersects a flight-relevant path. Displayed as `sim-flown (stale, since <commit>)`. |
+| `sim-flown` | The newest committed, unchanged sim PASS evidence has a known commit and no flight-relevant diff from that commit to HEAD. |
 
-`just cap show` prints claim, derived rung, evidence age, and the reason for a lower or stale rung. Unreadable evidence JSON is ignored with a warning that names the file.
+`just cap show` prints claim, derived rung, evidence age, and the reason for a lower or stale rung. Unreadable, uncommitted, or modified evidence JSON is ignored with a warning that names the file.
 
 Flight-relevant paths are defined once in `tools/cap_evidence.py`:
 
@@ -115,7 +115,7 @@ PASS evidence is committed under `tests/evidence/<claim>/`. The filename is `<ru
 | `just cap plan [claim]` | Dependency-first incomplete frontier, optionally scoped to one closure. | `0` ladder complete, `1` actions remain, `2` unknown claim. |
 | `just cap record <claim>` | Record and prune fresh sim PASS evidence. | `0` recorded, `2` unknown or composite claim, `3` missing, failed, stale report, dirty tree, or Git precondition. |
 
-`cap plan` prints one next action per incomplete claim. Run the first actionable command. A missing scenario prints `just scenario-new <name>`, a failing mission prints `just mission sim <name>`, and a simulated or stale leaf prints `just scenario <name>`. `LADDER COMPLETE` means the selected closure is fresh at `sim-flown`.
+`cap plan` prints one next action per incomplete claim. Run the first actionable command. A missing scenario prints `just scenario-new <name>`, a failing mission prints `just mission sim <name> --require-terminal`, and a simulated or stale leaf prints `just scenario <name>`. `LADDER COMPLETE` means the selected closure is fresh at `sim-flown`.
 
 ## Workflows
 

@@ -5,10 +5,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from typer.testing import CliRunner
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 
 from ros_px4_template_core.lib.mission.loader import load_mission_file
 
+from mission_cli import app as mission_app
 from mission_cli import describe_mission, list_missions, mission_path, validate_mission
 
 
@@ -60,3 +63,21 @@ def test_describe_hover_mentions_state_and_behavior() -> None:
     text = describe_mission(m)
     assert "hover" in text
     assert "hold" in text
+
+
+def test_sim_require_terminal_rejects_terminal_less_mission(tmp_path: Path) -> None:
+    mission = tmp_path / "steady.yaml"
+    mission.write_text(
+        "mission:\n  initial: hover\n  states:\n    hover: {behavior: hold, params: {z: 3.0}}\n",
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    assert runner.invoke(mission_app, ["sim", str(mission)]).exit_code == 0
+    required = runner.invoke(
+        mission_app,
+        ["sim", str(mission), "--require-terminal"],
+    )
+
+    assert required.exit_code == 1
+    assert "terminal" in required.output

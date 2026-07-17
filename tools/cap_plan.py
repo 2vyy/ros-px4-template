@@ -35,7 +35,7 @@ def next_action(name: str, entry: dict, info: RungInfo) -> str:
     if "scenario missing" in info.reason:
         return f"just scenario-new {stem}"
     if "mission sim failing" in info.reason or "mission missing" in info.reason:
-        return f"just mission sim {entry.get('mission', '')}".strip()
+        return f"just mission sim {entry.get('mission', '')} --require-terminal".strip()
     if info.rung == "declared":
         return f"fix artifacts for {name}: {info.reason}"
     return f"just scenario {stem}"

@@ -66,6 +66,8 @@ def _leaf_rung(
     artifacts_ok: Callable[[dict], tuple[bool, str]],
     mission_ok: Callable[[str], tuple[bool, str]],
 ) -> RungInfo:
+    if "sim" not in entry.get("platforms", []):
+        return RungInfo("declared", reason="sim platform not declared")
     ok, reason = artifacts_ok(entry)
     if ok and entry.get("mission"):
         ok, reason = mission_ok(entry["mission"])
@@ -150,6 +152,14 @@ def real_changed_since(commit: str) -> list[str] | None:
     Registry changes are expanded into synthetic per-claim path markers so a
     claim becomes stale only when its own TOML entry changed.
     """
+    ancestry = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if ancestry.returncode != 0:
+        return None
     result = subprocess.run(
         ["git", "diff", "--name-only", f"{commit}..HEAD"],
         cwd=str(ROOT),
@@ -213,11 +223,14 @@ def real_artifacts_ok(entry: dict) -> tuple[bool, str]:
 def real_mission_ok(name: str) -> tuple[bool, str]:
     """Run the mission graph simulator without booting Gazebo."""
     result = subprocess.run(
-        ["uv", "run", "python", "tools/mission_cli.py", "sim", name],
+        ["uv", "run", "python", "tools/mission_cli.py", "sim", name, "--require-terminal"],
         cwd=str(ROOT),
         capture_output=True,
         text=True,
     )
     if result.returncode == 0:
         return True, ""
-    return False, f"mission sim failing: {name} (run: just mission sim {name})"
+    return (
+        False,
+        f"mission sim failing: {name} (run: just mission sim {name} --require-terminal)",
+    )
