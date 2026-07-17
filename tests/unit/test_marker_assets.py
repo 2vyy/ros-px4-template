@@ -24,12 +24,14 @@ def test_generator_matches_committed_models() -> None:
     the model metadata or emissive_map fix."""
     for marker_id in (0, 1, 2):
         committed_dir = _ROOT / "sim" / "models" / f"aruco_marker_{marker_id}"
-        assert gma.build_model_config(marker_id).encode("utf-8") == (
-            committed_dir / "model.config"
-        ).read_bytes()
-        assert gma.build_model_sdf(marker_id).encode("utf-8") == (
-            committed_dir / "model.sdf"
-        ).read_bytes()
+        assert (
+            gma.build_model_config(marker_id).encode("utf-8")
+            == (committed_dir / "model.config").read_bytes()
+        )
+        assert (
+            gma.build_model_sdf(marker_id).encode("utf-8")
+            == (committed_dir / "model.sdf").read_bytes()
+        )
 
 
 def test_physical_scale_constants() -> None:
