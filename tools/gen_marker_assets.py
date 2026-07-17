@@ -164,9 +164,18 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     default_root = Path(__file__).resolve().parents[1] / "sim" / "models"
     parser.add_argument("--output-root", type=Path, default=default_root)
+    parser.add_argument(
+        "--ids",
+        type=int,
+        nargs="+",
+        default=list(MARKER_IDS),
+        help="Marker ids to generate (DICT_4X4_50: 0-49)",
+    )
     args = parser.parse_args(argv)
+    if any(marker_id not in range(50) for marker_id in args.ids):
+        parser.error("marker ids must be in range 0-49")
 
-    written = generate_all(args.output_root)
+    written = generate_all(args.output_root, tuple(args.ids))
     for path in written:
         print(f"[gen_marker_assets] wrote {path}")
 

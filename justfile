@@ -87,3 +87,7 @@ log *args:
 # List, validate, or describe mission YAML graphs (no sim needed)
 mission *args:
     @just _run mission "$@"
+
+# Generate ArUco marker model assets (see docs/SIM.md)
+gen-markers *args:
+    uv run python tools/gen_marker_assets.py {{args}}

@@ -98,6 +98,27 @@ def test_generate_all_writes_expected_tree(tmp_path: Path) -> None:
         assert gma.texture_name(marker_id) in sdf_text
 
 
+def test_main_generates_only_requested_marker_tree(tmp_path: Path) -> None:
+    gma.main(["--ids", "3", "--output-root", str(tmp_path)])
+
+    assert [path.name for path in tmp_path.iterdir()] == ["aruco_marker_3"]
+    model_dir = tmp_path / "aruco_marker_3"
+    assert (model_dir / "model.config").is_file()
+    assert (model_dir / "model.sdf").is_file()
+    assert (model_dir / "materials" / "textures" / "aruco_marker_3.png").is_file()
+
+
+def test_main_rejects_marker_id_outside_dictionary_range(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        gma.main(["--ids", "99", "--output-root", str(tmp_path)])
+
+    assert exc_info.value.code == 2
+    assert "marker ids must be in range 0-49" in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_no_nondeterministic_metadata(tmp_path: Path) -> None:
     written = gma.generate_all(tmp_path)
     for model_dir in written:
