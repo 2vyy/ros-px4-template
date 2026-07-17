@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from typer.testing import CliRunner
 
+import cap_evidence
+import capabilities
 from cap_evidence import (
     build_record,
     changed_registry_claims,
+    dirty_flight_paths,
     flight_relevant,
     load_records,
     write_record,
@@ -122,3 +128,63 @@ description = "new"
 description = "same"
 """
     assert changed_registry_claims(old, new) == ["a"]
+
+
+def test_dirty_flight_paths_filters_porcelain() -> None:
+    porcelain = " M src/core/x.py\n?? docs/notes.md\n M tests/scenarios/01_arm_takeoff.py\n"
+    assert dirty_flight_paths(porcelain, "01_arm_takeoff.py") == [
+        "src/core/x.py",
+        "tests/scenarios/01_arm_takeoff.py",
+    ]
+
+
+def test_dirty_flight_paths_filters_registry_to_own_claim() -> None:
+    porcelain = " M tests/capabilities.toml\n"
+    assert dirty_flight_paths(
+        porcelain,
+        "01_arm_takeoff.py",
+        "arm_takeoff",
+        ["hover_hold", "arm_takeoff"],
+    ) == ["tests/capabilities.toml#arm_takeoff"]
+
+
+def test_record_unknown_claim_is_usage_error() -> None:
+    result = CliRunner().invoke(capabilities.app, ["record", "ghost_claim"])
+    assert result.exit_code == 2
+    assert "NO SUCH LEAF CLAIM" in result.output
+
+
+def test_record_writes_pass_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = {
+        "capabilities": {
+            "arm_takeoff": {
+                "description": "d",
+                "requires": [],
+                "platforms": ["sim"],
+                "scenario_file": "01_arm_takeoff.py",
+            }
+        }
+    }
+    monkeypatch.setattr(capabilities, "_load", lambda: registry)
+    monkeypatch.setattr(cap_evidence, "EVIDENCE_ROOT", tmp_path / "evidence")
+    monkeypatch.chdir(tmp_path)
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "scenario_01_arm_takeoff.json").write_text(json.dumps(_REPORT))
+
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        if args[:3] == ["git", "status", "--porcelain"]:
+            return SimpleNamespace(returncode=0, stdout="")
+        if args[:3] == ["git", "rev-parse", "--short"]:
+            return SimpleNamespace(returncode=0, stdout="abc1234\n")
+        if args[:3] == ["git", "show", "HEAD:tests/capabilities.toml"]:
+            return SimpleNamespace(returncode=0, stdout="")
+        raise AssertionError(args)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = CliRunner().invoke(capabilities.app, ["record", "arm_takeoff"])
+
+    assert result.exit_code == 0
+    assert "RECORDED arm_takeoff sim PASS @ abc1234" in result.output
+    records = load_records(tmp_path / "evidence", "arm_takeoff")
+    assert records[0]["commit"] == "abc1234"

@@ -48,6 +48,29 @@ def changed_registry_claims(old_text: str, new_text: str) -> list[str]:
     return [name for name in names if old_caps.get(name) != new_caps.get(name)]
 
 
+def dirty_flight_paths(
+    porcelain: str,
+    scenario_file: str | None,
+    claim: str | None = None,
+    registry_claims: list[str] | None = None,
+) -> list[str]:
+    """Return one claim's flight-relevant paths from git porcelain output."""
+    paths: list[str] = []
+    for line in porcelain.splitlines():
+        if not line.strip():
+            continue
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.rsplit(" -> ", 1)[1]
+        paths.append(path)
+    if REGISTRY_PATH in paths and claim is not None:
+        if registry_claims is None:
+            paths.append(f"{REGISTRY_PATH}#*")
+        else:
+            paths.extend(registry_marker(name) for name in registry_claims)
+    return flight_relevant(paths, scenario_file, claim)
+
+
 def build_record(
     claim: str,
     platform: str,

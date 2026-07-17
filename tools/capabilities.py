@@ -54,6 +54,109 @@ def show() -> None:
     typer.echo(f"CLAIMS: {flown}/{len(infos)} sim-flown (derived, not stored)")
 
 
+@app.command()
+def record(claim: str) -> None:
+    """File PASS evidence for CLAIM from its latest scenario report."""
+    import json
+    import subprocess
+
+    from cap_evidence import (
+        EVIDENCE_ROOT,
+        REGISTRY_PATH,
+        build_record,
+        changed_registry_claims,
+        dirty_flight_paths,
+        write_record,
+    )
+
+    data = _load()
+    entry = data.get("capabilities", {}).get(claim)
+    if entry is None or "scenario_file" not in entry:
+        typer.echo(f"NO SUCH LEAF CLAIM: {claim} (see just cap show)", err=True)
+        raise typer.Exit(2)
+
+    stem = entry["scenario_file"].removesuffix(".py")
+    report_path = Path("logs") / f"scenario_{stem}.json"
+    if not report_path.exists():
+        typer.echo(
+            f"NO REPORT: run `just scenario {stem}` first ({report_path} missing)",
+            err=True,
+        )
+        raise typer.Exit(3)
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        typer.echo(
+            f"INVALID REPORT: run `just scenario {stem}` again ({report_path})",
+            err=True,
+        )
+        raise typer.Exit(3) from None
+    if not report.get("passed"):
+        typer.echo(
+            f"REPORT IS A FAIL: evidence records PASSes only ({report_path})",
+            err=True,
+        )
+        raise typer.Exit(3)
+
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+    )
+    if status.returncode != 0:
+        typer.echo("GIT STATUS FAILED: cannot prove a clean recording base", err=True)
+        raise typer.Exit(3)
+
+    registry_claims: list[str] | None = []
+    if any(
+        line[3:].strip().split(" -> ")[-1] == REGISTRY_PATH
+        for line in status.stdout.splitlines()
+        if line.strip()
+    ):
+        previous = subprocess.run(
+            ["git", "show", f"HEAD:{REGISTRY_PATH}"],
+            capture_output=True,
+            text=True,
+        )
+        try:
+            registry_claims = changed_registry_claims(
+                previous.stdout,
+                REGISTRY.read_text(encoding="utf-8"),
+            )
+        except (OSError, ValueError):
+            registry_claims = None
+    dirty = dirty_flight_paths(
+        status.stdout,
+        entry["scenario_file"],
+        claim,
+        registry_claims,
+    )
+    if dirty:
+        typer.echo(
+            "DIRTY TREE: commit flight-relevant changes first: " + ", ".join(dirty[:5]),
+            err=True,
+        )
+        raise typer.Exit(3)
+
+    revision = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    commit = revision.stdout.strip()
+    if revision.returncode != 0 or not commit:
+        typer.echo("GIT REVISION FAILED: cannot identify evidence commit", err=True)
+        raise typer.Exit(3)
+    conditions = {
+        "world": entry.get("sim_world", "default"),
+        "model": entry.get("sim_model", "x500"),
+        "vision": entry.get("sim_vision", "none"),
+    }
+    evidence = build_record(claim, "sim", commit, report, conditions)
+    output = write_record(evidence, EVIDENCE_ROOT)
+    typer.echo(f"RECORDED {claim} sim PASS @ {commit} -> {output} (commit the file)")
+
+
 def scenarios_for_platform(platform: str = "sim", registry: Path = REGISTRY) -> list[str]:
     """Return scenario names (without .py) for the given platform, in TOML order."""
     data = _load(registry)
