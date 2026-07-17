@@ -14,7 +14,6 @@ def _write_state(d: Path, **overrides) -> None:
         "status": "running",
         "started_at": time.time() - 120,
         "finished_at": None,
-        "speed": 1.0,
         "groups": [
             {
                 "vision": "none",
@@ -74,13 +73,6 @@ def test_running_exits_3_and_shows_progress(tmp_path: Path) -> None:
     assert "05_aruco_hover" in text
     assert "PASS 01_arm_takeoff" in text
     assert "last activity" in text
-
-
-def test_running_at_speed_names_the_factor(tmp_path: Path) -> None:
-    _write_state(tmp_path, speed=2.0)
-    text, code = build_status(tmp_path, pid_alive=True)
-    assert code == 3
-    assert "at 2.0x" in text
 
 
 def test_finished_all_pass_exits_0(tmp_path: Path) -> None:

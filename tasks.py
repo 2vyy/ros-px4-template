@@ -309,7 +309,7 @@ def _pid_running(pidfile: Path) -> bool:
         return True
 
 
-def _e2e_run(configs: list[dict], speed: float = 1.0) -> None:
+def _e2e_run(configs: list[dict]) -> None:
     """The e2e supervisor loop: one isolated sim per group, incremental state.
 
     Runs inline for `just test e2e --wait`; otherwise as the detached
@@ -331,7 +331,6 @@ def _e2e_run(configs: list[dict], speed: float = 1.0) -> None:
         "status": "running",
         "started_at": time.time(),
         "finished_at": None,
-        "speed": speed,
         "groups": [
             {
                 "vision": v,
@@ -652,7 +651,9 @@ def sim(
     model: str = typer.Option("x500", "--model", help="Airframe model"),
     vision: str = typer.Option("false", "--vision", help="Enable vision/aruco detection"),
     overlay: str = typer.Option(
-        "", "--overlay", help="Param overlay: auto_arm | inspect | hover (default: none, disarmed)."
+        "",
+        "--overlay",
+        help="Param overlay name from config/params/overlays (default: none, disarmed).",
     ),
     record: bool = typer.Option(
         False, "--record", help="Record an MCAP bag + retrieve the PX4 ULog for `just analyze`."
@@ -664,8 +665,10 @@ def sim(
 
     Never holds the terminal. Watch with `just log tail`; stop with `just stop`.
     """
-    if overlay and overlay not in ("auto_arm", "inspect", "hover"):
-        print(f"--overlay must be auto_arm|inspect|hover, got {overlay!r}", file=sys.stderr)
+    overlays_dir = ROOT / "config" / "params" / "overlays"
+    valid = sorted(p.stem for p in overlays_dir.glob("*.yaml"))
+    if overlay and overlay not in valid:
+        print(f"UNKNOWN OVERLAY '{overlay}'. Valid: {', '.join(valid)}", file=sys.stderr)
         raise typer.Exit(int(ExitCode.USAGE))
 
     # Idempotent: cold-tear-down any existing stack BEFORE preflight, so
@@ -676,7 +679,7 @@ def sim(
         _teardown()
 
     # Preflight (precondition class). A pidless crashed stack still holding a
-    # port fails here with an accurate "run: just sim-stop" message.
+    # port fails here with an accurate "run: just stop" message.
     res = subprocess.run(
         ["uv", "run", "python", "tools/preflight.py", "--mode=headless"], cwd=str(ROOT)
     )
@@ -843,6 +846,8 @@ def analyze(
         if res.returncode != 0:
             print("skein query failed.", file=sys.stderr)
             raise typer.Exit(int(ExitCode.FAIL))
+
+    print(f"ANALYZED {run_dir.name}: aligned.mcap written" + (" + query ok" if query else ""))
 
 
 @app.command()
@@ -1136,7 +1141,6 @@ def test(
                 "status": "running",
                 "started_at": time.time(),
                 "finished_at": None,
-                "speed": 1.0,
                 "groups": [
                     {
                         "vision": v,
@@ -1169,12 +1173,10 @@ def test(
 
 
 @app.command("e2e-worker", hidden=True)
-def e2e_worker(
-    speed: float = typer.Option(1.0, "--speed", help="Physics speed factor."),
-) -> None:
+def e2e_worker() -> None:
     """Internal: the detached e2e supervisor. Launched by `just test e2e`."""
     configs = scenario_sim_configs("sim")
-    _e2e_run(configs, speed=speed)
+    _e2e_run(configs)
 
 
 @app.command("e2e-status")
@@ -1277,7 +1279,7 @@ def scenario_new(
 
 @app.command()
 def status():
-    """View JSON workspace status snapshot (nodes, live status, capabilities)."""
+    """Concise English workspace snapshot (nodes, live status, capabilities)."""
     subprocess.run(["uv", "run", "python", "tools/status.py"], cwd=str(ROOT))
 
 

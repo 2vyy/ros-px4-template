@@ -26,6 +26,42 @@ def test_port_busy_detected() -> None:
         assert preflight._port_free(port) is False
 
 
+def test_udp_port_free_detects_bound_socket() -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+
+        assert preflight._udp_port_free(port) is False
+
+    assert preflight._udp_port_free(port) is True
+
+
+def test_main_checks_8888_with_udp_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    udp_ports: list[int] = []
+    tcp_ports: list[int] = []
+    monkeypatch.delenv("ROS_SETUP", raising=False)
+    monkeypatch.delenv("PX4_DIR", raising=False)
+    monkeypatch.setattr(sys, "argv", ["preflight", "--mode", "headless"])
+    monkeypatch.setattr(
+        preflight,
+        "_udp_port_free",
+        lambda port: udp_ports.append(port) or True,
+    )
+    monkeypatch.setattr(
+        preflight,
+        "_port_free",
+        lambda port: tcp_ports.append(port) or True,
+    )
+    monkeypatch.setattr(preflight, "_git_branch", lambda _path: "release/1.17")
+    monkeypatch.setattr(preflight.shutil, "which", lambda _name: None)
+
+    with pytest.raises(SystemExit):
+        preflight.main()
+
+    assert udp_ports == [8888]
+    assert tcp_ports == [9090]
+
+
 def test_check_prints_fail_with_detail(capsys: pytest.CaptureFixture[str]) -> None:
     assert preflight._check("x", False, "why") is False
 

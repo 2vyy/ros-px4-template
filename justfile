@@ -72,7 +72,7 @@ scenario-status *args:
 e2e-status:
     @just _run e2e-status
 
-# View JSON workspace status snapshot (nodes, live status, capabilities)
+# Concise English workspace snapshot (nodes, live status, capabilities)
 status:
     @just _run status
 

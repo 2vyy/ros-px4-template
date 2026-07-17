@@ -40,11 +40,25 @@ def _port_free(port: int) -> bool:
         return True
 
 
+def _udp_port_free(port: int) -> bool:
+    """A UDP port is free iff we can bind it (SO_REUSEADDR off)."""
+    import socket as _socket
+
+    s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+    try:
+        s.bind(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
 def _port_pid(port: int, proto: str = "tcp") -> str:
     """Return 'pid NNNN (name)' for the process holding *port*, or ''."""
     try:
         r = subprocess.run(
-            ["ss", "-lnp", f"sport = :{port}"],
+            ["ss", "-lnup" if proto == "udp" else "-lntp", f"sport = :{port}"],
             capture_output=True,
             text=True,
             timeout=3,
@@ -114,13 +128,13 @@ def main() -> None:
     )
 
     if args.mode not in ("px4", "edit"):
-        port_8888_free = _port_free(8888)
-        pid_8888 = "" if port_8888_free else _port_pid(8888, "tcp")
+        port_8888_free = _udp_port_free(8888)
+        pid_8888 = "" if port_8888_free else _port_pid(8888, "udp")
         results.append(
             _check(
                 "Port 8888 (MicroXRCEAgent) free",
                 port_8888_free,
-                f"already in use {pid_8888} — run: just sim-stop".strip(),
+                f"already in use {pid_8888} — run: just stop".strip(),
             )
         )
         port_9090_free = _port_free(9090)
@@ -129,7 +143,7 @@ def main() -> None:
             _check(
                 "Port 9090 (rosbridge) free",
                 port_9090_free,
-                f"already in use {pid_9090} — run: just sim-stop".strip(),
+                f"already in use {pid_9090} — run: just stop".strip(),
             )
         )
 
