@@ -2,9 +2,54 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from ros_px4_template_core.lib import mission as _m  # noqa: F401
-from ros_px4_template_core.lib.mission.loader import MissionError, load_mission_dict
+from ros_px4_template_core.lib.mission.loader import (
+    MissionError,
+    load_mission_dict,
+    load_mission_file,
+)
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_bad_guard_param_rejected_at_load() -> None:
+    doc = {
+        "mission": {
+            "initial": "a",
+            "states": {"a": {"behavior": "hold", "params": {}}},
+            "safety": [{"guard": "battery_low", "params": {"frac": 20}, "to": "a"}],
+        }
+    }
+    with pytest.raises(MissionError, match="battery_low"):
+        load_mission_dict(doc)
+
+
+def test_non_numeric_behavior_param_rejected_at_load() -> None:
+    doc = {
+        "mission": {
+            "initial": "a",
+            "states": {"a": {"behavior": "hold", "params": {"tolerance_m": "fast"}}},
+        }
+    }
+    with pytest.raises(MissionError, match="state 'a'"):
+        load_mission_dict(doc)
+
+
+def test_shallow_mission_path_loads(tmp_path: Path) -> None:
+    src = ROOT / "config" / "missions" / "hover.yaml"
+    dst = tmp_path / "x.yaml"
+    dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+    load_mission_file(dst)
+
+
+def test_standard_path_file_mission_loads_waypoints() -> None:
+    mission = load_mission_file(ROOT / "config" / "missions" / "demo.yaml")
+
+    assert mission.states["follow"].params["waypoints"]
 
 
 def _doc() -> dict:
