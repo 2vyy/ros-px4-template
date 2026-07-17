@@ -20,11 +20,38 @@ def _load(registry: Path = REGISTRY) -> dict:
 
 @app.command()
 def show() -> None:
+    """Print each claim's derived rung. Rungs are never stored."""
+    from cap_evidence import EVIDENCE_ROOT, load_records
+    from cap_status import (
+        derive_all,
+        display,
+        evidence_age,
+        real_artifacts_ok,
+        real_changed_since,
+        real_mission_ok,
+    )
+
     data = _load()
-    for name, cap in data.get("capabilities", {}).items():
-        status = cap.get("status", "unknown")
-        platforms = ", ".join(cap.get("platforms", []))
-        typer.echo(f"{name}: {status} [{platforms}] — {cap.get('description', '')}")
+    capabilities = data.get("capabilities", {})
+    records = {name: load_records(EVIDENCE_ROOT, name) for name in capabilities}
+    infos = derive_all(
+        data,
+        records,
+        real_changed_since,
+        real_artifacts_ok,
+        real_mission_ok,
+    )
+    flown = 0
+    for name, info in infos.items():
+        age = ""
+        if info.evidence:
+            age = (
+                f"  evidence {evidence_age(info.evidence)} old @ {info.evidence.get('commit', '?')}"
+            )
+        note = f"  ({info.reason})" if info.reason and info.rung != "sim-flown" else ""
+        typer.echo(f"{name:<22} {display(info):<32}{age}{note}")
+        flown += info.rung == "sim-flown"
+    typer.echo(f"CLAIMS: {flown}/{len(infos)} sim-flown (derived, not stored)")
 
 
 def scenarios_for_platform(platform: str = "sim", registry: Path = REGISTRY) -> list[str]:
