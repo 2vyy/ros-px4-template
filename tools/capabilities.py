@@ -157,6 +157,38 @@ def record(claim: str) -> None:
     typer.echo(f"RECORDED {claim} sim PASS @ {commit} -> {output} (commit the file)")
 
 
+@app.command()
+def plan(
+    claim: str = typer.Argument("", help="Scope to this claim's requires closure"),
+) -> None:
+    """Print the dependency-first frontier. Exit zero means complete."""
+    from cap_evidence import EVIDENCE_ROOT, load_records
+    from cap_plan import format_plan
+    from cap_status import (
+        derive_all,
+        real_artifacts_ok,
+        real_changed_since,
+        real_mission_ok,
+    )
+
+    data = _load()
+    capabilities = data.get("capabilities", {})
+    if claim and claim not in capabilities:
+        typer.echo(f"NO SUCH CLAIM: {claim}", err=True)
+        raise typer.Exit(2)
+    records = {name: load_records(EVIDENCE_ROOT, name) for name in capabilities}
+    infos = derive_all(
+        data,
+        records,
+        real_changed_since,
+        real_artifacts_ok,
+        real_mission_ok,
+    )
+    text, complete = format_plan(data, infos, claim or None)
+    typer.echo(text)
+    raise typer.Exit(0 if complete else 1)
+
+
 def scenarios_for_platform(platform: str = "sim", registry: Path = REGISTRY) -> list[str]:
     """Return scenario names (without .py) for the given platform, in TOML order."""
     data = _load(registry)
