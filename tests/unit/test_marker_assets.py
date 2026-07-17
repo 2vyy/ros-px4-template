@@ -20,11 +20,16 @@ import gen_marker_assets as gma  # noqa: E402
 
 def test_generator_matches_committed_models() -> None:
     """The committed models are live-verified (plans/062); the generator must
-    reproduce them byte-for-byte so a regeneration can never regress the
-    emissive_map fix."""
+    reproduce their text assets byte-for-byte so regeneration cannot regress
+    the model metadata or emissive_map fix."""
     for marker_id in (0, 1, 2):
-        committed = _ROOT / "sim" / "models" / f"aruco_marker_{marker_id}" / "model.sdf"
-        assert gma.build_model_sdf(marker_id).encode("utf-8") == committed.read_bytes()
+        committed_dir = _ROOT / "sim" / "models" / f"aruco_marker_{marker_id}"
+        assert gma.build_model_config(marker_id).encode("utf-8") == (
+            committed_dir / "model.config"
+        ).read_bytes()
+        assert gma.build_model_sdf(marker_id).encode("utf-8") == (
+            committed_dir / "model.sdf"
+        ).read_bytes()
 
 
 def test_physical_scale_constants() -> None:
