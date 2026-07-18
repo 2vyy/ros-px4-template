@@ -208,6 +208,44 @@ def test_simulate_persistent_safety_logs_one_transition() -> None:
     assert len(to_safe) == 1
 
 
+def test_state_elapsed_signal_grows_and_resets() -> None:
+    """The engine injects reserved signal ``state_elapsed_s`` (seconds since
+    current-state entry) before guard evaluation, and resets it on transition.
+    Observed via a probe guard registered with cleanup (never leaked: the
+    registry is pinned against docs/MISSIONS.md by test_missions_doc)."""
+    from ros_px4_template_core.lib.mission import registry
+
+    seen: list[float] = []
+
+    def probe(inputs: Inputs, signals: dict, params: dict) -> bool:
+        seen.append(signals["state_elapsed_s"])
+        return False
+
+    registry._GUARDS["_probe_state_elapsed"] = probe
+    try:
+        m = Mission(
+            initial="takeoff",
+            states={
+                "takeoff": StateDef("takeoff", "hold", {"z": 3.0}),
+                "follow": StateDef("follow", "hold", {}),
+                "hold_safe": StateDef("hold_safe", "hold", {}),
+            },
+            safety=(TransitionDef(None, "_probe_state_elapsed", {}, "hold_safe"),),
+            transitions=(TransitionDef("takeoff", "armed_at_altitude", {}, "follow"),),
+            terminal=frozenset(),
+        )
+        ctx = MissionContext(state="takeoff")
+        tick(ctx, m, _inputs(now=10.0, armed=False, altitude_ok=False))
+        tick(ctx, m, _inputs(now=14.0, armed=False, altitude_ok=False))
+        assert seen == [0.0, 4.0]
+        tick(ctx, m, _inputs(now=15.0, armed=True, altitude_ok=True))
+        assert ctx.state == "follow"
+        tick(ctx, m, _inputs(now=17.0, armed=True, altitude_ok=True))
+        assert seen[-1] == 2.0  # reset on entry to follow at now=15.0
+    finally:
+        del registry._GUARDS["_probe_state_elapsed"]
+
+
 def test_reentry_reinitializes_descend_scratch_from_current_altitude() -> None:
     """Re-entering `descend` after a `reacquire` detour must not carry over the
     previous episode's z_cmd -- it re-derives descent from the CURRENT pose,

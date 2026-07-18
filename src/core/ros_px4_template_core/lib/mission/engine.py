@@ -14,6 +14,7 @@ class MissionContext:
     state: str
     scratch: dict[str, dict] = field(default_factory=dict)
     events: list[dict] = field(default_factory=list)
+    entered_at: float | None = None
 
 
 def _first_fired(
@@ -35,6 +36,12 @@ def _run(ctx: MissionContext, mission: Mission, inputs: Inputs) -> tuple[Command
 def tick(ctx: MissionContext, mission: Mission, inputs: Inputs) -> Command:
     """Advance the FSM one step over an immutable snapshot; return one command."""
     command, signals = _run(ctx, mission, inputs)
+
+    # Reserved signal: seconds since current-state entry. Behaviors must not
+    # emit a signal with this name; the engine owns it.
+    if ctx.entered_at is None:
+        ctx.entered_at = inputs.now
+    signals["state_elapsed_s"] = max(0.0, inputs.now - ctx.entered_at)
 
     fired = _first_fired(mission.safety, inputs, signals)
     tier = "safety"
@@ -69,6 +76,7 @@ def tick(ctx: MissionContext, mission: Mission, inputs: Inputs) -> Command:
         )
         ctx.scratch.pop(ctx.state, None)
         ctx.state = fired.dst
+        ctx.entered_at = inputs.now
         ctx.scratch.pop(ctx.state, None)  # fresh entry
         command, _ = _run(ctx, mission, inputs)
 
