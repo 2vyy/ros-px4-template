@@ -121,12 +121,12 @@ prints AFTER (prepare runs first). `sim()` has no such print. This is a
 cosmetic progress line, not a verdict; accepted. If the maintainer objects,
 move the print before `_prepare_stack` instead - do not restructure further.
 
-- [ ] Step 1: apply; delete the duplicated blocks
-- [ ] Step 2: `just check` passes
-- [ ] Step 3: live: `just sim` READY verdict identical (modulo timing);
+- [x] Step 1: apply; delete the duplicated blocks
+- [x] Step 2: `just check` passes
+- [x] Step 3: live: `just sim` READY verdict identical (modulo timing);
       `just sim` again exercises the teardown-first path
       ("Existing stack found"); `just stop` clean
-- [ ] Step 4: commit `refactor(tasks): single boot path shared by sim and hw`
+- [x] Step 4: commit `refactor(tasks): single boot path shared by sim and hw`
 
 ### Task 2: one e2e state seed, no tuple indirection
 
@@ -191,12 +191,12 @@ The state JSON written to `logs/e2e_state.json` must be KEY-FOR-KEY identical
 to today's (e2e_status/reports parse it); the helper above preserves every key
 and value.
 
-- [ ] Step 1: apply
-- [ ] Step 2: `uv run pytest tests/unit/ -q` (test_tasks_e2e_groups.py may
+- [x] Step 1: apply
+- [x] Step 2: `uv run pytest tests/unit/ -q` (test_tasks_e2e_groups.py may
       reference `_e2e_sim_groups`; if so, retarget it at
       `_e2e_initial_state`'s `groups` list - same assertions on
       vision/overlay/model/world/scenarios per group)
-- [ ] Step 3: commit `refactor(tasks): single e2e state seed; drop the group-tuple indirection`
+- [x] Step 3: commit `refactor(tasks): single e2e state seed; drop the group-tuple indirection`
 
 ### Task 3: one log-clear helper
 
@@ -216,8 +216,8 @@ Use it in `clean()` (replacing its loop; keep the surrounding
 build/install/log rmtree and prints) and in `test(e2e)` (replacing the loop
 under "Clearing previous simulation logs...", keeping that print).
 
-- [ ] Step 1: apply; `just check`
-- [ ] Step 2: commit `refactor(tasks): shared _clear_log_dir`
+- [x] Step 1: apply; `just check`
+- [x] Step 2: commit `refactor(tasks): shared _clear_log_dir`
 
 ### Task 4: unify scenario()
 
@@ -265,10 +265,10 @@ Semantics preserved: unknown scenario still exits USAGE via
 `_resolve_scenario_script` before any teardown; both paths summarize in a
 `finally`; failure prints the digest and exits FAIL; success exits 0.
 
-- [ ] Step 1: apply; `just check`
-- [ ] Step 2: live: `just scenario 01_arm_takeoff` PASS;
+- [x] Step 1: apply; `just check`
+- [x] Step 2: live: `just scenario 01_arm_takeoff` PASS;
       `just scenario nope` exits 2 with the Available list
-- [ ] Step 3: commit `refactor(tasks): one scenario() tail for declared and ad-hoc runs`
+- [x] Step 3: commit `refactor(tasks): one scenario() tail for declared and ad-hoc runs`
 
 ### Task 5: check() static-step loop
 
@@ -287,18 +287,18 @@ In `check()`, replace the two sequential ruff subprocess blocks with:
 (The invariants/docs steps are already in-process calls from 076; the ty and
 pytest steps keep their existing shapes.)
 
-- [ ] Step 1: apply; `just check` output ordering identical
-- [ ] Step 2: commit `refactor(tasks): table-drive the ruff pair in check()`
+- [x] Step 1: apply; `just check` output ordering identical
+- [x] Step 2: commit `refactor(tasks): table-drive the ruff pair in check()`
 
 ### Task 6: final gate + metrics
 
-- [ ] `just test e2e` - all 8 PASS, exit 0
-- [ ] `just e2e-status` after completion - aggregate block, exit 0
-- [ ] Record the metric delta in the commit message:
+- [x] `just test e2e` - all 8 PASS, exit 0
+- [x] `just e2e-status` after completion - aggregate block, exit 0
+- [x] Record the metric delta in the commit message:
       `wc -l tasks.py` (expect roughly 1310 -> ~1150 or lower after 076+077) and
       `uvx radon cc -s tasks.py | tail -3` (average should drop; no new C+
       functions)
-- [ ] Update `plans/README.md` row
+- [x] Update `plans/README.md` row
 
 ## STOP conditions
 

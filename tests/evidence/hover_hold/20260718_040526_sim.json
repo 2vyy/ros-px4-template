@@ -1,0 +1,23 @@
+{
+  "claim": "hover_hold",
+  "platform": "sim",
+  "commit": "e9fbf67",
+  "run_id": "20260718_040526",
+  "verdict": "PASS",
+  "elapsed_s": 54.05,
+  "detail": {
+    "anchor": [
+      -0.0004168170562479645,
+      -0.011027409695088863,
+      2.9527273178100586
+    ],
+    "reason": "",
+    "violations": 0
+  },
+  "conditions": {
+    "world": "default",
+    "model": "x500",
+    "vision": "none"
+  },
+  "grade": null
+}

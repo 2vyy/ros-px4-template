@@ -149,7 +149,7 @@ non-test, tasks.py alone 139); radon avg CC A (3.6), worst file tasks.py
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 076  | One Python environment: tasks.py joins the project venv; tools called in-process (delete inline script deps + ~10 `uv run` hops) | P1 | M | soft: 068 first | DONE (2026-07-17, branch `advisor/076-single-env`; `just check` 492; `just sim` READY; scenario 01 PASS; e2e 8/8 PASS; topics exit-code fix) |
-| 077  | tasks.py dedup: shared sim/hw boot path, one e2e state seed, `_clear_log_dir`, unified `scenario()`, ruff-pair loop | P2 | M | 076, 068 | TODO |
+| 077  | tasks.py dedup: shared sim/hw boot path, one e2e state seed, `_clear_log_dir`, unified `scenario()`, ruff-pair loop | P2 | M | 076, 068 | DONE (2026-07-17, branch `advisor/077-tasks-dedup`; tasks.py 1471→1413, radon avg A 4.7; e2e 8/8 PASS) |
 | 078  | tools/ consolidation: `reports.py` merges e2e_report/e2e_status/scenario_status, shared `probes.py`, log_query fold-in, check_docs corpus cache | P2 | M | 076; after 068; 077 recommended first | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
