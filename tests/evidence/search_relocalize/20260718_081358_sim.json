@@ -1,11 +1,13 @@
 {
-  "claim": "aruco_hover",
+  "claim": "search_relocalize",
   "platform": "sim",
-  "commit": "f8bb24f",
-  "run_id": "20260718_034809",
+  "commit": "29b9d1b",
+  "run_id": "20260718_081358",
   "verdict": "PASS",
-  "elapsed_s": 30.04,
-  "detail": {},
+  "elapsed_s": 36.45,
+  "detail": {
+    "override_count": 91
+  },
   "conditions": {
     "world": "default",
     "model": "x500",
