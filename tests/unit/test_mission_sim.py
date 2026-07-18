@@ -143,3 +143,31 @@ def test_safety_diversion_on_lost_estimate() -> None:
     result = simulate(mission, max_ticks=200, script=script)
     assert result.final_state == "hold_safe"
     assert not result.terminated
+
+
+def test_time_budget_safety_transition_uses_simulated_armed_time() -> None:
+    mission = load_mission_dict(
+        {
+            "mission": {
+                "initial": "fly",
+                "safety": [
+                    {
+                        "guard": "time_budget",
+                        "params": {"budget_s": 2.0},
+                        "to": "land",
+                    }
+                ],
+                "states": {
+                    "fly": {"behavior": "hold", "params": {"z": 3.0}},
+                    "land": {"behavior": "hold"},
+                },
+                "terminal": ["land"],
+            }
+        }
+    )
+
+    result = simulate(mission, tick_rate_hz=10.0, max_ticks=30)
+
+    assert result.final_state == "land"
+    assert result.terminated
+    assert 2.0 < result.ticks / 10.0 <= 2.2

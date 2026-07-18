@@ -9,7 +9,11 @@ from ros_px4_template_core.lib.mission.detection import Detection
 
 @dataclass(frozen=True)
 class Inputs:
-    """Immutable per-tick snapshot the engine and all behaviors/guards read."""
+    """Immutable per-tick snapshot the engine and all behaviors/guards read.
+
+    ``mission_elapsed_s`` is seconds since the vehicle first became armed in
+    this run and remains ``0.0`` until that first arm.
+    """
 
     now: float
     pose_enu: tuple[float, float, float]
@@ -22,6 +26,7 @@ class Inputs:
     input_ages: dict[str, float] = field(default_factory=dict)
     battery_remaining: float | None = None
     failsafe_active: bool = False
+    mission_elapsed_s: float = 0.0
 
 
 @dataclass(frozen=True)

@@ -38,6 +38,7 @@ class SimVehicle:
     pose_enu: tuple[float, float, float] = (0.0, 0.0, 0.0)
     yaw_enu: float = 0.0
     armed: bool = False
+    first_armed_time: float | None = None
     estimate_ok: bool = True
     battery_remaining: float = 1.0
     failsafe_active: bool = False
@@ -147,6 +148,8 @@ def simulate(
     for i in range(max_ticks):
         if script is not None:
             script(v.now, v)
+        if v.armed and v.first_armed_time is None:
+            v.first_armed_time = v.now
 
         altitude_ok = v.pose_enu[2] >= takeoff_altitude_m - altitude_tolerance_m
         inputs = Inputs(
@@ -161,12 +164,17 @@ def simulate(
             input_ages=dict(v.input_ages),
             battery_remaining=v.battery_remaining,
             failsafe_active=v.failsafe_active,
+            mission_elapsed_s=(
+                (v.now - v.first_armed_time) if v.first_armed_time is not None else 0.0
+            ),
         )
         cmd = tick(ctx, mission, inputs)
         if ctx.state not in reached:
             reached.append(ctx.state)
 
         if isinstance(cmd, GoTo):
+            if v.first_armed_time is None:
+                v.first_armed_time = v.now
             v.armed = True  # first setpoint arms; the FSM under test is the mission, not offboard
             v.pose_enu = _step_toward(v.pose_enu, (cmd.x, cmd.y, cmd.z), speed_m_s * dt)
         elif isinstance(cmd, Land):

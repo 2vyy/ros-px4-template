@@ -56,6 +56,7 @@
             "properties": {
               "guard": {
                 "enum": [
+                  "altitude_ceiling",
                   "armed_at_altitude",
                   "battery_low",
                   "disarmed",
@@ -64,12 +65,14 @@
                   "geofence_breach",
                   "hold_complete",
                   "inputs_stale",
+                  "keep_out_box",
                   "marker_fresh",
                   "marker_lost",
                   "marker_lost_signal",
                   "marker_stable",
                   "reached",
                   "search_complete",
+                  "time_budget",
                   "waypoints_done"
                 ]
               },
@@ -98,6 +101,7 @@
               },
               "guard": {
                 "enum": [
+                  "altitude_ceiling",
                   "armed_at_altitude",
                   "battery_low",
                   "disarmed",
@@ -106,12 +110,14 @@
                   "geofence_breach",
                   "hold_complete",
                   "inputs_stale",
+                  "keep_out_box",
                   "marker_fresh",
                   "marker_lost",
                   "marker_lost_signal",
                   "marker_stable",
                   "reached",
                   "search_complete",
+                  "time_budget",
                   "waypoints_done"
                 ]
               },
