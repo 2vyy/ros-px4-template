@@ -127,7 +127,7 @@ def supervise(
     name: str,
     *,
     deadline_s: float = 300.0,
-    silence_s: float = 30.0,
+    silence_s: float = 90.0,
     log_path: Path,
     cwd: Path,
     poll_s: float = 1.0,

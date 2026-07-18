@@ -1148,7 +1148,9 @@ def _run_e2e_sim_group(
                 ["uv", "run", "python", f"tests/scenarios/{s}.py"],
                 s,
                 deadline_s=300.0,
-                silence_s=30.0,
+                # A healthy steady hover writes nothing to the session log for
+                # up to ~35s (measured); silence must sit well above that.
+                silence_s=90.0,
                 log_path=LOG_DIR / "latest.log",
                 cwd=ROOT,
             )
