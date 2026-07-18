@@ -32,10 +32,12 @@ _ALLOWLIST = frozenset(
 # single-file hardcode: when a sub-app gains a command the docs check fails on
 # the new doc line until this dict learns it. Cheap, visible, self-announcing.
 _SUBCOMMANDS = {
-    "log": {"summary", "tail", "topics"},
+    "log": {"summary", "tail", "topics", "since", "events"},
     "cap": {"show", "plan", "record"},
     "mission": {"list", "validate", "show", "sim", "schema"},
-    "test": {"unit", "scenario", "e2e"},
+    "wait": {"ready", "run"},
+    "sim": {"start"},
+    "hw": {"start"},
 }
 
 # Docs an agent actually follows; each is scanned for backticked identifiers.
