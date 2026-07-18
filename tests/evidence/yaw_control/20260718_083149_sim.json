@@ -1,22 +1,23 @@
 {
   "claim": "yaw_control",
   "platform": "sim",
-  "commit": "e9fbf67",
-  "run_id": "20260718_040904",
+  "commit": "a57d015",
+  "run_id": "20260718_083149",
   "verdict": "PASS",
-  "elapsed_s": 26.09,
+  "elapsed_s": 25.9,
   "detail": {
     "reason": "",
     "setpoint_yaw_ned": 2.220446049250313e-16,
-    "vehicle_yaw_enu": 1.563,
+    "vehicle_yaw_enu": 1.561,
     "setpoint_yaw_err_rad": 0.0,
-    "vehicle_yaw_err_rad": 0.008,
+    "vehicle_yaw_err_rad": 0.01,
     "z_enu": 2.99
   },
   "conditions": {
     "world": "default",
     "model": "x500",
-    "vision": "none"
+    "vision": "none",
+    "run_record": "07_yaw_control_20260718_033149"
   },
   "grade": null
 }
