@@ -161,6 +161,9 @@ Registered in `lib/mission/behaviors.py`. Each returns a command plus signals
 `path_file` is resolved relative to the project root and may be used anywhere
 `follow_waypoints` accepts `waypoints`.
 
+The signal name `state_elapsed_s` is reserved: the engine injects it every tick
+(seconds since the current state was entered) and behaviors must not set it.
+
 ## Guards
 
 Registered in `lib/mission/guards.py`. Each is a pure predicate over the snapshot
@@ -179,6 +182,7 @@ Registered in `lib/mission/guards.py`. Each is a pure predicate over the snapsho
 | `geofence_breach` | `radius_m` (50.0) | horizontal distance from origin ≥ `radius_m` |
 | `altitude_ceiling` | `ceiling_m` (required, > 0) | ENU z is at/above `ceiling_m`; intended for safety-tier transitions |
 | `time_budget` | `budget_s` (required, > 0) | armed mission time exceeds `budget_s`; intended for safety-tier transitions |
+| `phase_timeout` | `timeout_s` (required, > 0) | time in the current state exceeds `timeout_s`; reads the engine-injected `state_elapsed_s` signal; intended for per-state mission-tier edges |
 | `keep_out_box` | `x_min`, `x_max`, `y_min`, `y_max` (required); `z_min`, `z_max` (optional) | vehicle is inside or on the boundary of the axis-aligned ENU box; intended for safety-tier transitions |
 | `estimate_invalid` | — | the state estimate is not OK |
 | `inputs_stale` | `key` (`odom`), `t` (1.0) | named input older than `t` s |

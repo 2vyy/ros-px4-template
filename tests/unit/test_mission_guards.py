@@ -234,7 +234,12 @@ def test_phase_timeout_mission_loads_via_probe() -> None:
                 "hold_safe": {"behavior": "hold"},
             },
             "transitions": [
-                {"from": "a", "guard": "phase_timeout", "params": {"timeout_s": 60}, "to": "hold_safe"}
+                {
+                    "from": "a",
+                    "guard": "phase_timeout",
+                    "params": {"timeout_s": 60},
+                    "to": "hold_safe",
+                }
             ],
             "terminal": ["hold_safe"],
         }
