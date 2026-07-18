@@ -910,6 +910,27 @@ def hw(
     print(format_ready([f"FC {port}@{baud}", "rosbridge:9090", "/fmu topics up"], elapsed))
 
 
+def _fallback_scenario_report(scenario: str, reason: str, config: dict[str, str]) -> str:
+    """JSON text for a scenario that produced no fresh report of its own.
+
+    Same shape as ``write_report`` in tests/scenarios/_common.py so every
+    consumer (e2e report block, log summary, scenario-status) reads it
+    unchanged.
+    """
+    return (
+        json.dumps(
+            {
+                "scenario": scenario,
+                "passed": False,
+                "elapsed_s": 0.0,
+                "detail": {"reason": reason, **config},
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+
 def _run_e2e_sim_group(
     vision: str,
     overlay: str,
@@ -985,33 +1006,69 @@ def _run_e2e_sim_group(
             # instead of silently omitting scenarios that never ran.
             for s in scenarios:
                 (LOG_DIR / f"scenario_{s}.json").write_text(
-                    json.dumps(
+                    _fallback_scenario_report(
+                        s,
+                        "sim_never_ready",
                         {
-                            "scenario": s,
-                            "passed": False,
-                            "elapsed_s": 0.0,
-                            "detail": {
-                                "reason": "sim_never_ready",
-                                "vision": vision,
-                                "overlay": overlay,
-                                "model": model,
-                                "world": world,
-                            },
+                            "vision": vision,
+                            "overlay": overlay,
+                            "model": model,
+                            "world": world,
                         },
-                        indent=2,
-                    )
-                    + "\n",
+                    ),
                     encoding="utf-8",
                 )
             return len(scenarios)
 
         for s in scenarios:
             print(f"Running scenario {s}...")
+            report = LOG_DIR / f"scenario_{s}.json"
+            started_at = time.time()
             res_s = subprocess.run(
                 ["uv", "run", "python", f"tests/scenarios/{s}.py"], cwd=str(ROOT)
             )
+            fresh = report.exists() and report.stat().st_mtime >= started_at
             if res_s.returncode != 0:
                 fails += 1
+                if not fresh:
+                    print(
+                        f"  [FAIL] {s} exited {res_s.returncode} without writing a report; "
+                        "synthesizing crashed_before_report",
+                        file=sys.stderr,
+                    )
+                    report.write_text(
+                        _fallback_scenario_report(
+                            s,
+                            "crashed_before_report",
+                            {
+                                "vision": vision,
+                                "overlay": overlay,
+                                "model": model,
+                                "world": world,
+                            },
+                        ),
+                        encoding="utf-8",
+                    )
+            elif not fresh:
+                # Exit 0 but no fresh report: never trust it as a pass.
+                fails += 1
+                print(
+                    f"  [FAIL] {s} exited 0 but wrote no report; counting as FAIL",
+                    file=sys.stderr,
+                )
+                report.write_text(
+                    _fallback_scenario_report(
+                        s,
+                        "no_report_written",
+                        {
+                            "vision": vision,
+                            "overlay": overlay,
+                            "model": model,
+                            "world": world,
+                        },
+                    ),
+                    encoding="utf-8",
+                )
 
         if audit_topics:
             print("Auditing topic graph...")
