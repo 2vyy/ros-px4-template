@@ -52,6 +52,27 @@ def test_fallback_report_matches_write_report_shape() -> None:
     assert data["detail"]["world"] == "default"
 
 
+def test_blocked_by_transitive_failed_claim() -> None:
+    from tasks import _blocked_by
+
+    data = {
+        "capabilities": {
+            "arm_takeoff": {"scenario_file": "01_arm_takeoff.py", "requires": []},
+            "aruco_hover": {
+                "scenario_file": "05_aruco_hover.py",
+                "requires": ["arm_takeoff"],
+            },
+            "precision_land": {
+                "scenario_file": "08_precision_land.py",
+                "requires": ["aruco_hover"],
+            },
+        }
+    }
+    assert _blocked_by(data, "08_precision_land", {"arm_takeoff"}) == "arm_takeoff"
+    assert _blocked_by(data, "08_precision_land", set()) is None
+    assert _blocked_by(data, "01_arm_takeoff", {"aruco_hover"}) is None
+
+
 def test_fallback_report_is_valid_for_scenario_status() -> None:
     text = _fallback_scenario_report(
         "01_arm_takeoff",

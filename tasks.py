@@ -309,7 +309,20 @@ def _pid_running(pidfile: Path) -> bool:
         return True
 
 
-def _e2e_run(configs: list[dict]) -> None:
+def _load_e2e_configs() -> tuple[list[dict], dict]:
+    """Topo-ordered e2e roster plus registry; prints excluded claims."""
+    from cap_status import real_artifacts_ok
+    from capabilities import _load as _load_registry
+    from capabilities import e2e_roster
+
+    registry = _load_registry()
+    configs, excluded = e2e_roster(registry, real_artifacts_ok)
+    for name in excluded:
+        print(f"  [NOTE] claim '{name}' is below simulated (not scaffolded) — excluded from e2e")
+    return configs, registry
+
+
+def _e2e_run(configs: list[dict], registry: dict | None = None) -> None:
     """The e2e supervisor loop: one isolated sim per group, incremental state.
 
     Runs inline for `just test e2e --wait`; otherwise as the detached
@@ -327,6 +340,7 @@ def _e2e_run(configs: list[dict]) -> None:
 
     gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
     group_items = _e2e_sim_groups(configs)
+    failed_claims: set[str] = set()
     state = {
         "status": "running",
         "started_at": time.time(),
@@ -360,6 +374,8 @@ def _e2e_run(configs: list[dict]) -> None:
                 model=model,
                 world=world,
                 audit_topics=idx == len(group_items) - 1,
+                registry=registry,
+                failed_claims=failed_claims,
             )
             fails += group_fails
             state["groups"][idx]["state"] = "done"
@@ -406,6 +422,75 @@ def _e2e_sim_groups(configs: list[dict]) -> list[tuple[str, str, str, str, list[
         (cfg["vision"], cfg["overlay"], cfg["model"], cfg["world"], [cfg["scenario"]])
         for cfg in configs
     ]
+
+
+def _blocked_by(data: dict, scenario: str, failed_claims: set[str]) -> str | None:
+    """First transitively-required claim of `scenario` that already failed."""
+    from capabilities import claim_for_scenario
+
+    caps = data.get("capabilities", {})
+    name = claim_for_scenario(data, scenario)
+    if name is None:
+        return None
+    seen: set[str] = set()
+    stack = list(caps.get(name, {}).get("requires", []))
+    while stack:
+        dep = stack.pop()
+        if dep in seen:
+            continue
+        seen.add(dep)
+        if dep in failed_claims:
+            return dep
+        stack.extend(caps.get(dep, {}).get("requires", []))
+    return None
+
+
+def _auto_record(
+    registry: dict,
+    scenario: str,
+    *,
+    vision: str,
+    overlay: str,
+    model: str,
+    world: str,
+) -> None:
+    """Write evidence for a passing scenario unless the tree is dirty."""
+    from cap_evidence import EVIDENCE_ROOT, build_record, dirty_flight_paths, write_record
+    from capabilities import claim_for_scenario
+
+    claim = claim_for_scenario(registry, scenario)
+    if claim is None:
+        return
+    entry = registry["capabilities"].get(claim, {})
+    porcelain = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+    ).stdout
+    dirty = dirty_flight_paths(porcelain, entry.get("scenario_file"))
+    if dirty:
+        print(
+            f"  [NOTE] evidence not recorded for {scenario} (dirty tree): commit, then "
+            f"just cap record {claim}"
+        )
+        return
+    commit = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+    ).stdout.strip()
+    report = json.loads((LOG_DIR / f"scenario_{scenario}.json").read_text(encoding="utf-8"))
+    rec = build_record(
+        claim,
+        "sim",
+        commit,
+        report,
+        {"world": world, "model": model, "vision": vision},
+    )
+    write_record(rec, EVIDENCE_ROOT)
+    print(f"  [EVIDENCE] {scenario} PASS recorded @ {commit}")
 
 
 def _needs_build() -> bool:
@@ -954,6 +1039,8 @@ def _run_e2e_sim_group(
     model: str = "x500",
     world: str = "default",
     audit_topics: bool = False,
+    registry: dict | None = None,
+    failed_claims: set[str] | None = None,
 ) -> int:
     """Launch one isolated headless sim for a ``(vision, overlay, model, world)``
     config, wait for readiness, run the given scenarios sequentially, optionally
@@ -1018,6 +1105,11 @@ def _run_e2e_sim_group(
             # Write a failure report per scenario (same shape as write_report in
             # tests/scenarios/_common.py) so the e2e report block lists them
             # instead of silently omitting scenarios that never ran.
+            if registry is not None and failed_claims is not None:
+                from capabilities import claim_for_scenario
+
+                for s in scenarios:
+                    failed_claims.add(claim_for_scenario(registry, s) or s)
             for s in scenarios:
                 (LOG_DIR / f"scenario_{s}.json").write_text(
                     _fallback_scenario_report(
@@ -1035,6 +1127,29 @@ def _run_e2e_sim_group(
             return len(scenarios)
 
         for s in scenarios:
+            if registry is not None and failed_claims is not None:
+                blocker = _blocked_by(registry, s, failed_claims)
+                if blocker is not None:
+                    fails += 1
+                    print(
+                        f"  [SKIP] {s}: prerequisite claim '{blocker}' failed this run",
+                        file=sys.stderr,
+                    )
+                    (LOG_DIR / f"scenario_{s}.json").write_text(
+                        _fallback_scenario_report(
+                            s,
+                            f"prerequisite_failed:{blocker}",
+                            {
+                                "vision": vision,
+                                "overlay": overlay,
+                                "model": model,
+                                "world": world,
+                            },
+                        ),
+                        encoding="utf-8",
+                    )
+                    continue
+
             print(f"Running scenario {s}...")
             report = LOG_DIR / f"scenario_{s}.json"
             started_at = time.time()
@@ -1044,6 +1159,10 @@ def _run_e2e_sim_group(
             fresh = report.exists() and report.stat().st_mtime >= started_at
             if res_s.returncode != 0:
                 fails += 1
+                if registry is not None and failed_claims is not None:
+                    from capabilities import claim_for_scenario
+
+                    failed_claims.add(claim_for_scenario(registry, s) or s)
                 if not fresh:
                     print(
                         f"  [FAIL] {s} exited {res_s.returncode} without writing a report; "
@@ -1066,6 +1185,10 @@ def _run_e2e_sim_group(
             elif not fresh:
                 # Exit 0 but no fresh report: never trust it as a pass.
                 fails += 1
+                if registry is not None and failed_claims is not None:
+                    from capabilities import claim_for_scenario
+
+                    failed_claims.add(claim_for_scenario(registry, s) or s)
                 print(
                     f"  [FAIL] {s} exited 0 but wrote no report; counting as FAIL",
                     file=sys.stderr,
@@ -1082,6 +1205,15 @@ def _run_e2e_sim_group(
                         },
                     ),
                     encoding="utf-8",
+                )
+            elif registry is not None:
+                _auto_record(
+                    registry,
+                    s,
+                    vision=vision,
+                    overlay=overlay,
+                    model=model,
+                    world=world,
                 )
 
         if audit_topics:
@@ -1184,7 +1316,7 @@ def test(
         # Scenarios land, disarm, and mutate controller parameters during cleanup,
         # so sharing a sim can leak state into the next scenario even when the
         # requested vision/overlay config is identical.
-        configs = scenario_sim_configs("sim")
+        configs, registry = _load_e2e_configs()
         if not configs:
             print(
                 "No sim scenarios declared in tests/capabilities.toml (platforms must "
@@ -1196,7 +1328,7 @@ def test(
         if not detach:
             # Blocking by default: capture the terminal, end with the aggregate
             # verdict and exit code. `--wait` is the deprecated no-op alias.
-            _e2e_run(configs)
+            _e2e_run(configs, registry=registry)
             return
 
         # Seed the state file before spawning so `just e2e-status` never sees
@@ -1241,8 +1373,8 @@ def test(
 @app.command("e2e-worker", hidden=True)
 def e2e_worker() -> None:
     """Internal: the detached e2e supervisor. Launched by `just test e2e`."""
-    configs = scenario_sim_configs("sim")
-    _e2e_run(configs)
+    configs, registry = _load_e2e_configs()
+    _e2e_run(configs, registry=registry)
 
 
 @app.command("e2e-status")
