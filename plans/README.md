@@ -137,6 +137,21 @@ personally re-vetted against the code.
 | 074  | Claims ladder core: derived rungs (declared/simulated/sim-flown + staleness), committed evidence ledger, `cap show/record/plan`, `requires` DAG, retire `cap mark` | P1 | L | — | TODO (spec: docs/superpowers/specs/2026-07-17-claims-ladder-design.md) |
 | 075  | Claims integration: mission `requires`, e2e DAG ordering + `prerequisite_failed` skipping, auto-recorded evidence, live ledger seeding | P1 | M | 074, 070; soft 069 | TODO |
 
+### Round 7 (2026-07-17, against `d769ffe`) — simplification push
+
+Maintainer's ask: shrink the codebase and its branch count while preserving
+behavior exactly. Not code-golf: better abstractions, fewer environments,
+less duplicated plumbing. Baseline metrics (tracked Python, excl. px4_msgs):
+120 files / 14,460 LOC (non-test 59 / 7,915); 877 branch statements (710
+non-test, tasks.py alone 139); radon avg CC A (3.6), worst file tasks.py
+(MI B). Full investigation notes in the plan files.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 076  | One Python environment: tasks.py joins the project venv; tools called in-process (delete inline script deps + ~10 `uv run` hops) | P1 | M | soft: 068 first | TODO |
+| 077  | tasks.py dedup: shared sim/hw boot path, one e2e state seed, `_clear_log_dir`, unified `scenario()`, ruff-pair loop | P2 | M | 076, 068 | TODO |
+| 078  | tools/ consolidation: `reports.py` merges e2e_report/e2e_status/scenario_status, shared `probes.py`, log_query fold-in, check_docs corpus cache | P2 | M | 076; after 068; 077 recommended first | TODO |
+
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
 064 and 065 were added 2026-07-11 from profiling the first live e2e run
@@ -147,6 +162,66 @@ were considered and deferred (machine-bound ~3x ceiling on 12 cores/15GiB).
 065 was subsequently REJECTED by its own spike (2026-07-16, see its row).
 
 ## Dependency notes
+
+### Round 7 (2026-07-17) — simplification push
+
+- **Order**: 068 first (already-planned deletions/fixes in the same files),
+  then 076 → 077 → 078 sequentially (all three edit `tasks.py`). 069 and 070
+  are independent of this cluster and can interleave anywhere.
+- **074/075 collision**: both restructure `tasks.py` /
+  `tools/capabilities.py` heavily and carry drift checks pinned to `6ce9aec`.
+  Recommendation: land 076–078 BEFORE 074/075 and re-vet 074/075's "Current
+  state" excerpts against the simplified base (their design is unaffected;
+  their line references are not). If 074/075 execute first instead, 076–078
+  need the same re-vet — either order works, pick one and do not interleave.
+- **071 collision**: 071 edits `tests/scenarios/_common.py` + scenarios;
+  Round 7 deliberately does not touch scenarios (see rejected list), so no
+  conflict.
+- **Live-verification gates**: 076 and 077 each end with `just test e2e`;
+  078's Task 5 runs one final full cycle.
+
+### Findings considered and rejected / no-action — Round 7 (2026-07-17)
+
+Every area of the complexity audit was investigated by reading the code; these
+came back as necessary complexity or negative-ROI churn:
+
+- **src/core decomposition** — NO ACTION. The four C-grade functions
+  (`position_node._position_cb` 15, `loader.load_mission_dict` 14,
+  `offboard_fsm.tick` 12, `behaviors.center_land` 11) are inherent domain
+  logic: validity/override/divergence handling, load-time validation, FSM
+  gating, visual-servo descent latching. Every branch encodes a flight rule
+  with a documented failure mode. Splitting them moves branches without
+  removing any and risks flight-verified behavior. `offboard_controller.py`
+  (436 lines) tops out at B-grade functions; leave.
+- **Scenario `Scenario`-base migration (01/02/05/06/08)** — REJECTED. Read
+  01 and 02 in full: they are genuinely multi-stage procedural flows
+  (climb → stabilize → anchor → hold with consecutive-violation counting),
+  which `_common.py`'s own docstring says should stay procedural; the base
+  class fits single-predicate scenarios only. The ~30-line hold/violation
+  block duplicated between 01 and 02 is extractable but differs in verdict
+  triage and print formats; ROI is low and every change needs a live sim
+  gate. Revisit only if plan 071 already forces edits to those files.
+- **`_source_workspace_env` cache removal** (CC 17) — KEEP. The mtime-keyed
+  cache is what makes post-`colcon build` re-sourcing both correct and fast
+  (plan 039); simpler AMENT_PREFIX_PATH shortcuts break the rebuild case.
+- **preflight table-driven rewrite** (CC 20) — REJECTED. Sequential checklist
+  with mode branches; data-driving it trades readability for a CC number.
+  068 fixes its actual defects.
+- **`log_summary.build_run_summary` split** (CC 22, the repo's only D) —
+  REJECTED. Single-pass accumulator; helpers would relocate, not remove,
+  branches. Logfmt pipeline design re-endorsed.
+- **`sim_cleanup` match-list simplification** — REJECTED. The
+  exact-basename / cmdline-pattern / never-kill lists are documented safety
+  precision (false positive = killing the agent's own session).
+- **`gcs_heartbeat` restructure** — REJECTED. Protocol-driven loop,
+  parity-tested against `_start_gz_px4.sh`, live-verified (plans 055/056).
+- **`tests/scenarios/_common.py` mirrors of `cli_verdict`/QoS** — KEEP.
+  Deliberate copies documented in-file (scenario scripts run without tools/
+  or src/ on the path).
+- **Test-suite golf** — NO independent action. 62 unit files mirror the
+  module layout; they shrink exactly as far as 078's merges shrink the
+  modules (62 → 60). Fixture/fake dedup found no cross-file duplication worth
+  a plan.
 
 ### Round 6 (2026-07-16; restructured 2026-07-17 around the claims ladder)
 
