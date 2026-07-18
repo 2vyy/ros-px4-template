@@ -186,10 +186,8 @@ import bag_recorder
 import check_docs
 import check_invariants
 import check_topics
-import e2e_report
-import e2e_status as e2e_status_tool
 import preflight
-import scenario_status as scenario_status_tool
+import reports
 import sim_cleanup
 import skein_analyze
 import status as status_tool
@@ -320,16 +318,6 @@ def _e2e_initial_state(configs: list[dict]) -> dict:
     }
 
 
-def _pid_running(pidfile: Path) -> bool:
-    try:
-        os.kill(int(pidfile.read_text().strip()), 0)
-        return True
-    except (ValueError, ProcessLookupError, FileNotFoundError):
-        return False
-    except PermissionError:
-        return True
-
-
 def _load_e2e_configs() -> tuple[list[dict], dict]:
     """Topo-ordered e2e roster plus registry; prints excluded claims."""
     from cap_status import real_artifacts_ok
@@ -390,7 +378,7 @@ def _e2e_run(configs: list[dict], registry: dict | None = None) -> None:
         _summarize_logs_silent()
 
         print("Generating E2E Report...")
-        block, report_code = e2e_report.build_block(LOG_DIR)
+        block, report_code = reports.build_block(LOG_DIR)
         print(block)
 
         if fails > 0 or report_code != 0:
@@ -1228,7 +1216,7 @@ def test(
     elif type == "e2e":
         print("starting e2e headless cycle...")
 
-        if E2E_PIDFILE.exists() and _pid_running(E2E_PIDFILE):
+        if E2E_PIDFILE.exists() and reports.pid_alive(E2E_PIDFILE) is True:
             print(
                 "An e2e run is already in progress (logs/e2e.pid). "
                 "Watch: just e2e-status. Stop: just stop.",
@@ -1295,9 +1283,7 @@ def e2e_worker() -> None:
 @app.command("e2e-status")
 def e2e_status_cmd() -> None:
     """Print progress/verdict of the current or last e2e run (poll while detached)."""
-    text, code = e2e_status_tool.build_status(
-        LOG_DIR, e2e_status_tool._pid_alive(LOG_DIR / "e2e.pid")
-    )
+    text, code = reports.build_status(LOG_DIR, reports.pid_alive(LOG_DIR / "e2e.pid"))
     print(text)
     raise typer.Exit(code)
 
@@ -1394,7 +1380,7 @@ def scenario_status(
     name: str = typer.Argument("", help="Scenario name; default: the most recent run."),
 ) -> None:
     """Print the verdict of one scenario's last run from logs/scenario_<name>.json."""
-    line, code = scenario_status_tool.format_scenario_status(LOG_DIR, name or None)
+    line, code = reports.format_scenario_status(LOG_DIR, name or None)
     print(line)
     raise typer.Exit(code)
 
