@@ -186,6 +186,7 @@ import bag_recorder
 import check_docs
 import check_invariants
 import check_topics
+import log_view
 import preflight
 import reports
 import run_supervisor
@@ -224,10 +225,113 @@ def tail(log: Path = typer.Option(Path("./logs/latest.log"), "--log")) -> None:
     subprocess.run(["tail", "-f", str(log)], check=False)
 
 
+@log_app.command()
+def since(
+    raw: bool = typer.Option(False, "--raw", help="All lines, not just events+errors."),
+) -> None:
+    """New log lines since the last `log since` call (events+errors by default)."""
+    lines, stats = log_view.read_since(LOG_DIR / "latest.log", LOG_DIR / ".log_cursor.json")
+    shown = lines if raw else log_view.filter_events(lines)
+    for ln in shown:
+        print(ln)
+    if not lines:
+        print("no new log lines since last call")
+        return
+    print(log_view.format_trailer(shown=len(shown), raw=stats["raw"], errors=stats["errors"]))
+
+
+@log_app.command()
+def events(
+    run: str = typer.Option(
+        "", "--run", help="Run record id (file stem under logs/runs/) to slice to."
+    ),
+) -> None:
+    """Events+errors view of the session log, optionally sliced to one run."""
+    latest = LOG_DIR / "latest.log"
+    lines = latest.read_text(encoding="utf-8").splitlines() if latest.exists() else []
+    if run:
+        rec_path = run_supervisor.RUNS_DIR / f"{run}.json"
+        if not rec_path.is_file():
+            print(f"no run record '{run}' (see: just runs)")
+            raise typer.Exit(int(ExitCode.USAGE))
+        rec = json.loads(rec_path.read_text(encoding="utf-8"))
+        lines = log_view.slice_by_t(lines, float(rec["t_start"]), float(rec["t_end"]))
+    kept = log_view.filter_events(lines)
+    for ln in kept:
+        print(ln)
+    if not kept:
+        print("no events in range" + (f" for run {run}" if run else " (log empty?)"))
+
+
+wait_app = typer.Typer()
+
+
+@wait_app.command()
+def ready(timeout: int = typer.Option(120, "--timeout", help="Seconds to wait.")) -> None:
+    """Block until the stack is ready (topics + rosbridge + GCS params)."""
+    if wait_ready.wait(timeout):
+        raise typer.Exit(int(ExitCode.OK))
+    print(f"still not ready after {timeout}s; next: just log since | just stop")
+    raise typer.Exit(int(ExitCode.PRECONDITION))
+
+
+@wait_app.command("run")
+def wait_run(timeout: int = typer.Option(120, "--timeout", help="Seconds to wait.")) -> None:
+    """Block until the active run/e2e cycle reaches a terminal verdict.
+
+    Exit: 0 PASS, 1 FAIL/STUCK/ABORTED, 2 nothing to wait on, 3 timeout
+    (prints the heartbeat snapshot - progress, not an error).
+    """
+    deadline = time.monotonic() + timeout
+    started = time.time()
+    while True:
+        kind, payload = run_supervisor.resolve_wait_target(LOG_DIR)
+        if kind == "e2e":
+            text, code = reports.build_status(LOG_DIR, reports.pid_alive(LOG_DIR / "e2e.pid"))
+            if code != 3:
+                print(text)
+                raise typer.Exit(code)
+        elif kind == "run":
+            recs = run_supervisor.list_run_records(limit=1)
+            if recs and recs[0].get("recorded_at", 0.0) >= started:
+                rec = recs[0]
+                print(f"{rec['verdict']} {rec['name']}: {rec.get('reason') or 'ok'}")
+                raise typer.Exit(0 if rec["verdict"] == "PASS" else 1)
+            if not reports.pid_alive(LOG_DIR / "run.pid"):
+                print("ABORTED: supervisor died recordless (see logs/latest.log)")
+                raise typer.Exit(1)
+        elif kind == "record":
+            print(
+                f"already finished: {payload['verdict']} {payload['name']}: "
+                f"{payload.get('reason') or 'ok'}"
+            )
+            raise typer.Exit(0 if payload["verdict"] == "PASS" else 1)
+        else:
+            print("nothing to wait on (no active run, no records)")
+            raise typer.Exit(2)
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(1.0)
+    hb_path = LOG_DIR / "heartbeat"
+    hb = hb_path.read_text(encoding="utf-8").strip() if hb_path.exists() else "no heartbeat"
+    print(f"RUNNING after {timeout}s: {hb}")
+    print("next: just wait run --timeout 120 | just log since")
+    raise typer.Exit(3)
+
+
+@app.command()
+def runs() -> None:
+    """Recent mission/scenario run records: id, verdict, reason, age."""
+    print(run_supervisor.format_runs(run_supervisor.list_run_records()))
+
+
 # Register sub-apps
 app.add_typer(log_app, name="log", help="Query, merge, tail, or view logs/status/topics.")
 app.add_typer(cap_app, name="cap", help="Manage verified capabilities registry.")
 app.add_typer(mission_app, name="mission", help="List, validate, and describe mission YAML.")
+app.add_typer(
+    wait_app, name="wait", help="Bounded waits; a timeout is a status report, not an error."
+)
 
 
 def _summarize_logs_silent() -> None:
@@ -1231,6 +1335,13 @@ def _run_e2e_sim_group(
                 )
 
             record_path = _write_run_record_for(s, report, stuck)
+            if stuck is not None or rc != 0 or not fresh:
+                rec = json.loads(record_path.read_text(encoding="utf-8"))
+                t_end = int(rec.get("t_end") or 0)
+                print(
+                    f"next: just log events --run {record_path.stem} | "
+                    f'rg -C5 "t={t_end}\\." logs/latest.log'
+                )
             if stuck is None and rc == 0 and fresh and registry is not None:
                 _auto_record(
                     registry,
@@ -1427,6 +1538,13 @@ def scenario(
             _summarize_logs_silent()
     if fails:
         _print_failure_digest()
+        recs = run_supervisor.list_run_records(limit=1)
+        if recs and recs[0].get("record"):
+            t_end = int(recs[0].get("t_end") or 0)
+            print(
+                f"next: just log events --run {recs[0]['record']} | "
+                f'rg -C5 "t={t_end}\\." logs/latest.log'
+            )
         raise typer.Exit(int(ExitCode.FAIL))
 
 
