@@ -735,6 +735,37 @@ def check():
         raise typer.Exit(1) from None
 
 
+def _prepare_stack(preflight_mode: str, build: bool, abort_msg: str) -> None:
+    """Teardown any existing stack, preflight, then smart-build. Shared by sim/hw."""
+    if (LOG_DIR / "sim.pid").exists():
+        print("Existing stack found — tearing it down first.")
+        _teardown()
+    if not preflight.run(preflight_mode):
+        print(abort_msg, file=sys.stderr)
+        raise typer.Exit(int(ExitCode.PRECONDITION))
+    _smart_build(build)
+
+
+def _spawn_and_wait(
+    launch_args: list[str], env: dict[str, str], timeout: int, fail_reason: str
+) -> float:
+    """Spawn the detached stack, record sim.pid, block until ready.
+
+    Returns elapsed seconds; on NOT READY prints the verdict, tears down, and
+    exits FAIL.
+    """
+    started = time.monotonic()
+    proc = _spawn_stack(launch_args, env, append=False)
+    (LOG_DIR / "sim.pid").write_text(str(proc.pid))
+    ready = wait_ready.wait(timeout)
+    elapsed = time.monotonic() - started
+    if not ready:
+        print(format_not_ready(fail_reason, elapsed), file=sys.stderr)
+        _teardown()
+        raise typer.Exit(int(ExitCode.FAIL))
+    return elapsed
+
+
 @app.command()
 def sim(
     gui: bool = typer.Option(False, "--gui", help="Show the Gazebo GUI (default headless)."),
@@ -762,20 +793,7 @@ def sim(
         print(f"UNKNOWN OVERLAY '{overlay}'. Valid: {', '.join(valid)}", file=sys.stderr)
         raise typer.Exit(int(ExitCode.USAGE))
 
-    # Idempotent: cold-tear-down any existing stack BEFORE preflight, so
-    # re-running just sim recycles a live stack instead of aborting when
-    # preflight sees the still-occupied ports 8888/9090.
-    if (LOG_DIR / "sim.pid").exists():
-        print("Existing stack found — tearing it down first.")
-        _teardown()
-
-    # Preflight (precondition class). A pidless crashed stack still holding a
-    # port fails here with an accurate "run: just stop" message.
-    if not preflight.run("headless"):
-        print("Preflight failed. Aborting launch.", file=sys.stderr)
-        raise typer.Exit(int(ExitCode.PRECONDITION))
-
-    _smart_build(build)
+    _prepare_stack("headless", build, "Preflight failed. Aborting launch.")
 
     gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
     vision_arg = "aruco" if vision.lower() in ("true", "aruco") else "none"
@@ -796,23 +814,12 @@ def sim(
         **({"HEADLESS": "1"} if not gui else {}),
     )
 
-    import time as _time
-
-    started = _time.monotonic()
-    proc = _spawn_stack(launch_args, env, append=False)
-    (LOG_DIR / "sim.pid").write_text(str(proc.pid))
-
-    ready = wait_ready.wait(timeout)
-    elapsed = _time.monotonic() - started
-    if not ready:
-        print(
-            format_not_ready(
-                "stack did not reach readiness (topics/rosbridge/GCS params)", elapsed
-            ),
-            file=sys.stderr,
-        )
-        _teardown()
-        raise typer.Exit(int(ExitCode.FAIL))
+    elapsed = _spawn_and_wait(
+        launch_args,
+        env,
+        timeout,
+        "stack did not reach readiness (topics/rosbridge/GCS params)",
+    )
 
     # readiness confirmed past this point
     if record:
@@ -947,16 +954,7 @@ def hw(
             print(f"Vehicle overlay not found: {vehicle_path}", file=sys.stderr)
             raise typer.Exit(int(ExitCode.USAGE))
 
-    # Idempotent: cold-tear-down any existing stack BEFORE preflight (see sim()).
-    if (LOG_DIR / "sim.pid").exists():
-        print("Existing stack found — tearing it down first.")
-        _teardown()
-
-    if not preflight.run("hw"):
-        print("Preflight failed. Aborting hardware launch.", file=sys.stderr)
-        raise typer.Exit(int(ExitCode.PRECONDITION))
-
-    _smart_build(build)
+    _prepare_stack("hw", build, "Preflight failed. Aborting hardware launch.")
 
     print(f"Connecting to hardware on {port} at {baud} baud...")
     launch_args = [
@@ -970,22 +968,9 @@ def hw(
     ]
     env = _ros_launch_env()
 
-    import time as _time
-
-    started = _time.monotonic()
-    proc = _spawn_stack(launch_args, env, append=False)
-    (LOG_DIR / "sim.pid").write_text(str(proc.pid))
-
-    ready = wait_ready.wait(timeout)
-    elapsed = _time.monotonic() - started
-    if not ready:
-        print(
-            format_not_ready("hardware stack did not reach readiness (topics/rosbridge)", elapsed),
-            file=sys.stderr,
-        )
-        _teardown()
-        raise typer.Exit(int(ExitCode.FAIL))
-
+    elapsed = _spawn_and_wait(
+        launch_args, env, timeout, "hardware stack did not reach readiness (topics/rosbridge)"
+    )
     print(format_ready([f"FC {port}@{baud}", "rosbridge:9090", "/fmu topics up"], elapsed))
 
 
