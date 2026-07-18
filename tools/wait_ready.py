@@ -16,16 +16,16 @@ Exit 0 on ready, 1 on timeout.
 
 from __future__ import annotations
 
-import json
 import os
 import shlex
-import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 import typer
+
+from probes import port_open, rosapi_call
 
 app = typer.Typer()
 
@@ -38,11 +38,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 
 
 def _port_open(port: int) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=1.0):
-            return True
-    except OSError:
-        return False
+    return port_open(port, timeout=1.0)
 
 
 def _rosbridge_ws_ok(port: int = _ROSBRIDGE_PORT) -> bool:
@@ -73,22 +69,9 @@ def _ros2_topic_list_argv() -> list[str]:
 
 
 def _get_topics_via_ws(port: int = _ROSBRIDGE_PORT, timeout: float = 1.0) -> list[str] | None:
-    try:
-        import websocket  # type: ignore[import-untyped]
-
-        ws = websocket.create_connection(f"ws://127.0.0.1:{port}", timeout=timeout)
-        req = {"op": "call_service", "service": "/rosapi/topics", "id": "wait_ready_topics"}
-        ws.send(json.dumps(req))
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            msg = json.loads(ws.recv())
-            if msg.get("op") == "service_response" and msg.get("service") == "/rosapi/topics":
-                ws.close()
-                return msg.get("values", {}).get("topics", [])
-        ws.close()
-    except Exception:
-        pass
-    return None
+    return rosapi_call(
+        "/rosapi/topics", "topics", port=port, timeout=timeout, req_id="wait_ready_topics"
+    )
 
 
 def _topic_live(topic: str) -> bool:

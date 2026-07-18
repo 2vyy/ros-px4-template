@@ -9,40 +9,18 @@ from __future__ import annotations
 
 import json
 import shutil
-import socket
 import subprocess
 from pathlib import Path
+
+from probes import port_open as _port_open
 
 LOG_DIR = Path(__file__).resolve().parents[1] / "logs"
 
 
-def _port_open(port: int) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=0.5):
-            return True
-    except OSError:
-        return False
-
-
 def _get_nodes_via_ws(port: int = 9090, timeout: float = 1.0) -> list[str] | None:
-    try:
-        import time
+    from probes import rosapi_call
 
-        import websocket  # type: ignore[import-untyped]
-
-        ws = websocket.create_connection(f"ws://127.0.0.1:{port}", timeout=timeout)
-        req = {"op": "call_service", "service": "/rosapi/nodes", "id": "status_nodes"}
-        ws.send(json.dumps(req))
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            msg = json.loads(ws.recv())
-            if msg.get("op") == "service_response" and msg.get("service") == "/rosapi/nodes":
-                ws.close()
-                return msg.get("values", {}).get("nodes", [])
-        ws.close()
-    except Exception:
-        pass
-    return None
+    return rosapi_call("/rosapi/nodes", "nodes", port=port, timeout=timeout, req_id="status_nodes")
 
 
 def _ros_nodes() -> list[str] | None:
