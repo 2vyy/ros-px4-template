@@ -5,9 +5,9 @@ set dotenv-load := true
 ROS_SETUP := env_var_or_default("ROS_SETUP", "/opt/ros/jazzy/setup.bash")
 WS_INSTALL := justfile_directory() / "install/setup.bash"
 
-# Default recipe: list all workflows
+# Default: live status snapshot + where to go next
 default:
-    @just --list
+    @just _run snapshot
 
 # Sourced environment executor (auto-delegates to Distrobox if ROS is missing on host)
 _run *args:
@@ -36,7 +36,7 @@ build:
 clean:
     @just _run clean
 
-# Boot the sim stack detached, wait until ready, print a verdict, and return
+# Simulation stack lifecycle (sim start [flags]; boots detached, waits, verdicts)
 sim *args:
     @just _run sim "$@"
 
@@ -48,33 +48,33 @@ stop:
 analyze *args:
     @just _run analyze "$@"
 
-# Connect to serial hardware flight controller
+# Hardware stack lifecycle (hw start [flags])
 hw *args:
     @just _run hw "$@"
 
-# Verification suite (unit tests, live scenario <name>, or e2e headless cycles)
-test *args:
-    @just _run test "$@"
+# Run unit tests
+test:
+    @just _run test
 
-# Run a specific scenario test directly by name (e.g. just scenario 01_arm_takeoff)
-scenario *args:
-    @just _run scenario "$@"
+# Run one scenario under the run supervisor (bounded; always leaves a run record)
+run *args:
+    @just _run run "$@"
+
+# Recent run records: id, verdict, reason, age
+runs:
+    @just _run runs
+
+# Full headless e2e cycle (blocks; --detach for background + just wait run)
+e2e *args:
+    @just _run e2e "$@"
+
+# Bounded waits (wait ready | wait run); a timeout is a status report, not an error
+wait *args:
+    @just _run wait "$@"
 
 # Scaffold a runnable Scenario stub at tests/scenarios/<name>.py
 scenario-new *args:
     @just _run scenario-new "$@"
-
-# Print one scenario's last verdict (default: most recent run)
-scenario-status *args:
-    @just _run scenario-status "$@"
-
-# Print progress/verdict of the current or last detached e2e run
-e2e-status:
-    @just _run e2e-status
-
-# Concise English workspace snapshot (nodes, live status, capabilities)
-status:
-    @just _run status
 
 # Manage derived capability claims (show, plan, record)
 cap *args:
