@@ -269,6 +269,47 @@ def scenarios_for_platform(platform: str = "sim", registry: Path = REGISTRY) -> 
     return result
 
 
+def claim_for_scenario(data: dict, scenario: str) -> str | None:
+    for name, entry in data.get("capabilities", {}).items():
+        if entry.get("scenario_file", "").removesuffix(".py") == scenario:
+            return name
+    return None
+
+
+def e2e_roster(
+    data: dict,
+    artifacts_ok,
+    platform: str = "sim",
+) -> tuple[list[dict], list[str]]:
+    """Topo-ordered e2e configs; leaves below `simulated` are excluded (named).
+
+    Same config shape as scenario_sim_configs; composites never enter the
+    roster (nothing to fly)."""
+    from cap_plan import topo_order
+
+    caps = data.get("capabilities", {})
+    configs: list[dict] = []
+    excluded: list[str] = []
+    for name in topo_order(data):
+        entry = caps[name]
+        if platform not in entry.get("platforms", []) or not entry.get("scenario_file"):
+            continue
+        ok, _why = artifacts_ok(entry)
+        if not ok:
+            excluded.append(name)
+            continue
+        configs.append(
+            {
+                "scenario": entry["scenario_file"].removesuffix(".py"),
+                "vision": entry.get("sim_vision", "none"),
+                "overlay": entry.get("sim_overlay", "auto_arm"),
+                "model": entry.get("sim_model", "x500"),
+                "world": entry.get("sim_world", "default"),
+            }
+        )
+    return configs, excluded
+
+
 def scenario_sim_configs(platform: str = "sim", registry: Path = REGISTRY) -> list[dict]:
     """Return per-scenario sim configs for the platform, in TOML order.
 

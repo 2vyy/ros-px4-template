@@ -130,3 +130,50 @@ def _load_from(path: Path) -> dict:
     import tomllib
 
     return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def test_e2e_roster_topo_orders_and_excludes_unscaffolded(tmp_path: Path) -> None:
+    from capabilities import e2e_roster
+
+    reg = tmp_path / "capabilities.toml"
+    _write_registry(
+        reg,
+        {
+            # registry order deliberately NOT topo order
+            "precision_land": {
+                "description": "d",
+                "platforms": ["sim"],
+                "scenario_file": "08_precision_land.py",
+                "requires": ["aruco_hover"],
+            },
+            "aruco_hover": {
+                "description": "d",
+                "platforms": ["sim"],
+                "scenario_file": "05_aruco_hover.py",
+                "requires": [],
+            },
+            "rover_follow": {
+                "description": "d",
+                "platforms": ["sim"],
+                "scenario_file": "10_rover_follow.py",
+                "requires": ["aruco_hover"],
+            },
+            "challenge": {"description": "d", "requires": ["rover_follow"]},
+        },
+    )
+
+    def artifacts_ok(entry: dict) -> tuple[bool, str]:
+        ok = entry.get("scenario_file") != "10_rover_follow.py"
+        return ok, "" if ok else "scenario missing"
+
+    configs, excluded = e2e_roster(_load_from(reg), artifacts_ok)
+    assert [c["scenario"] for c in configs] == ["05_aruco_hover", "08_precision_land"]
+    assert excluded == ["rover_follow"]
+
+
+def test_claim_for_scenario_maps_stem() -> None:
+    from capabilities import claim_for_scenario
+
+    data = {"capabilities": {"aruco_hover": {"scenario_file": "05_aruco_hover.py"}}}
+    assert claim_for_scenario(data, "05_aruco_hover") == "aruco_hover"
+    assert claim_for_scenario(data, "zz_missing") is None
