@@ -110,9 +110,9 @@ just check          # expect: all checks passed, 383 tests
 uv run tasks.py --help   # expect: typer help, no import errors
 ```
 
-- [ ] Step 1: apply both edits
-- [ ] Step 2: run the two commands above, confirm output
-- [ ] Step 3: commit `refactor(env): tasks.py runs in the project venv (drop inline script deps)`
+- [x] Step 1: apply both edits
+- [x] Step 2: run the two commands above, confirm output
+- [x] Step 3: commit `refactor(env): tasks.py runs in the project venv (drop inline script deps)`
 
 ### Task 2: give the four checker tools a callable seam
 
@@ -183,13 +183,13 @@ ending in `return 0`. The typer command keeps its options and does:
         raise typer.Exit(code)
 ```
 
-- [ ] Step 1: apply the five refactors
-- [ ] Step 2: `uv run pytest tests/unit/ -q` - expect 383 passed, unmodified
+- [x] Step 1: apply the five refactors
+- [x] Step 2: `uv run pytest tests/unit/ -q` - expect 383 passed, unmodified
       test files
-- [ ] Step 3: spot-check the CLI surfaces still exit correctly:
+- [x] Step 3: spot-check the CLI surfaces still exit correctly:
       `uv run python tools/check_invariants.py; echo $status` (0),
       `uv run python tools/check_docs.py >/dev/null; echo $status` (0)
-- [ ] Step 4: commit `refactor(tools): callable run() seams for preflight/wait_ready/check_*`
+- [x] Step 4: commit `refactor(tools): callable run() seams for preflight/wait_ready/check_*`
 
 ### Task 3: convert tasks.py subprocess hops to calls
 
@@ -313,29 +313,29 @@ def status():
         failed_steps.append("docs identifiers")
 ```
 
-- [ ] Step 1: apply all conversions
-- [ ] Step 2: `rg "uv.*run.*python.*tools/" tasks.py` - expected remaining
+- [x] Step 1: apply all conversions
+- [x] Step 2: `rg "uv.*run.*python.*tools/" tasks.py` - expected remaining
       hits: ONLY the `log_capture.py` pipeline string in
       `_ros2_launch_capture_argv` (a stdin filter, stays a subprocess)
-- [ ] Step 3: `just check` - all pass (this exercises check_invariants.run +
+- [x] Step 3: `just check` - all pass (this exercises check_invariants.run +
       check_docs.run in-process)
-- [ ] Step 4: commit `refactor(tasks): call tools in-process instead of uv-run subprocess hops`
+- [x] Step 4: commit `refactor(tasks): call tools in-process instead of uv-run subprocess hops`
 
 ### Task 4: live verification gate
 
-- [ ] `just sim` - expect `READY: /fmu topics up, rosbridge:9090, GCS params
+- [x] `just sim` - expect `READY: /fmu topics up, rosbridge:9090, GCS params
       committed, recording: off (use --record) - <N>s (logs/latest.log)`;
       note N (baseline was ~14-17s; expect equal or slightly faster)
-- [ ] `just status` - `stack: UP (...)` with node list
-- [ ] `just log topics` - all `[OK]`, exit 0
-- [ ] `just scenario-status` and `just e2e-status` print sensibly (exit 2 for
+- [x] `just status` - `stack: UP (...)` with node list
+- [x] `just log topics` - all `[OK]`, exit 0
+- [x] `just scenario-status` and `just e2e-status` print sensibly (exit 2 for
       e2e-status if no run exists - unchanged contract)
-- [ ] `just stop` - `STOPPED: ... 0 survivors`, exit 0
-- [ ] `just scenario 01_arm_takeoff` - PASS
-- [ ] `just test e2e` - all 8 scenarios PASS, exit 0
-- [ ] `just sim --overlay bogus` - usage error exit 2 (bootstrap/validation
+- [x] `just stop` - `STOPPED: ... 0 survivors`, exit 0
+- [x] `just scenario 01_arm_takeoff` - PASS
+- [x] `just test e2e` - all 8 scenarios PASS, exit 0
+- [x] `just sim --overlay bogus` - usage error exit 2 (bootstrap/validation
       path unchanged)
-- [ ] commit any fixups; update `plans/README.md` row
+- [x] commit any fixups; update `plans/README.md` row
 
 ## STOP conditions
 
