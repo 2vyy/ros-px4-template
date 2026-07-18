@@ -420,7 +420,7 @@ E2E_PIDFILE = LOG_DIR / "e2e.pid"
 
 
 def _e2e_write_state(state: dict) -> None:
-    """Atomically persist e2e progress for `just e2e-status` polling."""
+    """Atomically persist e2e progress for `just wait run` polling."""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     tmp = E2E_STATE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
@@ -464,7 +464,7 @@ def _load_e2e_configs() -> tuple[list[dict], dict]:
 def _e2e_run(configs: list[dict], registry: dict | None = None) -> None:
     """The e2e supervisor loop: one isolated sim per group, incremental state.
 
-    Runs inline for `just test e2e --wait`; otherwise as the detached
+    Runs inline for the blocking `just e2e`; otherwise as the detached
     `e2e-worker` process. Raises typer.Exit with the run's exit code.
     """
     import atexit
@@ -525,7 +525,7 @@ def _e2e_run(configs: list[dict], registry: dict | None = None) -> None:
         raise
     finally:
         # A worker that dies with status still "running" (unhandled crash,
-        # SIGTERM from `just stop`) is reported as aborted by e2e-status.
+        # SIGTERM from `just stop`) is reported as aborted by `just wait run`.
         if state["status"] == "running":
             state["status"] = "aborted"
         state["finished_at"] = time.time()
@@ -881,8 +881,12 @@ def _spawn_and_wait(
     return elapsed
 
 
-@app.command()
-def sim(
+sim_app = typer.Typer(help="Simulation stack lifecycle.")
+app.add_typer(sim_app, name="sim")
+
+
+@sim_app.command("start")
+def sim_start(
     gui: bool = typer.Option(False, "--gui", help="Show the Gazebo GUI (default headless)."),
     world: str = typer.Option("default", "--world", help="World file name"),
     model: str = typer.Option("x500", "--model", help="Airframe model"),
@@ -958,9 +962,9 @@ def sim(
 
 @app.command()
 def stop():
-    """Exhaustive cold teardown of the whole stack (no process survives)."""
+    """Exhaustive cold teardown of sim or hardware stack (no process survives)."""
     # Kill a detached e2e supervisor first so it cannot relaunch sims while
-    # teardown runs; its state file records the abort for `just e2e-status`.
+    # teardown runs; its state file records the abort for `just wait run`.
     if E2E_PIDFILE.exists():
         try:
             pid = int(E2E_PIDFILE.read_text().strip())
@@ -1050,8 +1054,12 @@ def analyze(
     print(f"ANALYZED {run_dir.name}: aligned.mcap written" + (" + query ok" if query else ""))
 
 
-@app.command()
-def hw(
+hw_app = typer.Typer(help="Hardware stack lifecycle.")
+app.add_typer(hw_app, name="hw")
+
+
+@hw_app.command("start")
+def hw_start(
     port: str = typer.Option("/dev/ttyUSB0", "--port", help="Serial port for the FC"),
     baud: int = typer.Option(921600, "--baud", help="Baudrate"),
     vehicle: str = typer.Option("", "--vehicle", help="Vehicle overlay name (e.g. x500)"),
@@ -1060,8 +1068,8 @@ def hw(
 ):
     """Boot the hardware stack detached, wait until ready, print a verdict, return.
 
-    Same no-terminal-capture contract as `just sim`. Watch with `just log tail`,
-    stop with `just stop`.
+    Same no-terminal-capture contract as `just sim start`. Watch with
+    `just log tail`, stop with `just stop`.
     """
     if vehicle:
         vehicle_path = ROOT / "vehicles" / f"{vehicle}.yaml"
@@ -1093,7 +1101,7 @@ def _fallback_scenario_report(scenario: str, reason: str, config: dict[str, str]
     """JSON text for a scenario that produced no fresh report of its own.
 
     Same shape as ``write_report`` in tests/scenarios/_common.py so every
-    consumer (e2e report block, log summary, scenario-status) reads it
+    consumer (e2e report block, log summary, run records) reads it
     unchanged.
     """
     return (
@@ -1147,6 +1155,7 @@ def _run_e2e_sim_group(
     audit_topics: bool = False,
     registry: dict | None = None,
     failed_claims: set[str] | None = None,
+    deadline_s: float = 300.0,
 ) -> int:
     """Launch one isolated headless sim for a ``(vision, overlay, model, world)``
     config, wait for readiness, run the given scenarios sequentially, optionally
@@ -1251,7 +1260,7 @@ def _run_e2e_sim_group(
             rc, stuck = run_supervisor.supervise(
                 ["uv", "run", "python", f"tests/scenarios/{s}.py"],
                 s,
-                deadline_s=300.0,
+                deadline_s=deadline_s,
                 # A healthy steady hover writes nothing to the session log for
                 # up to ~35s (measured); silence must sit well above that.
                 silence_s=90.0,
@@ -1369,13 +1378,25 @@ def _run_e2e_sim_group(
 
 
 @app.command()
-def test(
-    type: str = typer.Argument("unit", help="Test type: unit, scenario, e2e"),
-    arg: str = typer.Option("", "--arg", help="Scenario name (required for scenario test)"),
+def test():
+    """Run unit tests."""
+    print("Running unit tests...")
+    try:
+        subprocess.run(
+            ["uv", "run", "pytest", "tests/unit/", "-q", "--tb=short"],
+            check=True,
+            cwd=str(ROOT),
+        )
+    except subprocess.CalledProcessError:
+        raise typer.Exit(int(ExitCode.FAIL)) from None
+
+
+@app.command()
+def e2e(
     detach: bool = typer.Option(
         False,
         "--detach",
-        help="e2e only: run in a background supervisor; poll with just e2e-status.",
+        help="Run in a background supervisor; poll with just wait run.",
     ),
     wait: bool = typer.Option(
         False,
@@ -1384,119 +1405,83 @@ def test(
         help="Deprecated: e2e blocks by default; this flag is a no-op.",
     ),
 ):
-    """Run tests. Types: unit (default), scenario (requires --arg=<name>), e2e.
+    """Run the full headless e2e cycle (blocks; ends with the aggregate verdict).
 
-    e2e blocks by default: it captures the terminal for the whole cycle and ends
-    with the aggregate PASS/FAIL verdict and exit code. Pass --detach to run it
-    in a background supervisor instead (returns after an E2E STARTED verdict;
-    poll with `just e2e-status`, stop with `just stop`).
+    Pass --detach to run it in a background supervisor instead (returns after
+    an E2E STARTED verdict; poll with `just wait run`, stop with `just stop`).
     """
+    print("starting e2e headless cycle...")
 
-    if type == "unit":
-        print("Running unit tests...")
-        try:
-            subprocess.run(
-                ["uv", "run", "pytest", "tests/unit/", "-q", "--tb=short"],
-                check=True,
-                cwd=str(ROOT),
-            )
-        except subprocess.CalledProcessError:
-            raise typer.Exit(int(ExitCode.FAIL)) from None
-    elif type == "scenario":
-        if not arg:
-            print(
-                "Error: Scenario name required (e.g. just test scenario --arg 01_arm_takeoff)",
-                file=sys.stderr,
-            )
-            raise typer.Exit(int(ExitCode.USAGE)) from None
-        _smart_build(True)
-        script = _resolve_scenario_script(arg)
-        print(f"Running scenario test: {arg}...")
-        try:
-            subprocess.run(["uv", "run", "python", str(script)], check=True, cwd=str(ROOT))
-        except subprocess.CalledProcessError:
-            raise typer.Exit(int(ExitCode.FAIL)) from None
-
-    elif type == "e2e":
-        print("starting e2e headless cycle...")
-
-        if E2E_PIDFILE.exists() and reports.pid_alive(E2E_PIDFILE) is True:
-            print(
-                "An e2e run is already in progress (logs/e2e.pid). "
-                "Watch: just e2e-status. Stop: just stop.",
-                file=sys.stderr,
-            )
-            raise typer.Exit(int(ExitCode.PRECONDITION))
-
-        # Clear per-run logs, keeping build/install cache intact
-        print("Clearing previous simulation logs...")
-        _clear_log_dir()
-
-        _smart_build(True)
-
-        if not preflight.run("gui"):
-            print("Preflight check failed. Aborting E2E cycle.", file=sys.stderr)
-            raise typer.Exit(int(ExitCode.PRECONDITION)) from None
-
-        # Run each declared scenario against its own freshly launched, isolated sim.
-        # Scenarios land, disarm, and mutate controller parameters during cleanup,
-        # so sharing a sim can leak state into the next scenario even when the
-        # requested vision/overlay config is identical.
-        configs, registry = _load_e2e_configs()
-        if not configs:
-            print(
-                "No sim scenarios declared in tests/capabilities.toml (platforms must "
-                "include 'sim'). Refusing to report a vacuous e2e pass.",
-                file=sys.stderr,
-            )
-            raise typer.Exit(int(ExitCode.PRECONDITION))
-
-        if not detach:
-            # Blocking by default: capture the terminal, end with the aggregate
-            # verdict and exit code. `--wait` is the deprecated no-op alias.
-            _e2e_run(configs, registry=registry)
-            return
-
-        # Seed the state file before spawning so `just e2e-status` never sees
-        # a live pid with no state (the worker overwrites it on startup).
-        _e2e_write_state(_e2e_initial_state(configs))
-        out_fh = (LOG_DIR / "e2e.log").open("w", encoding="utf-8")
-        proc = subprocess.Popen(
-            ["uv", "run", "python", "tasks.py", "e2e-worker"],
-            stdout=out_fh,
-            stderr=subprocess.STDOUT,
-            preexec_fn=os.setsid,
-            cwd=str(ROOT),
-        )
-        E2E_PIDFILE.write_text(str(proc.pid))
-        n = len(configs)
+    if E2E_PIDFILE.exists() and reports.pid_alive(E2E_PIDFILE) is True:
         print(
-            f"E2E STARTED: {len(configs)} scenario(s) in {n} group(s), "
-            f"est ~{max(1, round(n * 65 / 60))} min. "
-            "Watch: just e2e-status | just log tail. Stop: just stop."
+            "An e2e run is already in progress (logs/e2e.pid). "
+            "Watch: just wait run. Stop: just stop.",
+            file=sys.stderr,
         )
+        raise typer.Exit(int(ExitCode.PRECONDITION))
+
+    # Clear per-run logs, keeping build/install cache intact
+    print("Clearing previous simulation logs...")
+    _clear_log_dir()
+
+    _smart_build(True)
+
+    if not preflight.run("gui"):
+        print("Preflight check failed. Aborting E2E cycle.", file=sys.stderr)
+        raise typer.Exit(int(ExitCode.PRECONDITION)) from None
+
+    # Run each declared scenario against its own freshly launched, isolated sim.
+    # Scenarios land, disarm, and mutate controller parameters during cleanup,
+    # so sharing a sim can leak state into the next scenario even when the
+    # requested vision/overlay config is identical.
+    configs, registry = _load_e2e_configs()
+    if not configs:
+        print(
+            "No sim scenarios declared in tests/capabilities.toml (platforms must "
+            "include 'sim'). Refusing to report a vacuous e2e pass.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(int(ExitCode.PRECONDITION))
+
+    if not detach:
+        # Blocking by default: capture the terminal, end with the aggregate
+        # verdict and exit code. `--wait` is the deprecated no-op alias.
+        _e2e_run(configs, registry=registry)
+        return
+
+    # Seed the state file before spawning so `just wait run` never sees
+    # a live pid with no state (the worker overwrites it on startup).
+    _e2e_write_state(_e2e_initial_state(configs))
+    out_fh = (LOG_DIR / "e2e.log").open("w", encoding="utf-8")
+    proc = subprocess.Popen(
+        ["uv", "run", "python", "tasks.py", "e2e-worker"],
+        stdout=out_fh,
+        stderr=subprocess.STDOUT,
+        preexec_fn=os.setsid,
+        cwd=str(ROOT),
+    )
+    E2E_PIDFILE.write_text(str(proc.pid))
+    n = len(configs)
+    print(
+        f"E2E STARTED: {len(configs)} scenario(s) in {n} group(s), "
+        f"est ~{max(1, round(n * 65 / 60))} min. "
+        "Watch: just wait run --timeout 120 | just log since. Stop: just stop."
+    )
 
 
 @app.command("e2e-worker", hidden=True)
 def e2e_worker() -> None:
-    """Internal: the detached e2e supervisor. Launched by `just test e2e`."""
+    """Internal: the detached e2e supervisor. Launched by `just e2e`."""
     configs, registry = _load_e2e_configs()
     _e2e_run(configs, registry=registry)
 
 
-@app.command("e2e-status")
-def e2e_status_cmd() -> None:
-    """Print progress/verdict of the current or last e2e run (poll while detached)."""
-    text, code = reports.build_status(LOG_DIR, reports.pid_alive(LOG_DIR / "e2e.pid"))
-    print(text)
-    raise typer.Exit(code)
-
-
-@app.command()
-def scenario(
+@app.command("run")
+def run_cmd(
     name: str = typer.Argument(..., help="Scenario name (e.g. 01_arm_takeoff)"),
+    timeout: int = typer.Option(300, "--timeout", help="Supervisor hard deadline (s)."),
 ) -> None:
-    """Run a live scenario test directly by name.
+    """Run one scenario under the run supervisor (bounded; always leaves a run record).
 
     Boots the sim config (vision/overlay) the scenario declares in
     ``tests/capabilities.toml``, runs it in isolation, and tears the sim down
@@ -1510,8 +1495,8 @@ def scenario(
     if cfg is None:
         print(
             f"No declared sim config for '{name}' in tests/capabilities.toml — "
-            "running against the existing sim (start one with `just sim` first). "
-            f"To make `just scenario {name}` boot the right sim, add the entry "
+            "running against the existing sim (start one with `just sim start` first). "
+            f"To make `just run {name}` boot the right sim, add the entry "
             'with platforms = ["sim"] (see `just scenario-new` output).'
         )
         print(f"Running scenario test: {name}...")
@@ -1533,6 +1518,7 @@ def scenario(
                 gz_resource=f"{ROOT}/sim/worlds:{ROOT}/sim/models",
                 model=cfg["model"],
                 world=cfg["world"],
+                deadline_s=float(timeout),
             )
         finally:
             _summarize_logs_silent()
@@ -1556,7 +1542,7 @@ def scenario_new(
 
     Writes a stub modeled on 03_waypoint.py (a `_Node` plus a `Scenario`
     subclass); edit the `done()` predicate, add a tests/capabilities.toml entry,
-    then run `just scenario <name>`.
+    then run `just run <name>`.
     """
     target = ROOT / "tests" / "scenarios" / f"{name}.py"
     if target.exists():
@@ -1577,23 +1563,15 @@ def scenario_new(
     print('sim_overlay = "auto_arm"')
     print('sim_world = "default"')
     print('sim_model = "x500"')
-    print(f"  3. Run it:  just scenario {name}")
+    print(f"  3. Run it:  just run {name}")
 
 
-@app.command()
-def status():
-    """Concise English workspace snapshot (nodes, live status, capabilities)."""
+@app.command(hidden=True)
+def snapshot():
+    """Internal: bare-`just` status snapshot."""
     status_tool.main()
-
-
-@app.command("scenario-status")
-def scenario_status(
-    name: str = typer.Argument("", help="Scenario name; default: the most recent run."),
-) -> None:
-    """Print the verdict of one scenario's last run from logs/scenario_<name>.json."""
-    line, code = reports.format_scenario_status(LOG_DIR, name or None)
-    print(line)
-    raise typer.Exit(code)
+    print()
+    print("recipes: just --list | logs: just log since | claims: just cap show")
 
 
 @log_app.command()

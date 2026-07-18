@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Verdicts from logs/ artifacts: per-scenario, e2e aggregate, e2e progress.
 
-Merges the former e2e_report.py, e2e_status.py, and scenario_status.py. Reads
-logs/scenario_*.json and logs/e2e_state.json; speaks concise English via
-cli_verdict. Exit-code contracts unchanged: build_block 0 all-pass / 1;
+Reads logs/scenario_*.json and logs/e2e_state.json; speaks concise English
+via cli_verdict. Exit-code contracts unchanged: build_block 0 all-pass / 1;
 build_status 0 finished-all-pass, 1 finished-with-failures-or-died, 2 no run,
-3 running; format_scenario_status OK/FAIL/USAGE.
+3 running. (Per-scenario verdict lines live on in run records via `just runs`.)
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ import os
 import time
 from pathlib import Path
 
-from cli_verdict import ExitCode, format_e2e_block, format_scenario
+from cli_verdict import ExitCode, format_e2e_block
 
 LOG_DIR = Path(__file__).resolve().parents[1] / "logs"
 
@@ -106,33 +105,3 @@ def build_status(log_dir: Path, worker_alive: bool | None) -> tuple[str, int]:
     block, _code = build_block(log_dir)
     code = 0 if state.get("status") == "passed" else 1
     return (block, code)
-
-
-def format_scenario_status(log_dir: Path, name: str | None) -> tuple[str, int]:
-    """Return ``(verdict_line, exit_code)`` for one scenario report.
-
-    If ``name`` is given, read ``scenario_<name>.json``; otherwise pick the most
-    recently modified ``scenario_*.json``. Missing/unreadable returns a message
-    with ``ExitCode.USAGE``; otherwise ``OK`` if it passed, ``FAIL`` if not.
-    """
-    if name:
-        path = log_dir / f"scenario_{name}.json"
-        if not path.is_file():
-            return (f"no scenario report found: {path}", int(ExitCode.USAGE))
-    else:
-        candidates = sorted(log_dir.glob("scenario_*.json"), key=lambda p: p.stat().st_mtime)
-        if not candidates:
-            return (f"no scenario report found in {log_dir}", int(ExitCode.USAGE))
-        path = candidates[-1]
-    try:
-        s = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as e:
-        return (f"unreadable scenario report {path}: {type(e).__name__}: {e}", int(ExitCode.USAGE))
-    passed = bool(s["passed"])
-    line = format_scenario(
-        str(s["scenario"]),
-        passed,
-        _detail_str(passed, s.get("detail", {})),
-        float(s.get("elapsed_s", 0.0)),
-    )
-    return (line, int(ExitCode.OK) if passed else int(ExitCode.FAIL))

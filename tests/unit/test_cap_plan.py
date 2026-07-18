@@ -86,11 +86,9 @@ def test_next_action_mission_sim_when_mission_failing() -> None:
 
 def test_next_action_fly_when_simulated_or_stale() -> None:
     entry = _reg()["capabilities"]["arm_takeoff"]
-    assert next_action("arm_takeoff", entry, RungInfo("simulated")) == (
-        "just scenario 01_arm_takeoff"
-    )
+    assert next_action("arm_takeoff", entry, RungInfo("simulated")) == ("just run 01_arm_takeoff")
     assert next_action("arm_takeoff", entry, RungInfo("sim-flown-stale")) == (
-        "just scenario 01_arm_takeoff"
+        "just run 01_arm_takeoff"
     )
 
 

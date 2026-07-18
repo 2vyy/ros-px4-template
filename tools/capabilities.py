@@ -116,7 +116,7 @@ def record(claim: str) -> None:
     report_path = Path("logs") / f"scenario_{stem}.json"
     if not report_path.exists():
         typer.echo(
-            f"NO REPORT: run `just scenario {stem}` first ({report_path} missing)",
+            f"NO REPORT: run `just run {stem}` first ({report_path} missing)",
             err=True,
         )
         raise typer.Exit(3)
@@ -124,7 +124,7 @@ def record(claim: str) -> None:
         report = json.loads(report_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         typer.echo(
-            f"INVALID REPORT: run `just scenario {stem}` again ({report_path})",
+            f"INVALID REPORT: run `just run {stem}` again ({report_path})",
             err=True,
         )
         raise typer.Exit(3) from None
@@ -202,7 +202,7 @@ def record(claim: str) -> None:
         raise typer.Exit(3) from None
     if head_timestamp.returncode != 0 or not report_is_fresh(report_mtime, *revision_mtimes):
         typer.echo(
-            f"STALE REPORT: run `just scenario {stem}` after the current commit",
+            f"STALE REPORT: run `just run {stem}` after the current commit",
             err=True,
         )
         raise typer.Exit(3)

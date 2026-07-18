@@ -104,9 +104,9 @@ def format_status(
 
     hints: list[str] = []
     if not sim_alive:
-        hints.append("just sim")
+        hints.append("just sim start")
     if not scenarios:
-        hints.append("just test e2e")
+        hints.append("just e2e")
     if hints:
         lines.append("  hint: " + " ; ".join(hints))
     return "\n".join(lines)

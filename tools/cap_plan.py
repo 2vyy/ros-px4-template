@@ -38,7 +38,7 @@ def next_action(name: str, entry: dict, info: RungInfo) -> str:
         return f"just mission sim {entry.get('mission', '')} --require-terminal".strip()
     if info.rung == "declared":
         return f"fix artifacts for {name}: {info.reason}"
-    return f"just scenario {stem}"
+    return f"just run {stem}"
 
 
 def _closure(data: dict, target: str) -> set[str]:
