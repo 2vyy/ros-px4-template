@@ -1,6 +1,6 @@
 # Claims ladder
 
-`tests/capabilities.toml` is the authoring API for capability claims. The registry stores claim structure and artifact pointers. Rungs are derived from the registry, artifacts, Git history, and committed PASS evidence. Nothing under `src/` reads the registry.
+A claim is a statement about what the system can do ("vehicle centers on the marker, descends, and lands"). `tests/capabilities.toml` is the authoring API: it stores claim structure and artifact pointers, nothing else. **Rungs are derived** from the registry, artifacts, Git history, and committed PASS evidence - never stored, so they cannot lie. Nothing under `src/` reads the registry.
 
 ## Claim registry
 
@@ -20,7 +20,7 @@ Each `[capabilities.<id>]` table is either a leaf with `scenario_file` or a comp
 | `sim_world` | string | Optional | Optional | World name under `sim/worlds/`. Default: `default`. |
 | `sim_model` | string | Optional | Optional | Model under `sim/models/`, or PX4-shipped `x500`. Default: `x500`. |
 
-Legacy stored-rung and verification-date fields are retired. `just check` rejects them, malformed fields, unknown dependencies, cycles, empty composites, and unknown platforms. Missing artifacts do not invalidate a claim. They keep it at `declared` so a claim can be registered before implementation.
+`just check` rejects malformed fields, unknown dependencies, cycles, empty composites, and unknown platforms. Missing artifacts do not invalidate a claim: they keep it at `declared`, so a claim can be registered before implementation.
 
 Example leaf:
 
@@ -121,14 +121,12 @@ PASS evidence is committed under `tests/evidence/<claim>/`. The filename is `<ru
 
 ### Add a claim
 
-1. Edit `tests/capabilities.toml`.
-2. Add `requires`, artifact pointers, and optional provenance or parameters.
-3. Run `just check`.
-4. Fix every named form error. Missing artifacts are expected at `declared`.
+1. Edit `tests/capabilities.toml`: `requires`, artifact pointers, optional provenance and parameters.
+2. Run `just check`. Fix every named form error. Missing artifacts are expected at `declared`.
 
 ### Advance a rung
 
-1. Run `just cap plan` or `just cap plan <claim>`.
+1. Run `just cap plan` (or `just cap plan <claim>` for one closure).
 2. Execute the first actionable command.
 3. After a scenario PASS, run `just cap record <claim>` (or let `just e2e` auto-record; see below).
 4. Commit the evidence file.
@@ -136,25 +134,11 @@ PASS evidence is committed under `tests/evidence/<claim>/`. The filename is `<ru
 
 ## Mission `requires`
 
-Mission YAML may declare a top-level `requires` list of claim ids. The mission
-loader validates shape only (list of strings). `just mission validate`
-cross-checks ids against the registry (exit 2 on unknown) and prints
-`WARN: required claim '<id>' is below sim-flown (<rung>)` when a required
-claim is not yet fresh at `sim-flown`. Nothing under `src/` reads the
-registry.
+Mission YAML may declare a top-level `requires` list of claim ids. The mission loader validates shape only (list of strings). `just mission validate` cross-checks ids against the registry (exit 2 on unknown) and prints `WARN: required claim '<id>' is below sim-flown (<rung>)` when a required claim is not yet fresh at `sim-flown`. Nothing under `src/` reads the registry.
 
 ## E2E integration
 
-`just e2e` builds its roster from `e2e_roster`: claims below
-`simulated` are excluded with a named `[NOTE]`, and runnable leaves run in
-`requires` DAG (topo) order. When a claim fails this run, dependents are
-skipped with synthesized FAIL reports whose reason is
-`prerequisite_failed:<claim>`; skips count as fails and never record
-evidence. Each PASS auto-records under `tests/evidence/` and prints
-`[EVIDENCE]`. If the flight-relevant tree is dirty, auto-record skips with
-a commit-first `[NOTE]` and the flight still succeeds — never abort a run
-over an unclean worktree. Commit the new evidence files deliberately after
-the run.
+`just e2e` builds its roster from `e2e_roster`: claims below `simulated` are excluded with a named `[NOTE]`, and runnable leaves run in `requires` DAG (topo) order. When a claim fails this run, dependents are skipped with synthesized FAIL reports whose reason is `prerequisite_failed:<claim>`; skips count as fails and never record evidence. Each PASS auto-records under `tests/evidence/` and prints `[EVIDENCE]`. If the flight-relevant tree is dirty, auto-record skips with a commit-first `[NOTE]` and the flight still succeeds - never abort a run over an unclean worktree. Commit the new evidence files deliberately after the run.
 
 ## Reserved extensions
 
@@ -163,6 +147,4 @@ the run.
 | Hardware flight | `platform = "hw"`, shared conditions and detail schema | `hw-flown` derivation and hardware recorder. |
 | Golden simulation | `grade`, `conditions`, committed skein run artifacts | `sim-golden` rung and skein delta thresholding. |
 
-Also not built here: claim add/edit commands, FAIL evidence history, and
-automatic evidence commits (e2e writes evidence files; you still commit
-them).
+Also not built here: claim add/edit commands, FAIL evidence history, and automatic evidence commits (e2e writes evidence files; you still commit them).

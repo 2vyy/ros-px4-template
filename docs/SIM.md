@@ -1,10 +1,8 @@
-# Simulation worlds
+# Simulation worlds and recording
 
-Deterministic worlds for GUI inspection and manual flight practice. Marker
-models come from `tools/gen_marker_assets.py`. Challenge worlds come from
-`tools/gen_world.py` (spec YAML under `sim/worlds/specs/`) so the SDF and
-marker map stay consistent; see [CHALLENGES.md](CHALLENGES.md). `default.sdf`
-stays hand-written (flight-verified baseline).
+Deterministic worlds for GUI inspection, manual flight practice, and challenge scenarios. Marker models come from `tools/gen_marker_assets.py`. Challenge worlds come from `tools/gen_world.py` (spec YAML under `sim/worlds/specs/`) so the SDF and marker map stay consistent; see [CHALLENGES.md](CHALLENGES.md). `default.sdf` stays hand-written (flight-verified baseline).
+
+## Worlds
 
 | World | `just sim start --world ...` | Marker IDs (anchored-ENU) | Notes |
 |-------|-------------------------|---------------------------|-------|
@@ -16,39 +14,39 @@ stays hand-written (flight-verified baseline).
 
 ## Marker scale
 
-Each marker's black code is `0.2 m` square, matching `marker_size_m` used by
-`aruco_pose_publisher` and `lib/aruco_detector.py` for pose estimation.
-Generated textures pad that code with a `64 px` white quiet zone on every
-side, so the rendered surface is `0.25 m` square. The extra 0.05 m is quiet
-zone, not code: do not pass 0.25 m as `marker_size_m`.
+Each marker's black code is `0.2 m` square, matching `marker_size_m` used by `aruco_pose_publisher` and `lib/aruco_detector.py` for pose estimation. Generated textures pad that code with a `64 px` white quiet zone on every side, so the rendered surface is `0.25 m` square. The extra 0.05 m is quiet zone, not code: do not pass 0.25 m as `marker_size_m`.
 
-## Limitations
+## Boot path (default vs repo worlds)
 
-**Boot path (default vs repo worlds).** PX4's rcS (`px4-rc.gzsim`) sources
-`build/px4_sitl_default/rootfs/gz_env.sh`, which unconditionally resets
-`PX4_GZ_WORLDS` to PX4's own worlds directory, so PX4 can only start Gazebo on
-worlds it ships (`default`). For repo-only worlds, `_start_gz_px4.sh`
-pre-starts a **paused** gz server on the repo SDF; PX4 then detects the running
-world and adopts it via its first-class "gazebo already running" branch (which
-never sources `gz_env.sh`, so no clobber). A watcher unpauses physics once PX4
-has spawned the model, keeping sim time from free-running before lockstep (an
-unpaused pre-start corrupts EKF2 timing, see the `_start_gz_px4.sh` header).
-The `default` world keeps the original PX4-starts-Gazebo path byte-identical.
-All repo worlds under `sim/worlds/` launch via `just sim start --world <name>`.
+PX4's rcS (`px4-rc.gzsim`) sources `build/px4_sitl_default/rootfs/gz_env.sh`, which unconditionally resets `PX4_GZ_WORLDS` to PX4's own worlds directory, so PX4 can only start Gazebo on worlds it ships (`default`). For repo-only worlds, `_start_gz_px4.sh` pre-starts a **paused** gz server on the repo SDF; PX4 then detects the running world and adopts it via its first-class "gazebo already running" branch (which never sources `gz_env.sh`, so no clobber). A watcher unpauses physics once PX4 has spawned the model, keeping sim time from free-running before lockstep (an unpaused pre-start corrupts EKF2 timing; see the `_start_gz_px4.sh` header). The `default` world keeps the original PX4-starts-Gazebo path byte-identical.
 
-**Perception: synthetic (default) vs real (camera model).** The stock `x500`
-publishes no camera, so `--vision aruco` on it bridges nothing and scenarios
-`05_aruco_hover` / `06_search_relocalize` / `08_precision_land` fabricate
-`/drone/marker_detection` by design — the fast, non-rendering tier and the only
-path for `--world default`. For REAL perception, `sim/models/x500_mono_cam_down`
-adds a downward camera whose sensor is named `camera` (matching `_vision_bridge`);
-booting `just sim start --world marker_field --model x500_mono_cam_down --vision aruco`
-bridges `/camera/image_raw` and `aruco_pose_publisher` detects the rendered
-marker (~0.06 m median horizontal error at 3 m, plans/062). Scenario
-`09_aruco_hover_real` exercises this end to end and runs in `just e2e` via
-its `sim_model`/`sim_world` fields in `tests/capabilities.toml`.
+Physics speed is a boot-time property of the world SDF and nothing else. Any live gz `set_physics` call - even a no-op payload - latently corrupts PX4's estimator (plan 065). There is no `--speed` flag by design.
 
-Marker assets need an `<emissive_map>` to render in the gz camera SENSOR: a PBR
-`albedo_map` alone renders the marker as a solid black square (no error) that
-`detectMarkers` cannot decode. Fixed for markers 0/1/2; see the comment in
-`sim/models/aruco_marker_0/model.sdf` and `plans/062-findings.md`.
+## Perception: synthetic (default) vs real (camera model)
+
+The stock `x500` publishes no camera, so `--vision aruco` on it bridges nothing and scenarios `05_aruco_hover` / `06_search_relocalize` / `08_precision_land` fabricate `/drone/marker_detection` by design - the fast, non-rendering tier and the only path for `--world default`. For REAL perception, `sim/models/x500_mono_cam_down` adds a downward camera whose sensor is named `camera` (matching `_vision_bridge`); booting
+
+```bash
+just sim start --world marker_field --model x500_mono_cam_down --vision aruco
+```
+
+bridges `/camera/image_raw` and `aruco_pose_publisher` detects the rendered marker (~0.06 m median horizontal error at 3 m, plan 062). Scenario `09_aruco_hover_real` exercises this end to end and runs in `just e2e` via its `sim_model`/`sim_world` fields in `tests/capabilities.toml`.
+
+Marker assets need an `<emissive_map>` to render in the gz camera SENSOR: a PBR `albedo_map` alone renders the marker as a solid black square (no error) that `detectMarkers` cannot decode. Fixed for markers 0/1/2; see the comment in `sim/models/aruco_marker_0/model.sdf` and `plans/062-findings.md`.
+
+## Record and analyze a run (skein)
+
+`just sim start --record` records a ROS 2 bag of the core topics and, on `just stop`, captures the matching PX4 SITL ULog into `logs/runs/<run-id>/` (`bag/`, `session.ulg`; `logs/runs/latest` symlinks the newest). Recording is opt-in; a default boot records nothing.
+
+The bag (wall time) and the ULog (PX4 boot time) share no clock. [skein](../../skein), checked out as a sibling repo (or `SKEIN_DIR=/path/to/skein`), reconciles them onto one canonical timeline:
+
+```bash
+just sim start --record --overlay auto_arm   # READY verdict confirms recording -> logs/runs/<id>/bag
+just stop                                    # finalizes the bag, copies the run's ULog
+just analyze                                 # overlays latest -> logs/runs/<id>/aligned.mcap
+just analyze latest --query 'z < -1' --stats # skein query over the aligned MCAP
+```
+
+`--channel`/`-c` selects the channel for `--query` (default `vehicle_local_position`); `--stats` prints per-channel rate/gap aggregates. The overlay reports a per-clock-domain confidence; a low `px4_boot` confidence means don't trust PX4-derived alignment for that run.
+
+SITL-only; best-effort (a failed recorder never aborts the sim); no bag rotation, so long sessions grow without bound. `just clean` wipes `logs/runs/`. Design rationale and the full clock model live in the skein repo's own docs.

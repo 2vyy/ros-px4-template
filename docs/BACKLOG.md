@@ -38,8 +38,8 @@ Status: `idea` | `explore`.
 |----|------|--------|-------|
 | B51 | Autopilot abstraction `Protocol` in `bridges/` that wraps arm/disarm/setpoint/status; `offboard_controller` imports the protocol, not `px4_msgs` directly | idea | Unlocks PX4 version drift (1.17 to 1.18 changed topics) and ArduPilot swap. Pay before mission #5 |
 | B52 | `vehicle_id` parameter + topic namespacing for multi-vehicle; today `target_system=1`, `/fmu/in/*`, `/drone/*` are all hardcoded | idea | Multi-vehicle is currently a retrofit, not a config change |
-| B53 | Determinism remainder: seedable Gazebo + PX4 RNG and `just replay <run>` over recorded bags | idea | The recording half shipped: `just sim --record` writes `logs/runs/<id>/{bag,session.ulg}` and `just analyze` aligns + queries them (plans 009-013, 048). Fault injection was deliberately CUT (plan 002); do not re-add it without new grounding |
-| B54 | Hardware bring-up remainder: a preflight that talks to the FC over the link, and a safety-pilot interlock | idea | Premise refreshed: serial uxrce (`MicroXRCEAgent serial` in `hardware.launch.py`), `vehicles/x500.yaml` overlays, and `just hw --port --baud --vehicle` all exist today. What is missing is a real FC preflight (link + params + sensor sanity before arming is possible) and an explicit human-interlock story |
+| B53 | Determinism remainder: seedable Gazebo + PX4 RNG and `just replay <run>` over recorded bags | idea | The recording half shipped: `just sim start --record` writes `logs/runs/<id>/{bag,session.ulg}` and `just analyze` aligns + queries them (plans 009-013, 048). Fault injection was deliberately CUT (plan 002); do not re-add it without new grounding |
+| B54 | Hardware bring-up remainder: a preflight that talks to the FC over the link, and a safety-pilot interlock | idea | Premise refreshed: serial uxrce (`MicroXRCEAgent serial` in `hardware.launch.py`), `vehicles/x500.yaml` overlays, and `just hw start --port --baud --vehicle` all exist today. What is missing is a real FC preflight (link + params + sensor sanity before arming is possible) and an explicit human-interlock story |
 | B55 | More mission types on the data-driven `lib/mission/` engine: behaviors/guards + YAML state graphs for non-survey missions (orbit, RTL, formation) | idea | Engine is data-driven; the gap is vocabulary. Plan 073 adds the rules-constraint guards (ceiling, time budget, keep-out box); orbit/RTL behaviors remain open |
 | B56 | Config overlay expansion: `hardware.yaml` is 1 key, `common.yaml` is 5 keys; real bring-up needs 50+ (airframe, EKF, geofence, RTL, failsafe, gimbal, GPS, comms, battery, sensor cal) | idea | |
 | B57 | Parameter hot-reload + mission editor/visualizer + rqt panel for `/drone/mission_status`; today changing `takeoff_altitude_m` requires edit + relaunch + 30 s PX4 boot | idea | Major drag on iteration speed |
@@ -69,11 +69,11 @@ If the template is going to be worth someone else's time:
 | B13 | `frame_transforms.py` velocity, yaw, and quaternion conversions (superseded again by `lib/frames.py`) |
 | B20 | `mission_manager` executor/callback-group rework |
 | B29 | `waypoint_mission.reached` separate XY/Z tolerances |
-| B33 | `log_merger` auto-runs after every `just scenario` (superseded by the single logfmt session log) |
+| B33 | `log_merger` auto-runs after every scenario run (superseded by the single logfmt session log) |
 | B34 | `check-topics` `--dry-run` mode |
 | B36 | Capability registry auto-updated from `scenario_<name>.json` |
 | B43 | e2e scenario list driven from `tests/capabilities.toml` |
 | B27 | `lib/offboard_fsm.py` pure `tick(FsmInputs)` state machine with unit tests |
 | B44 | gz/PX4 boot bash extracted to `sim/launch/_start_gz_px4.sh` (plan 005) |
 | B58 | `just log topics` enforces declared type and direction (plan 006); QoS sliver lives on as B58a |
-| B7 | `uv` usage and the 8888/9090 port checklist are documented in README and docs/MCP.md |
+| B7 | `uv` usage and the 8888/9090 port checklist are documented in README and AGENTS.md (MCP / rosbridge) |
