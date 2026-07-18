@@ -91,3 +91,7 @@ mission *args:
 # Generate ArUco marker model assets (see docs/SIM.md)
 gen-markers *args:
     uv run python tools/gen_marker_assets.py {{args}}
+
+# Generate a Gazebo world + marker map from a challenge spec (see docs/CHALLENGES.md)
+gen-world *args:
+    uv run python tools/gen_world.py {{args}}

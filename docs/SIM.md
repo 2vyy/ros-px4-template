@@ -1,14 +1,16 @@
 # Simulation worlds
 
-Deterministic worlds for GUI inspection and manual flight practice, generated
-by `tools/gen_marker_assets.py` (ArUco markers) and hand-written from the
-flight-verified `default.sdf` skeleton (physics, gravity, magnetic field,
-ground, light, spherical coordinates).
+Deterministic worlds for GUI inspection and manual flight practice. Marker
+models come from `tools/gen_marker_assets.py`. Challenge worlds come from
+`tools/gen_world.py` (spec YAML under `sim/worlds/specs/`) so the SDF and
+marker map stay consistent; see [CHALLENGES.md](CHALLENGES.md). `default.sdf`
+stays hand-written (flight-verified baseline).
 
 | World | `just sim --world ...` | Marker IDs (anchored-ENU) | Notes |
 |-------|-------------------------|---------------------------|-------|
 | `default` | `just sim` | none | Flight-verified baseline; unchanged. |
-| `marker_field` | `just sim --world marker_field --gui` | 0: `(8, 0, 0.005)`, 1: `(-6, 10, 0.005)`, 2: `(0, -12, 0.005)` | Select `config/marker_maps/marker_field.yaml` (not `config/markers.yaml`) to localize IDs 1 and 2. |
+| `marker_field` | `just sim --world marker_field --gui` | 0: `(8, 0, 0.005)`, 1: `(-6, 10, 0.005)`, 2: `(0, -12, 0.005)` | Spec: `sim/worlds/specs/marker_field.yaml`. Select `config/marker_maps/marker_field.yaml` (not `config/markers.yaml`) to localize IDs 1 and 2. |
+| `gate_run` | `just sim --world gate_run` | 0: `(8, 0, 0.005)`, 3: `(5, 0, 0.005)` | Spec-generated example (two pylons at x=2, y=±1.5). Map: `config/marker_maps/gate_run.yaml`. |
 | `landing_pad` | `just sim --world landing_pad` | 0: `(8, 0, 0.025)`, just above the 1.5 m radius pad top | Uses the unmodified `config/markers.yaml` (marker 0 only); existing precision-landing scenarios keep working. |
 | `obstacle_course` | `just sim --world obstacle_course` | 0: `(8, 0, 0.005)` | Five static slalom pylons between the origin and the marker; the origin climb column stays clear. |
 
@@ -32,7 +34,7 @@ never sources `gz_env.sh`, so no clobber). A watcher unpauses physics once PX4
 has spawned the model, keeping sim time from free-running before lockstep (an
 unpaused pre-start corrupts EKF2 timing, see the `_start_gz_px4.sh` header).
 The `default` world keeps the original PX4-starts-Gazebo path byte-identical.
-All three repo worlds now launch via `just sim --world <name>`.
+All repo worlds under `sim/worlds/` launch via `just sim --world <name>`.
 
 **Perception: synthetic (default) vs real (camera model).** The stock `x500`
 publishes no camera, so `--vision aruco` on it bridges nothing and scenarios

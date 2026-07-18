@@ -271,13 +271,13 @@ cold read of CHALLENGES.md by the operator is the real acceptance.
 
 ## Done criteria
 
-- [ ] `just gen-world --spec sim/worlds/specs/marker_field.yaml` reproduces the committed world + map byte-identically
-- [ ] `uv run pytest tests/unit/test_gen_world.py -q` → all pass
-- [ ] A NEW spec-generated world boots: `just sim --world gate_run` → READY
-- [ ] `docs/CHALLENGES.md` exists, covers the full loop with commands, and contains the representable-vs-verifiable section
-- [ ] `docs/SIM.md` world table includes the new world
-- [ ] `just check` → exit 0
-- [ ] `plans/README.md` status row updated
+- [x] `just gen-world --spec sim/worlds/specs/marker_field.yaml` reproduces the committed world + map byte-identically
+- [x] `uv run pytest tests/unit/test_gen_world.py -q` → all pass
+- [x] A NEW spec-generated world boots: `just sim --world gate_run` → READY
+- [x] `docs/CHALLENGES.md` exists, covers the full loop with commands, and contains the representable-vs-verifiable section
+- [x] `docs/SIM.md` world table includes the new world
+- [x] `just check` → exit 0
+- [x] `plans/README.md` status row updated
 
 ## STOP conditions
 

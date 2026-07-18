@@ -121,6 +121,7 @@ Every command ends in a concise English verdict that states what was verified, n
 | MCP / rosbridge | [docs/MCP.md](docs/MCP.md). Config: `.cursor/mcp.json` |
 | Mission phases and YAML schema | [docs/MISSIONS.md](docs/MISSIONS.md) |
 | Claims, evidence, derived rungs | [docs/CLAIMS.md](docs/CLAIMS.md) |
+| Authoring a challenge from a rules doc | [docs/CHALLENGES.md](docs/CHALLENGES.md) |
 | Node I/O | ROS 2 Interface block in `src/core/ros_px4_template_core/nodes/*.py` |
 | Open ideas | [docs/BACKLOG.md](docs/BACKLOG.md) |
 

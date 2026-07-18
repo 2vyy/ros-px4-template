@@ -1,0 +1,7 @@
+# Challenge spec: golden round-trip for marker_field (plans/043 GUI-verified layout)
+name: marker_field
+markers:            # DICT_4X4_50 ids; z is implicit (0.005 surface lift)
+  - {id: 0, x: 8.0, y: 0.0}
+  - {id: 1, x: -6.0, y: 10.0}
+  - {id: 2, x: 0.0, y: -12.0}
+obstacles: []       # optional; type: cylinder|box, static only
