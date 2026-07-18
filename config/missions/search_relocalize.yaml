@@ -6,6 +6,7 @@
 # diverts to return_to_origin instead of continuing the pattern. Finding the known
 # marker (marker_localizer emits /drone/pose_override) is the nominal path back.
 # Used by 06_search_relocalize.
+requires: [search_relocalize]
 mission:
   initial: takeoff
   safety:

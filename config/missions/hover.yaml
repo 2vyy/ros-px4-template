@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../schemas/mission.schema.json
 # Hover-only: climb to target altitude and hold. Used by 01_arm_takeoff / 02_hover_hold.
+requires: [hover_hold]
 mission:
   initial: hover
   states:

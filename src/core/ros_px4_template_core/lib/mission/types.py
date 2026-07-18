@@ -51,3 +51,4 @@ class Mission:
     safety: tuple[TransitionDef, ...]
     transitions: tuple[TransitionDef, ...]
     terminal: frozenset[str]
+    requires: tuple[str, ...] = ()

@@ -7,6 +7,12 @@
   ],
   "additionalProperties": false,
   "properties": {
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "mission": {
       "type": "object",
       "required": [

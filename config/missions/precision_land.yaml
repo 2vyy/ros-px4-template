@@ -19,6 +19,7 @@
 #   Once `Land` is latched (hand-off sent), `center_land` stops signalling
 #   `marker_lost` -- the marker inevitably leaves view near touchdown -- so
 #   the mission stays in `descend` until the `disarmed` guard fires.
+requires: [precision_land]
 mission:
   initial: takeoff
   safety:

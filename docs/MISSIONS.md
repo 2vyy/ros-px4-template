@@ -41,6 +41,12 @@ mission:
   terminal: [<state>, ...]        # optional; states with no outgoing mission edges
 ```
 
+Top-level document fields:
+
+| Field | Type | Required | Meaning |
+|-------|------|----------|---------|
+| `requires` | list of claim ids | no (default `[]`) | Claims from `tests/capabilities.toml` that must reach `sim-flown` before this mission is considered ready. Shape-checked at load; `just mission validate` cross-checks ids and warns on rungs below `sim-flown`. |
+
 The loader (`lib/mission/loader.py`) validates the document up front and raises
 `MissionError` for an unknown behavior, guard, initial state, or transition
 target — a malformed mission fails fast at startup, not mid-flight.

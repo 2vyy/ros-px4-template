@@ -142,6 +142,7 @@ def build_schema() -> dict:
         "required": ["mission"],
         "additionalProperties": False,
         "properties": {
+            "requires": {"type": "array", "items": {"type": "string"}},
             "mission": {
                 "type": "object",
                 "required": ["initial", "states"],
@@ -157,7 +158,7 @@ def build_schema() -> dict:
                     "transitions": {"type": "array", "items": transition_edge},
                     "terminal": {"type": "array", "items": {"type": "string"}},
                 },
-            }
+            },
         },
     }
 
@@ -175,11 +176,41 @@ def validate_cmd(
 ) -> None:
     """Validate a mission YAML without booting the sim (exit 0 ok, 2 invalid)."""
     ok, msg = validate_mission(name)
-    if ok:
-        typer.echo(f"OK {name}: {msg}")
-        raise typer.Exit(0)
-    typer.echo(f"FAIL {name}: {msg}", err=True)
-    raise typer.Exit(2)  # ExitCode.USAGE — bad input
+    if not ok:
+        typer.echo(f"FAIL {name}: {msg}", err=True)
+        raise typer.Exit(2)  # ExitCode.USAGE — bad input
+
+    path = mission_path(name)
+    mission = load_mission_file(path)
+
+    from cap_evidence import EVIDENCE_ROOT, load_records
+    from cap_status import (
+        derive_all,
+        display,
+        real_artifacts_ok,
+        real_changed_since,
+        real_mission_ok,
+    )
+    from capabilities import _load as _load_registry
+
+    data = _load_registry()
+    caps = data.get("capabilities", {})
+    unknown = [r for r in mission.requires if r not in caps]
+    if unknown:
+        print(
+            f"UNKNOWN CLAIM(S) in requires: {', '.join(unknown)} (see tests/capabilities.toml)",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    if mission.requires:
+        records = {n: load_records(EVIDENCE_ROOT, n) for n in caps}
+        infos = derive_all(data, records, real_changed_since, real_artifacts_ok, real_mission_ok)
+        for r in mission.requires:
+            if infos[r].rung != "sim-flown":
+                print(f"WARN: required claim '{r}' is below sim-flown ({display(infos[r])})")
+
+    typer.echo(f"OK {name}: {msg}")
+    raise typer.Exit(0)
 
 
 @app.command("show")

@@ -78,6 +78,10 @@ def _probe_mission(states: dict[str, StateDef], edges: tuple[TransitionDef, ...]
 
 
 def load_mission_dict(doc: dict, base_dir: Path | None = None) -> Mission:
+    requires_raw = doc.get("requires", [])
+    if not (isinstance(requires_raw, list) and all(isinstance(r, str) for r in requires_raw)):
+        raise MissionError("'requires' must be a list of claim-id strings")
+
     m = doc.get("mission")
     if not isinstance(m, dict):
         raise MissionError("missing top-level 'mission' mapping")
@@ -117,7 +121,7 @@ def load_mission_dict(doc: dict, base_dir: Path | None = None) -> Mission:
             raise MissionError(f"unknown terminal state '{t}'")
 
     _probe_mission(states, safety + transitions)
-    return Mission(initial, states, safety, transitions, terminal)
+    return Mission(initial, states, safety, transitions, terminal, tuple(requires_raw))
 
 
 def load_mission_file(path: str | Path) -> Mission:

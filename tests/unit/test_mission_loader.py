@@ -137,3 +137,22 @@ def test_inline_waypoint_valid_arities_load() -> None:
 def test_inline_waypoint_non_numeric_rejected_at_load() -> None:
     with pytest.raises(MissionError, match="waypoints"):
         load_mission_dict(_doc_with_waypoints([["a", 2, 3]]))
+
+
+def test_requires_parsed_as_tuple() -> None:
+    doc = _doc()
+    doc["requires"] = ["arm_takeoff", "aruco_hover"]
+    m = load_mission_dict(doc, base_dir=Path("."))
+    assert m.requires == ("arm_takeoff", "aruco_hover")
+
+
+def test_requires_defaults_empty() -> None:
+    m = load_mission_dict(_doc(), base_dir=Path("."))
+    assert m.requires == ()
+
+
+def test_requires_wrong_shape_raises() -> None:
+    doc = _doc()
+    doc["requires"] = "arm_takeoff"
+    with pytest.raises(MissionError, match="requires"):
+        load_mission_dict(doc, base_dir=Path("."))
