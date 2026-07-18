@@ -137,7 +137,7 @@ def _age(recorded_at: float, now: float | None = None) -> str:
 def format_runs(records: list[dict]) -> str:
     """Aligned run-record table (id, verdict, reason, age); definitive when empty."""
     if not records:
-        return "no runs recorded (run one with `just scenario <name>`)"
+        return "no runs recorded (run one with `just run <name>`)"
     rows = [
         (
             str(rec.get("record") or rec.get("name", "?")),
@@ -157,24 +157,28 @@ def format_runs(records: list[dict]) -> str:
 def resolve_wait_target(log_dir: Path) -> tuple[str, dict]:
     """What should `wait run` wait on right now?
 
-    Returns ("e2e", state) when a detached e2e cycle is running with a live
-    supervisor pid; ("run", {}) when a single supervised run's pid is alive;
-    ("record", rec) when nothing is active but a newest record exists;
-    ("none", {}) otherwise.
+    Precedence: a running e2e cycle (live, or died mid-run - either way the
+    cycle is the story and reports.build_status tells it, ABORTED included) >
+    an active single run (run.pid alive) > a finished e2e cycle newer than
+    the newest run record (the aggregate block, not one scenario's record) >
+    the newest record > nothing.
     """
+    state_path = log_dir / "e2e_state.json"
+    state: dict | None
     try:
-        state = json.loads((log_dir / "e2e_state.json").read_text(encoding="utf-8"))
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state_mtime = state_path.stat().st_mtime
     except (OSError, json.JSONDecodeError):
-        state = None
-    if (
-        isinstance(state, dict)
-        and state.get("status") == "running"
-        and reports.pid_alive(log_dir / "e2e.pid") is True
-    ):
+        state, state_mtime = None, 0.0
+    if not isinstance(state, dict):
+        state, state_mtime = None, 0.0
+    if state is not None and state.get("status") == "running":
         return "e2e", state
     if reports.pid_alive(log_dir / "run.pid") is True:
         return "run", {}
     recs = list_run_records(log_dir / "runs", limit=1)
+    if state is not None and (not recs or state_mtime >= float(recs[0].get("recorded_at", 0.0))):
+        return "e2e", state
     if recs:
         return "record", recs[0]
     return "none", {}

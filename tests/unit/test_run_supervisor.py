@@ -134,7 +134,7 @@ def test_format_runs_table_order_and_empty() -> None:
     )
     assert "STUCK" in out
     assert out.index("01_arm_takeoff") < out.index("02_hover_hold")  # order preserved as given
-    assert format_runs([]) == "no runs recorded (run one with `just scenario <name>`)"
+    assert format_runs([]) == "no runs recorded (run one with `just run <name>`)"
 
 
 def test_resolve_wait_target_precedence(tmp_path: Path) -> None:
@@ -157,8 +157,21 @@ def test_resolve_wait_target_precedence(tmp_path: Path) -> None:
     (tmp_path / "e2e.pid").write_text(str(os.getpid()), encoding="utf-8")
     assert resolve_wait_target(tmp_path)[0] == "e2e"
 
-    (tmp_path / "e2e.pid").write_text("99999999", encoding="utf-8")  # dead cycle pid
-    assert resolve_wait_target(tmp_path)[0] == "record"
+    # Died mid-run: still e2e's story (build_status reports the ABORT).
+    (tmp_path / "e2e.pid").write_text("99999999", encoding="utf-8")
+    assert resolve_wait_target(tmp_path)[0] == "e2e"
+
+    # Finished cycle newer than the newest record: the aggregate is the answer.
+    (tmp_path / "e2e_state.json").write_text(
+        json.dumps({"status": "passed", "groups": []}), encoding="utf-8"
+    )
+    assert resolve_wait_target(tmp_path)[0] == "e2e"
+
+    # A run recorded after the cycle takes precedence again.
+    write_run_record(tmp_path / "runs", "later", "FAIL", "x", 0.0, 1.0, "hold_safe", {})
+    kind, rec = resolve_wait_target(tmp_path)
+    assert kind == "record"
+    assert rec["name"] == "later"
 
 
 # ── supervise: bounded child execution ────────────────────────────────────────
