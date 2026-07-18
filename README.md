@@ -1,18 +1,16 @@
 # ros-px4-template
 
-An **agent-first ROS 2 + PX4 + Gazebo template** for autonomous drone development. Missions are data, every command is bounded and ends in an honest verdict, and every capability claim is backed by committed flight evidence.
+A ROS 2 + PX4 + Gazebo template for autonomous drone development, built to be driven by coding agents as well as humans. Commands are bounded and report what they verified; missions are YAML state graphs; capabilities are tracked as claims tied to committed flight evidence.
 
 Built on: Ubuntu 24.04 (native, [distrobox](https://distrobox.it), or WSL) - ROS 2 Jazzy - Gazebo Harmonic - PX4 v1.17 over Micro XRCE-DDS - Python 3.12 with [uv](https://github.com/astral-sh/uv), [ruff](https://github.com/astral-sh/ruff), [ty](https://github.com/astral-sh/ty) - [just](https://github.com/casey/just) task runner - [ros-mcp-server](https://github.com/robotmcp/ros-mcp-server) for live graph inspection.
 
-## Why this template
+## Design
 
-Most robotics starters hand you a launch file and wish you luck. This one is designed so an AI agent, a CI job, or a human in a hurry can drive the whole loop - boot, fly, diagnose, verify - without ever hanging a terminal or trusting a stale "done":
-
-- **Bounded commands, honest verdicts.** Launches wait with a timeout, runs execute under a supervisor with a hard deadline and a liveness watchdog, and a `READY`/`PASS` line is printed only after post-conditions are confirmed. A silently dead stack reports `NOT READY`, never a false pass. The only intentionally unbounded command is `just log tail`.
-- **Missions are YAML, not code.** A pure FSM engine interprets state graphs of registered behaviors and guards. A new mission is a new YAML file, validated in under a second without booting anything. See [docs/MISSIONS.md](docs/MISSIONS.md).
-- **Capabilities are claims with evidence.** `tests/capabilities.toml` declares what the system should do; rungs (`declared < simulated < sim-flown`) are derived from committed PASS evidence and Git history, never stored. Touch flight-relevant code and the affected claims go stale until re-flown. See [docs/CLAIMS.md](docs/CLAIMS.md).
-- **One greppable log.** Every process - ROS nodes, PX4, Gazebo, the XRCE agent - streams to a single logfmt session log. No per-node files, no `jq`, no archaeology.
-- **Sim/hardware symmetry.** Nothing under `src/` knows whether it is flying Gazebo or a serial flight controller. The same nodes, topics, and missions run on both; only the launch entry point differs.
+- **Every command terminates and reports what it verified.** Launches wait with a timeout. Scenario runs execute under a supervisor with a hard deadline and a log-silence watchdog. A `READY`/`PASS` line prints only after post-conditions are confirmed, so a dead stack reports `NOT READY` instead of a false pass. This is what makes the stack drivable by an agent or CI without babysitting. The only unbounded command is `just log tail`.
+- **Missions are YAML, not code.** A pure FSM engine interprets state graphs of registered behaviors and guards. A new mission is a new YAML file, validated in under a second without booting the sim. See [docs/MISSIONS.md](docs/MISSIONS.md).
+- **Capabilities are claims with evidence.** `tests/capabilities.toml` declares what the system should do. Rungs (`declared < simulated < sim-flown`) are derived from committed PASS evidence and git history, never stored. Changing flight-relevant code marks the affected claims stale until re-flown. See [docs/CLAIMS.md](docs/CLAIMS.md).
+- **One log for everything.** Every process (ROS nodes, PX4, Gazebo, the XRCE agent) streams to a single logfmt session log, so a run can be diagnosed with `rg` alone.
+- **`src/` is sim/hardware agnostic.** The same nodes, topics, and missions run in Gazebo and on a serial flight controller; only the launch entry point differs.
 
 ## Runtime architecture
 
@@ -49,7 +47,7 @@ All application code runs in ENU ([REP-103](https://www.ros.org/reps/rep-0103.ht
 
 ## The run contract
 
-The template's core guarantee: **a flight command can end in exactly three ways, and all of them terminate.**
+Scenario runs execute under a supervisor and always end in one of three verdicts:
 
 ```mermaid
 sequenceDiagram

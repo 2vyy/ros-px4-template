@@ -24,9 +24,6 @@ _ALLOWLIST = frozenset(
         # PX4 SITL build artifact under PX4_DIR (gitignored, not a repo file);
         # referenced in docs/SIM.md to explain the gz world-boot clobber.
         "build/px4_sitl_default/rootfs/gz_env.sh",
-        # CodeGraph MCP tool name (external tooling, not a repo symbol);
-        # referenced in the AGENTS.md Code intelligence section.
-        "codegraph_explore",
     }
 )
 
