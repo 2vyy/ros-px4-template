@@ -225,12 +225,16 @@ def sim_cmd(
     wants_marker = any(
         "marker" in sd.behavior or "center" in sd.behavior for sd in m.states.values()
     )
-    result = simulate(
-        m,
-        tick_rate_hz=tick_rate_hz,
-        max_ticks=max_ticks,
-        script=marker_below_script() if wants_marker else None,
-    )
+    try:
+        result = simulate(
+            m,
+            tick_rate_hz=tick_rate_hz,
+            max_ticks=max_ticks,
+            script=marker_below_script() if wants_marker else None,
+        )
+    except Exception as e:
+        typer.echo(f"mission sim failed: {type(e).__name__}: {e}", err=True)
+        raise typer.Exit(2) from None
 
     dt = 1.0 / tick_rate_hz
     typer.echo(f"tick   0.0s  {m.initial}")

@@ -8,7 +8,7 @@ import yaml
 
 from ros_px4_template_core.lib.mission.behaviors import _split_waypoint_entry
 from ros_px4_template_core.lib.mission.registry import known_behaviors, known_guards
-from ros_px4_template_core.lib.mission.types import Mission, StateDef, TransitionDef
+from ros_px4_template_core.lib.mission.types import Inputs, Mission, StateDef, TransitionDef
 from ros_px4_template_core.lib.waypoint_mission import load_path_yaml
 
 
@@ -33,6 +33,48 @@ def _resolve_waypoints(params: dict, base_dir: Path | None) -> dict:
             except (ValueError, TypeError) as e:
                 raise MissionError(f"state waypoints: {e}") from e
     return params
+
+
+def _neutral_inputs() -> Inputs:
+    return Inputs(
+        now=0.0,
+        pose_enu=(0.0, 0.0, 0.0),
+        yaw_enu=0.0,
+        armed=False,
+        altitude_ok=False,
+        estimate_ok=True,
+        detections=(),
+        detection_stability={},
+        input_ages={},
+        battery_remaining=None,
+        failsafe_active=False,
+    )
+
+
+def _probe_mission(states: dict[str, StateDef], edges: tuple[TransitionDef, ...]) -> None:
+    """Evaluate every behavior and guard once against a neutral snapshot so
+    param type/range errors surface at load, not mid-flight. Results are
+    discarded; behaviors get a throwaway scratch dict.
+    """
+    from ros_px4_template_core.lib.mission.registry import get_behavior, get_guard
+
+    inputs = _neutral_inputs()
+    for name, sd in states.items():
+        try:
+            get_behavior(sd.behavior)({}, inputs, dict(sd.params))
+        except MissionError:
+            raise
+        except Exception as e:
+            raise MissionError(
+                f"state '{name}': behavior '{sd.behavior}' params invalid: {e}"
+            ) from e
+    for t in edges:
+        try:
+            get_guard(t.guard)(inputs, {}, dict(t.params))
+        except Exception as e:
+            raise MissionError(
+                f"transition to '{t.dst}': guard '{t.guard}' params invalid: {e}"
+            ) from e
 
 
 def load_mission_dict(doc: dict, base_dir: Path | None = None) -> Mission:
@@ -74,10 +116,16 @@ def load_mission_dict(doc: dict, base_dir: Path | None = None) -> Mission:
         if t not in states:
             raise MissionError(f"unknown terminal state '{t}'")
 
+    _probe_mission(states, safety + transitions)
     return Mission(initial, states, safety, transitions, terminal)
 
 
 def load_mission_file(path: str | Path) -> Mission:
-    p = Path(path)
+    p = Path(path).resolve()
     doc = yaml.safe_load(p.read_text(encoding="utf-8"))
-    return load_mission_dict(doc, base_dir=p.resolve().parents[2])
+    # path_file is documented as project-root-relative for the standard
+    # config/missions/ layout (parents[2] == repo root). For missions loaded
+    # from anywhere shallower/elsewhere, fall back to the mission file's own
+    # directory rather than crashing.
+    base_dir = p.parents[2] if len(p.parents) > 2 else p.parent
+    return load_mission_dict(doc, base_dir=base_dir)
