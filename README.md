@@ -1,128 +1,118 @@
 # ros-px4-template
 
-A ROS 2 + PX4 + Gazebo project template with modern Python toolchains.
+An **agent-first ROS 2 + PX4 + Gazebo template** for autonomous drone development. Missions are data, every command is bounded and ends in an honest verdict, and every capability claim is backed by committed flight evidence.
 
-This repository provides a pre-configured template for rapid drone software development while still maintaining an organized, performant, and tested codebase.
+Built on: Ubuntu 24.04 (native, [distrobox](https://distrobox.it), or WSL) - ROS 2 Jazzy - Gazebo Harmonic - PX4 v1.17 over Micro XRCE-DDS - Python 3.12 with [uv](https://github.com/astral-sh/uv), [ruff](https://github.com/astral-sh/ruff), [ty](https://github.com/astral-sh/ty) - [just](https://github.com/casey/just) task runner - [ros-mcp-server](https://github.com/robotmcp/ros-mcp-server) for live graph inspection.
 
-## Core design principles
+## Why this template
 
-- **Stack**
-  - Ubuntu 24.04 (native, [distrobox](https://distrobox.it), WSL)
-  - ROS 2 Jazzy and Gazebo Harmonic
-  - PX4 with Micro XRCE-DDS
-    - Upstream PX4 Autopilot lives outside this repo (`PX4_DIR` in `.env`). Gazebo worlds and models go in `sim/`.
-    - `src/px4_msgs` is pinned to branch `release/1.17` and never edited locally.
-  - Python 3.12 with [uv](https://github.com/astral-sh/uv), [ruff](https://github.com/astral-sh/ruff), and [ty](https://github.com/astral-sh/ty)
-  - [just](https://github.com/casey/just) for development workflows
-  - [ros-mcp-server](https://github.com/robotmcp/ros-mcp-server) for live topic and service inspection via rosbridge
-- All `src/` code is sim/hardware agnostic. Nothing under `src/` imports from `sim/` or `hardware/`.
-- All internal coordinates follow [ROS REP-103](https://www.ros.org/reps/rep-0103.html) ENU frame. Conversion to and from PX4 NED happens only at the PX4 boundary in `offboard_controller` and `mission_manager`.
-- Scenario integration tests in `tests/scenarios/` validate the capabilities of the current codebase. Verified milestones are recorded in `tests/capabilities.toml`.
-- Live topics are checked against the defined topic manifest in [docs/TOPICS.md](docs/TOPICS.md) with `just log topics` to prevent interface drift.
-- All processes stream to one logfmt session log, `logs/latest.log` (every line `t=<rel_s> src=<source> ...`). `just log summary` regenerates `logs/latest_summary.json` (run arc, errors, per-scenario pass/fail).
+Most robotics starters hand you a launch file and wish you luck. This one is designed so an AI agent, a CI job, or a human in a hurry can drive the whole loop - boot, fly, diagnose, verify - without ever hanging a terminal or trusting a stale "done":
+
+- **Bounded commands, honest verdicts.** Launches wait with a timeout, runs execute under a supervisor with a hard deadline and a liveness watchdog, and a `READY`/`PASS` line is printed only after post-conditions are confirmed. A silently dead stack reports `NOT READY`, never a false pass. The only intentionally unbounded command is `just log tail`.
+- **Missions are YAML, not code.** A pure FSM engine interprets state graphs of registered behaviors and guards. A new mission is a new YAML file, validated in under a second without booting anything. See [docs/MISSIONS.md](docs/MISSIONS.md).
+- **Capabilities are claims with evidence.** `tests/capabilities.toml` declares what the system should do; rungs (`declared < simulated < sim-flown`) are derived from committed PASS evidence and Git history, never stored. Touch flight-relevant code and the affected claims go stale until re-flown. See [docs/CLAIMS.md](docs/CLAIMS.md).
+- **One greppable log.** Every process - ROS nodes, PX4, Gazebo, the XRCE agent - streams to a single logfmt session log. No per-node files, no `jq`, no archaeology.
+- **Sim/hardware symmetry.** Nothing under `src/` knows whether it is flying Gazebo or a serial flight controller. The same nodes, topics, and missions run on both; only the launch entry point differs.
 
 ## Runtime architecture
 
 ```mermaid
 flowchart TD
-    subgraph agent_layer ["Agent & Inspection Tooling"]
-        Bridge["rosbridge (Port 9090)"]
-        MCP["ros-mcp-server"]
+    subgraph agent_layer ["Agent and inspection tooling"]
+        MCP["ros-mcp-server"] --- Bridge["rosbridge (port 9090)"]
     end
 
-    subgraph ros_layer ["ROS 2 Jazzy (px4_ros_core)"]
-        mission["mission_manager\n(YAML to ENU Pose)"]
-        offboard["offboard_controller\n(ENU to NED Transform)"]
+    subgraph ros_layer ["ROS 2 core nodes (sim/hardware agnostic, ENU everywhere)"]
+        position["position_node<br/>anchored-ENU odometry"]
+        mission["mission_manager<br/>YAML mission FSM"]
+        offboard["offboard_controller<br/>ENU/NED boundary"]
     end
 
-    subgraph px4_layer ["PX4 v1.17 Autopilot"]
-        XRCE["MicroXRCE Agent (Port 8888)"]
-        SITL["PX4 SITL\n(Offboard Mode)"]
+    subgraph px4_layer ["PX4 v1.17 autopilot"]
+        XRCE["MicroXRCEAgent (port 8888)"]
+        SITL["PX4 SITL (sim) or serial FC (hardware)"]
     end
 
-    subgraph sim_layer ["Simulation"]
-        Gazebo["Gazebo Harmonic"]
-    end
+    Gazebo["Gazebo Harmonic (sim only)"] <--> SITL
+    SITL <-->|uXRCE-DDS| XRCE
 
-    %% Simulation & Autopilot Loop
-    Gazebo <--> SITL
-    SITL <-->|DDS| XRCE
+    XRCE -->|"/fmu/out/* telemetry (NED)"| position
+    position -->|"/drone/odom (ENU)"| mission
+    position -->|"/drone/odom (ENU)"| offboard
+    mission -->|"/drone/target_pose (ENU)"| offboard
+    offboard -->|"/fmu/in/* setpoints (NED)"| XRCE
 
-    %% Control Flow
-    mission -->|ENU Target Pose| offboard
-    XRCE -->|Telemetry (_v1 topics)| offboard
-    offboard -->|NED Position Setpoints| XRCE
-
-    %% Tooling Integration
-    ros_layer -->|ROS Topics & Services| Bridge
-    Bridge --> MCP
+    ros_layer -->|topics and services| Bridge
 ```
 
+All application code runs in ENU ([REP-103](https://www.ros.org/reps/rep-0103.html)); conversion to PX4's NED happens only at the boundary nodes. See [docs/FRAMES.md](docs/FRAMES.md).
 
+## The run contract
+
+The template's core guarantee: **a flight command can end in exactly three ways, and all of them terminate.**
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Agent
+    participant Sup as Run supervisor
+    participant Stack as Sim + PX4 + mission
+
+    Agent->>Sup: just run 01_arm_takeoff
+    activate Sup
+    Note over Sup: hard deadline 300s<br/>log-silence watchdog 90s
+    Sup->>Stack: launch scenario
+    loop while flying
+        Stack-->>Sup: structured log lines
+        Sup->>Sup: rewrite logs/heartbeat (phase, last event, age)
+    end
+    Stack-->>Sup: scenario report
+    Sup-->>Agent: PASS / FAIL / STUCK verdict
+    Sup-->>Agent: run record in logs/runs/
+    deactivate Sup
+    Agent->>Agent: just runs, just log events --run [id]
+```
+
+| Verdict | Meaning | Where to look |
+|---------|---------|---------------|
+| `PASS` | Flew and met the scenario's criteria | The one-line verdict carries the real numbers (waypoint error, hold time) |
+| `FAIL` | Flew, missed the criteria | Mission events: `just log events --run <id>` |
+| `STUCK` | The stack or harness wedged | Stack log: `just log since` or `logs/latest.log` |
+
+A verdict file is always written, even if the supervisor has to kill the run. Missions add their own inner layer: per-phase `phase_timeout` edges and a global `time_budget` safety edge mean a guard that never fires diverts to a safe hold instead of hovering forever.
 
 ## Quick start
 
 1. Copy the environment template and edit paths for your machine:
 
-```bash
-cp .env.example .env       # then edit .env: PX4_DIR, ROS_SETUP, PX4_VERSION
-```
+   ```bash
+   cp .env.example .env       # then edit .env: PX4_DIR, ROS_SETUP, PX4_VERSION
+   ```
 
-1. Initialize and build:
+2. Initialize and build:
 
-```bash
-just setup            # clones px4_msgs, uv sync, rosdep, and builds
-```
+   ```bash
+   just setup                 # clones px4_msgs, uv sync, rosdep, builds
+   ```
 
-1. Launch the full simulation stack:
+3. Launch the full simulation stack (boots detached, returns after a READY verdict):
 
-```bash
-just sim start              # Gazebo (headless), PX4 SITL, XRCE, ROS nodes, rosbridge
-```
+   ```bash
+   just sim start             # Gazebo headless, PX4 SITL, XRCE, ROS nodes, rosbridge
+   ```
 
-1. With the sim loaded, run a scenario and record the capability:
+4. Fly a scenario and record the capability:
 
-```bash
-just run 01_arm_takeoff
-just cap record arm_takeoff
-```
+   ```bash
+   just run 01_arm_takeoff
+   just cap record arm_takeoff
+   ```
 
-1. Stop everything:
+5. Stop everything:
 
-```bash
-just stop
-```
-
-## Project structure
-
-```
-ros-px4-template/
-├── src/
-│   ├── core/
-│   │   └── ros_px4_template_core/   # Core nodes + lib (sim/hardware agnostic)
-│   │       ├── nodes/               # offboard_controller, mission_manager, position_node, ...
-│   │       └── lib/                 # frames, mission/ engine, StructuredLogger
-│   ├── px4_ros_msgs/                # Custom msgs (ControllerStatus, MissionStatus)
-│   └── px4_msgs/                    # Upstream PX4 micro XRCE defs (release/1.17)
-├── sim/                             # Gazebo worlds, models, sim_full.launch.py
-├── hardware/                        # Serial FC + rosbridge; no Gazebo
-├── config/
-│   ├── params/                      # sim/hardware overlays; path_file, enable_marker_hover
-│   ├── paths/                       # ENU waypoint lists only
-│   └── missions/                    # data-driven mission YAML state graphs (see docs/MISSIONS.md)
-├── vehicles/                        # vehicle configurations (e.g. x500.yaml)
-├── tests/
-│   ├── scenarios/                   # Live acceptance tests on a running graph
-│   ├── unit/                        # Pure logic (no ROS graph)
-│   └── capabilities.toml            # Verified capability registry
-├── tools/                           # capabilities CLI, log summarizer, topic checker, ...
-├── docs/                            # FRAMES, TOPICS, MCP, MISSIONS, ...
-├── AGENTS.md                        # Agent operating guide (this repo)
-├── justfile
-├── tasks.py                         # core CLI orchestrator
-├── pyproject.toml                   # uv, ruff, ty
-└── uv.lock                          # frozen dependencies
-```
+   ```bash
+   just stop                  # exhaustive cold teardown, no process survives
+   ```
 
 ## Everyday commands
 
@@ -147,15 +137,93 @@ just log topics                   # audit live topics vs docs/TOPICS.md
 just analyze                      # overlay+query the latest recorded run via skein
 ```
 
+## Missions are data
+
+A mission is a YAML state graph interpreted by a pure engine: each state names a behavior, each transition names a guard, and a `safety` tier outranks normal progression every tick. This is `search_relocalize` in full:
+
+```yaml
+mission:
+  initial: takeoff
+  safety:
+    - {guard: estimate_invalid, to: hold_safe}
+    - {guard: geofence_breach, params: {radius_m: 30.0}, to: return_to_origin}
+    - {guard: time_budget, params: {budget_s: 300}, to: hold_safe}
+  states:
+    takeoff:          {behavior: hold, params: {z: 3.0}}
+    search:           {behavior: search_lawnmower, params: {spacing_m: 8.0, legs: 2}}
+    return_to_origin: {behavior: goto_origin, params: {z: 3.0}}
+    done:             {behavior: hold}
+    hold_safe:        {behavior: hold}
+  transitions:
+    - {from: takeoff, guard: armed_at_altitude, to: search}
+    - {from: search,  guard: marker_stable, params: {id: 0, n: 5}, to: return_to_origin}
+    - {from: search,  guard: search_complete, to: return_to_origin}
+    - {from: return_to_origin, guard: reached, to: done}
+  terminal: [done]
+```
+
+`just mission validate <name>` catches a misspelled behavior in under a second; `just mission sim <name>` ticks the real engine over a kinematic model to prove the graph terminates - both without booting Gazebo. Behaviors and guards are small pure functions registered by name; adding one is a function, a test, and a table row. See [docs/MISSIONS.md](docs/MISSIONS.md).
+
+## The claims ladder
+
+`tests/capabilities.toml` is a dependency DAG of capability claims. Each rung is derived, never stored:
+
+```text
+declared < simulated < sim-flown (stale) < sim-flown
+```
+
+`just cap show` prints every claim's rung and why; `just cap plan` prints the next action per incomplete claim; `just e2e` flies the whole roster in dependency order and auto-records evidence for every PASS. Editing flight-relevant code stales exactly the claims whose evidence it touches. See [docs/CLAIMS.md](docs/CLAIMS.md).
+
+## Observability
+
+Every process streams to one logfmt session log, `logs/latest.log` - each line is `t=<rel_s> src=<source> ...`:
+
+```bash
+just log since                            # only what appended since your last call
+rg event=WAYPOINT_REACHED logs/latest.log # state transitions, greppable directly
+rg -C 5 "t=42\." logs/latest.log          # everything that happened around t=42
+```
+
+`just log topics` audits the live graph against the topic manifest in [docs/TOPICS.md](docs/TOPICS.md) to prevent interface drift. `just sim start --record` captures a ROS bag plus the PX4 ULog for post-flight analysis with skein, a sibling-repo tool that reconciles the bag and ULog clocks onto one timeline (see [docs/SIM.md](docs/SIM.md)).
+
+## Project structure
+
+```
+ros-px4-template/
+├── src/
+│   ├── core/
+│   │   └── ros_px4_template_core/   # Core nodes + lib (sim/hardware agnostic)
+│   │       ├── nodes/               # offboard_controller, mission_manager, position_node, ...
+│   │       └── lib/                 # frames, mission/ engine, StructuredLogger
+│   ├── px4_ros_msgs/                # Custom msgs (ControllerStatus, MissionStatus)
+│   └── px4_msgs/                    # Upstream PX4 msg defs (pinned to release/1.17)
+├── sim/                             # Gazebo worlds, models, sim_full.launch.py
+├── hardware/                        # Serial FC + rosbridge; no Gazebo
+├── config/
+│   ├── params/                      # sim/hardware overlays
+│   ├── paths/                       # ENU waypoint lists
+│   └── missions/                    # mission YAML state graphs
+├── tests/
+│   ├── scenarios/                   # Live acceptance tests on a running graph
+│   ├── unit/                        # Pure logic (no ROS graph)
+│   ├── evidence/                    # Committed PASS evidence per claim
+│   └── capabilities.toml            # Capability claim registry
+├── tools/                           # run supervisor, log tooling, claims CLI, ...
+├── docs/                            # FRAMES, TOPICS, MISSIONS, CLAIMS, ...
+├── AGENTS.md                        # Agent operating guide
+├── justfile                         # Task surface (wraps tasks.py)
+└── tasks.py                         # CLI orchestrator
+```
+
+Upstream PX4 lives outside this repo (`PX4_DIR` in `.env`); Gazebo worlds and models belong in `sim/`. `src/px4_msgs` stays pinned to `release/1.17` and is never edited locally - enforced by `just check`.
+
 ## Docs
 
 - [Agent workflows, invariants, troubleshooting](AGENTS.md)
-- [ENU / NED / body frames](docs/FRAMES.md) 
-- [Topic owners and types](docs/TOPICS.md)
-- [rosbridge and ros-mcp-server](docs/MCP.md)
+- [ENU / NED / body frames](docs/FRAMES.md)
+- [Topic owners, types, QoS](docs/TOPICS.md)
 - [Mission phases and YAML schema](docs/MISSIONS.md)
 - [Claims ladder and committed evidence](docs/CLAIMS.md)
 - [Authoring a challenge from a rules doc](docs/CHALLENGES.md)
-- [Record & analyze a run with skein](docs/SKEIN.md)
-- [Competition worlds and ArUco assets](docs/SIM.md)
-
+- [Simulation worlds, ArUco assets, run recording](docs/SIM.md)
+- [Open ideas and known limits](docs/BACKLOG.md)
