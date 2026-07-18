@@ -115,7 +115,7 @@ PASS evidence is committed under `tests/evidence/<claim>/`. The filename is `<ru
 | `just cap plan [claim]` | Dependency-first incomplete frontier, optionally scoped to one closure. | `0` ladder complete, `1` actions remain, `2` unknown claim. |
 | `just cap record <claim>` | Record and prune fresh sim PASS evidence. | `0` recorded, `2` unknown or composite claim, `3` missing, failed, stale report, dirty tree, or Git precondition. |
 
-`cap plan` prints one next action per incomplete claim. Run the first actionable command. A missing scenario prints `just scenario-new <name>`, a failing mission prints `just mission sim <name> --require-terminal`, and a simulated or stale leaf prints `just scenario <name>`. `LADDER COMPLETE` means the selected closure is fresh at `sim-flown`.
+`cap plan` prints one next action per incomplete claim. Run the first actionable command. A missing scenario prints `just scenario-new <name>`, a failing mission prints `just mission sim <name> --require-terminal`, and a simulated or stale leaf prints `just run <name>`. `LADDER COMPLETE` means the selected closure is fresh at `sim-flown`.
 
 ## Workflows
 
@@ -130,7 +130,7 @@ PASS evidence is committed under `tests/evidence/<claim>/`. The filename is `<ru
 
 1. Run `just cap plan` or `just cap plan <claim>`.
 2. Execute the first actionable command.
-3. After a scenario PASS, run `just cap record <claim>` (or let `just test e2e` auto-record; see below).
+3. After a scenario PASS, run `just cap record <claim>` (or let `just e2e` auto-record; see below).
 4. Commit the evidence file.
 5. Repeat until `LADDER COMPLETE`.
 
@@ -145,7 +145,7 @@ registry.
 
 ## E2E integration
 
-`just test e2e` builds its roster from `e2e_roster`: claims below
+`just e2e` builds its roster from `e2e_roster`: claims below
 `simulated` are excluded with a named `[NOTE]`, and runnable leaves run in
 `requires` DAG (topo) order. When a claim fails this run, dependents are
 skipped with synthesized FAIL reports whose reason is

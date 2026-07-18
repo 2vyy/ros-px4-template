@@ -6,13 +6,13 @@ models come from `tools/gen_marker_assets.py`. Challenge worlds come from
 marker map stay consistent; see [CHALLENGES.md](CHALLENGES.md). `default.sdf`
 stays hand-written (flight-verified baseline).
 
-| World | `just sim --world ...` | Marker IDs (anchored-ENU) | Notes |
+| World | `just sim start --world ...` | Marker IDs (anchored-ENU) | Notes |
 |-------|-------------------------|---------------------------|-------|
-| `default` | `just sim` | none | Flight-verified baseline; unchanged. |
-| `marker_field` | `just sim --world marker_field --gui` | 0: `(8, 0, 0.005)`, 1: `(-6, 10, 0.005)`, 2: `(0, -12, 0.005)` | Spec: `sim/worlds/specs/marker_field.yaml`. Select `config/marker_maps/marker_field.yaml` (not `config/markers.yaml`) to localize IDs 1 and 2. |
-| `gate_run` | `just sim --world gate_run` | 0: `(8, 0, 0.005)`, 3: `(5, 0, 0.005)` | Spec-generated example (two pylons at x=2, y=±1.5). Map: `config/marker_maps/gate_run.yaml`. |
-| `landing_pad` | `just sim --world landing_pad` | 0: `(8, 0, 0.025)`, just above the 1.5 m radius pad top | Uses the unmodified `config/markers.yaml` (marker 0 only); existing precision-landing scenarios keep working. |
-| `obstacle_course` | `just sim --world obstacle_course` | 0: `(8, 0, 0.005)` | Five static slalom pylons between the origin and the marker; the origin climb column stays clear. |
+| `default` | `just sim start` | none | Flight-verified baseline; unchanged. |
+| `marker_field` | `just sim start --world marker_field --gui` | 0: `(8, 0, 0.005)`, 1: `(-6, 10, 0.005)`, 2: `(0, -12, 0.005)` | Spec: `sim/worlds/specs/marker_field.yaml`. Select `config/marker_maps/marker_field.yaml` (not `config/markers.yaml`) to localize IDs 1 and 2. |
+| `gate_run` | `just sim start --world gate_run` | 0: `(8, 0, 0.005)`, 3: `(5, 0, 0.005)` | Spec-generated example (two pylons at x=2, y=±1.5). Map: `config/marker_maps/gate_run.yaml`. |
+| `landing_pad` | `just sim start --world landing_pad` | 0: `(8, 0, 0.025)`, just above the 1.5 m radius pad top | Uses the unmodified `config/markers.yaml` (marker 0 only); existing precision-landing scenarios keep working. |
+| `obstacle_course` | `just sim start --world obstacle_course` | 0: `(8, 0, 0.005)` | Five static slalom pylons between the origin and the marker; the origin climb column stays clear. |
 
 ## Marker scale
 
@@ -34,7 +34,7 @@ never sources `gz_env.sh`, so no clobber). A watcher unpauses physics once PX4
 has spawned the model, keeping sim time from free-running before lockstep (an
 unpaused pre-start corrupts EKF2 timing, see the `_start_gz_px4.sh` header).
 The `default` world keeps the original PX4-starts-Gazebo path byte-identical.
-All repo worlds under `sim/worlds/` launch via `just sim --world <name>`.
+All repo worlds under `sim/worlds/` launch via `just sim start --world <name>`.
 
 **Perception: synthetic (default) vs real (camera model).** The stock `x500`
 publishes no camera, so `--vision aruco` on it bridges nothing and scenarios
@@ -42,10 +42,10 @@ publishes no camera, so `--vision aruco` on it bridges nothing and scenarios
 `/drone/marker_detection` by design — the fast, non-rendering tier and the only
 path for `--world default`. For REAL perception, `sim/models/x500_mono_cam_down`
 adds a downward camera whose sensor is named `camera` (matching `_vision_bridge`);
-booting `just sim --world marker_field --model x500_mono_cam_down --vision aruco`
+booting `just sim start --world marker_field --model x500_mono_cam_down --vision aruco`
 bridges `/camera/image_raw` and `aruco_pose_publisher` detects the rendered
 marker (~0.06 m median horizontal error at 3 m, plans/062). Scenario
-`09_aruco_hover_real` exercises this end to end and runs in `just test e2e` via
+`09_aruco_hover_real` exercises this end to end and runs in `just e2e` via
 its `sim_model`/`sim_world` fields in `tests/capabilities.toml`.
 
 Marker assets need an `<emissive_map>` to render in the gz camera SENSOR: a PBR

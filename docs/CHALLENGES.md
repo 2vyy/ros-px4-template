@@ -31,11 +31,11 @@ mission YAML; `just cap plan <challenge>` is the live build order from then on.
 | 4. World + map | `sim/worlds/<name>.sdf`, `config/marker_maps/<name>.yaml` | `just gen-world --spec sim/worlds/specs/<name>.yaml` | Paths printed; origin climb column clear |
 | 5. Install map | share dir via rebuild | `just check` | Build installs `config/marker_maps/*.yaml` |
 | 6. Mission | `config/missions/<name>.yaml` | Author against [MISSIONS.md](MISSIONS.md) schema | `just mission validate <name>`; `just mission sim <name>` |
-| 7. Overlay (optional) | `config/params/overlays/<name>.yaml` | Only if params differ from sim defaults | Overlay name resolves under `just sim --overlay` |
+| 7. Overlay (optional) | `config/params/overlays/<name>.yaml` | Only if params differ from sim defaults | Overlay name resolves under `just sim start --overlay` |
 | 8. Scenario | `tests/scenarios/<NN>_<name>.py` | `just scenario-new <NN>_<name>`; edit `done()`; real `detail` in `write_report` | Stub runs; claim points at `scenario_file` |
 | 9. Claim boot fields | same `capabilities.toml` entry | Set `sim_world` / `sim_model` / `sim_vision` / `mission` | `just cap show` lists the claim |
-| 10. Live | — | `just scenario <name>` | PASS verdict with real detail |
-| 11. E2E (optional) | — | `just test e2e` | Aggregate PASS; evidence auto-recorded if tree clean |
+| 10. Live | — | `just run <name>` | PASS verdict with real detail |
+| 11. E2E (optional) | — | `just e2e` | Aggregate PASS; evidence auto-recorded if tree clean |
 | 12. Record | `tests/evidence/<claim>/` | `just cap record <claim>` (or rely on e2e auto-record) | `just cap show` at `sim-flown`; commit the evidence file |
 
 Do **not** invent a mission YAML generator or a scenario generator beyond
@@ -80,13 +80,13 @@ just gen-world --spec sim/worlds/specs/gate_run.yaml
 just check
 
 # Live boot of the generated world (no mission/scenario required for READY):
-just sim --world gate_run
+just sim start --world gate_run
 just log topics
 just stop
 
 # 6-12. Author mission + scenario against the claim frontier, then:
 # just mission sim <name>
-# just scenario <NN>_<name>
+# just run <NN>_<name>
 # just cap record <claim>
 ```
 

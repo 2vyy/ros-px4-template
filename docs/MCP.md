@@ -4,9 +4,9 @@
 
 [ros-mcp-server](https://github.com/robotmcp/ros-mcp-server).
 
-**ROS (apt):** `ros-jazzy-rosbridge-suite` in the same environment that runs `just sim` (distrobox `ubuntu` on CachyOS). Project Python tools use **`uv sync`**, not pip.
+**ROS (apt):** `ros-jazzy-rosbridge-suite` in the same environment that runs `just sim start` (distrobox `ubuntu` on CachyOS). Project Python tools use **`uv sync`**, not pip.
 
-Rosbridge WebSocket on port **9090**. It is launched by `hardware/launch/hardware.launch.py`, which is included by `sim/launch/sim_full.launch.py`. So both `just sim` and `just hw` bring it up.
+Rosbridge WebSocket on port **9090**. It is launched by `hardware/launch/hardware.launch.py`, which is included by `sim/launch/sim_full.launch.py`. So both `just sim start` and `just hw` bring it up.
 
 Check the port (do not point HTTP `curl` at the WebSocket endpoint):
 
@@ -51,6 +51,6 @@ For invoking `just` from a Windows shell when the repo lives on `C:\`, see [AGEN
 
 ## Typical session
 
-1. `just sim`. Wait until `/fmu/out/*` topics appear (a few minutes for PX4 boot, EKF2, preflight).
+1. `just sim start`. Wait until `/fmu/out/*` topics appear (a few minutes for PX4 boot, EKF2, preflight).
 2. Connect MCP to `127.0.0.1:9090`.
 3. On failure: [AGENTS.md §MCP / logs](../AGENTS.md#mcp--logs).

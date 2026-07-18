@@ -73,7 +73,7 @@ scenario `09_aruco_hover_real` is the real end-to-end camera-pipeline check. See
 
 1. Publish or subscribe in a node under `src/core/ros_px4_template_core/nodes/` and update that module's ROS 2 Interface docstring.
 2. Add a row above (backticked name, type, owner).
-3. Run `just sim` then `just log topics` to confirm the topic shows up live.
+3. Run `just sim start` then `just log topics` to confirm the topic shows up live.
 
 The Type and Dir columns are enforced by `just log topics` against the live
 graph, so they must match the node's actual publisher/subscriber and message

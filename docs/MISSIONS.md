@@ -69,7 +69,7 @@ here instead of after a ~16-30s Gazebo + PX4 SITL boot.
 
 ## Simulating a mission (no sim boot)
 
-`just mission validate` proves a mission *parses*; `just scenario` proves it
+`just mission validate` proves a mission *parses*; `just run` proves it
 *flies* but costs a Gazebo + PX4 boot. `just mission sim <name>` fills the gap:
 it ticks the real engine over a crude kinematic model and reports whether the
 graph actually *progresses* to a terminal state, in under a second.

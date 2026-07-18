@@ -6,7 +6,7 @@ Operating notes for an AI agent driving this repo. Optimized for debugging, runn
 
 ## Initial setup
 
-Complete [README quick start](README.md#quick-start) (through `just sim` or `just hw`). For MCP and rosbridge checks, see [docs/MCP.md](docs/MCP.md).
+Complete [README quick start](README.md#quick-start) (through `just sim start` or `just hw start`). For MCP and rosbridge checks, see [docs/MCP.md](docs/MCP.md).
 
 ## Where to run
 
@@ -17,7 +17,7 @@ Complete [README quick start](README.md#quick-start) (through `just sim` or `jus
 | WSL fallback (repo on `C:\`, agent in PowerShell) | `wsl -d Ubuntu -- bash -lc 'cd ~/Projects/ros-px4-template && just <recipe>'` |
 | Distrobox | `distrobox enter ubuntu -- bash -lc 'cd ~/Projects/ros-px4-template && just <recipe>'` |
 
-Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, PX4 SITL, and `ros2 launch` need a Linux shell. If you are unsure of the context, run `uname -a` first.
+Never run `just build`, `just sim start`, or `colcon` from PowerShell or cmd. Gazebo, PX4 SITL, and `ros2 launch` need a Linux shell. If you are unsure of the context, run `uname -a` first.
 
 ## Invariants (do not break)
 
@@ -35,11 +35,13 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | Workspace Setup | `uv run tasks.py setup` | `just setup` clones dependencies, runs uv sync and rosdep |
 | Tasks | `just` | `just --list` is canonical. Wraps `tasks.py` |
 | Quality gateway | `just check` | Automatically formats, lint-fixes, typechecks, builds workspace, and runs unit tests |
-| Simulation & Run | `just sim [flags]` | Smart-builds, boots detached, waits till ready, prints verdict, returns. Never holds the terminal. Flags: `--gui`, `--world`, `--model`, `--vision`, `--overlay`, `--record`, `--no-build`, `--timeout` |
-| Real Hardware | `just hw [flags]` | Same detached + verdict contract for the serial flight controller |
+| Simulation & Run | `just sim start [flags]` | Smart-builds, boots detached, waits till ready, prints verdict, returns. Never holds the terminal. Flags: `--gui`, `--world`, `--model`, `--vision`, `--overlay`, `--record`, `--no-build`, `--timeout` |
+| Real Hardware | `just hw start [flags]` | Same detached + verdict contract for the serial flight controller |
 | Lifecycle | `just stop` | Exhaustive cold teardown; no process survives |
-| Verification suite | `just test [type]` / `just scenario <name>` | Smart-builds first. Types: `unit`, `e2e`. e2e blocks by default (captures terminal, ends with PASS/FAIL); `--detach` runs it in the background, poll with `just e2e-status` |
-| Forensic toolkit | `just log [subcmd]` | Observability helper: `summary`, `tail`, `topics` |
+| Unit tests | `just test` | Smart-builds first, runs the pytest suite |
+| Live runs | `just run <name>` / `just e2e` | One scenario under the run supervisor / the full cycle. e2e blocks by default; `--detach` runs it in the background, poll with `just wait run` |
+| Run records | `just runs` / `just wait run` | Recent verdicts table / bounded wait on the active run or cycle |
+| Forensic toolkit | `just log [subcmd]` | Observability helper: `since`, `events`, `summary`, `tail`, `topics` |
 | Claims ladder | `just cap [subcmd]` | Derived capability rungs: `show`, `plan`, `record` |
 
 `just check` runs lint, invariants, typecheck, and unit tests in that order. Run this before every commit.
@@ -51,22 +53,24 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | One-time workspace setup | `just setup` |
 | Quality checks + Build | `just check` |
 | Clean build/logs | `just clean` |
-| Headless simulation | `just sim` (add `--gui` for the Gazebo GUI) |
-| Connect to Serial Hardware FC | `just hw --port /dev/ttyUSB0 --baud 921600` |
+| Headless simulation | `just sim start` (add `--gui` for the Gazebo GUI) |
+| Connect to Serial Hardware FC | `just hw start --port /dev/ttyUSB0 --baud 921600` |
 | Stop everything | `just stop` (exhaustive cold teardown) |
 | Run unit tests | `just test` |
-| Run a live scenario | `just scenario <name>` (e.g. `just scenario 01_arm_takeoff`) |
-| Run headless E2E cycle (blocks) | `just test e2e` |
-| Run E2E detached (background) | `just test e2e --detach` |
-| Poll a detached e2e run | `just e2e-status` |
+| Run a live scenario | `just run <name>` (e.g. `just run 01_arm_takeoff`) |
+| Run headless E2E cycle (blocks) | `just e2e` |
+| Run E2E detached (background) | `just e2e --detach` |
+| Wait on the active run/cycle | `just wait run --timeout 120` |
+| List recent run verdicts | `just runs` |
+| Read new log lines since last call | `just log since` |
 | Tail structured logs live | `just log tail` |
-| View live workspace status | `just status` |
+| View live workspace status | bare `just` |
 | Validate live topic graph | `just log topics` |
 | Show capability registry | `just cap show` |
 | Record verified capability | `just cap record <id>` |
 | Plan next claim action | `just cap plan [id]` |
 
-Sim flags: `just sim [--gui] [--world <world>] [--model <model>] [--vision <bool>] [--overlay auto_arm|inspect|hover] [--record] [--no-build] [--timeout <s>]`. Defaults: headless, `default` world, `x500`, vision off, no overlay (boots disarmed), recording off. There is no speed flag: physics comes solely from the world SDF; any live gz `set_physics` call corrupts PX4's estimator (see `plans/065-e2e-speed-factor.md`). `just sim` always detaches and returns after readiness; watch with `just log tail`, stop with `just stop`.
+Sim flags: `just sim start [--gui] [--world <world>] [--model <model>] [--vision <bool>] [--overlay auto_arm|inspect|hover] [--record] [--no-build] [--timeout <s>]`. Defaults: headless, `default` world, `x500`, vision off, no overlay (boots disarmed), recording off. There is no speed flag: physics comes solely from the world SDF; any live gz `set_physics` call corrupts PX4's estimator (see `plans/065-e2e-speed-factor.md`). `just sim start` always detaches and returns after readiness; watch with `just log tail`, stop with `just stop`.
 
 ## Verify (use in this order when something changed)
 
@@ -74,13 +78,13 @@ Sim flags: `just sim [--gui] [--world <world>] [--model <model>] [--vision <bool
 |------|---------|-------|
 | Fast | `just check` | Nothing running |
 | Mission logic | `just mission sim <name>` | Nothing running |
-| Graph | `just log topics` | `just sim` running |
-| Live | `just scenario 01_arm_takeoff` | Full sim |
-| All-in-one | `just test e2e` | `just setup` done, ports free |
+| Graph | `just log topics` | `just sim start` running |
+| Live | `just run 01_arm_takeoff` | Full sim |
+| All-in-one | `just e2e` | `just setup` done, ports free |
 | Record | `just cap record <id>` | Scenario PASS |
 | Claims | `just cap show` / `just cap plan [id]` | Nothing running |
 
-`/clock` missing in a hardware-style launch is expected. Use `just sim` so the Gazebo clock bridge in `sim_full.launch.py` publishes `/clock`.
+`/clock` missing in a hardware-style launch is expected. Use `just sim start` so the Gazebo clock bridge in `sim_full.launch.py` publishes `/clock`.
 
 ## Claims
 
@@ -107,9 +111,24 @@ Every command ends in a concise English verdict that states what was verified, n
 | 2 | usage error (unknown command/scenario, bad flag) |
 | 3 | precondition failure (port busy, PX4_DIR missing/invalid, ROS not sourced) |
 
-`just sim` boots disarmed by default; pass `--overlay auto_arm` (or trigger it from a scenario) to arm. Launch never holds the terminal: `just sim` returns after the verdict, the stack runs in the background, `just log tail` watches it, `just stop` ends it.
+`just sim start` boots disarmed by default; pass `--overlay auto_arm` (or trigger it from a scenario) to arm. Launch never holds the terminal: `just sim start` returns after the verdict, the stack runs in the background, `just log tail` watches it, `just stop` ends it.
 
-`just test e2e` blocks by default: it holds the terminal for the whole cycle and ends with the aggregate PASS/FAIL verdict and a fixed exit code (0 all pass, 1 any fail). Scenarios run in claims-DAG order; PASS auto-records evidence under `tests/evidence/` (skipped with a NOTE if the flight-relevant tree is dirty). Pass `--detach` to run it in a background supervisor instead: it returns after an `E2E STARTED` verdict and the cycle runs detached, watched with `just e2e-status` and stopped with `just stop`. `just e2e-status` exits 0 (finished, all pass), 1 (finished with failures, or run aborted/supervisor died), 2 (no run found), 3 (still running; output includes group progress and a `last activity Ns ago` age to tell slow from wedged). (`--wait` is a deprecated no-op alias, since blocking is now the default.)
+`just e2e` blocks by default: it holds the terminal for the whole cycle and ends with the aggregate PASS/FAIL verdict and a fixed exit code (0 all pass, 1 any fail). Scenarios run in claims-DAG order; PASS auto-records evidence under `tests/evidence/` (skipped with a NOTE if the flight-relevant tree is dirty). Pass `--detach` to run it in a background supervisor instead: it returns after an `E2E STARTED` verdict and the cycle runs detached, watched with `just wait run` and stopped with `just stop`. `just wait run` exits 0 (finished, all pass), 1 (finished with failures, or run aborted/supervisor died), 2 (nothing to wait on), 3 (still running at `--timeout`; output includes the heartbeat snapshot to tell slow from wedged). (`--wait` is a deprecated no-op alias on `just e2e`, since blocking is now the default.)
+
+## Harness contract (bounded commands)
+
+Every command is bounded: launches wait-with-timeout, runs execute under a
+supervisor (hard 300s deadline + 90s log-silence watchdog, verdict file always
+written to `logs/runs/`), waits take `--timeout` and exit 3 with a progress
+snapshot when still running. The only intentionally unbounded command is
+`just log tail` (human-only). Verdicts: `PASS` / `FAIL` (flew, missed
+criteria - read the mission events) / `STUCK` (stack or harness wedged - read
+the stack log).
+
+| Driving agent | Long-running workflow |
+|---------------|----------------------|
+| Claude Code | Launch `just run <name>` or `just e2e` as a background task; the harness re-invokes you when the verdict lands. No polling. |
+| Any harness | `just e2e --detach`, then repeated `just wait run --timeout 120`; each timeout prints progress and exits 3. |
 
 ## Reference
 
@@ -129,10 +148,11 @@ Every command ends in a concise English verdict that states what was verified, n
 
 All processes (our nodes plus PX4 / Gazebo / XRCE) stream to one session log, `logs/latest.log`, in logfmt: every line is `t=<rel_s> src=<source> ...`. There are no per-node `*.jsonl` files and no `jq` step.
 
-1. **Grep it directly**: `rg src=px4 logs/latest.log` (one source), `rg event= logs/latest.log` (state transitions), `rg ERROR logs/latest.log`, `rg -C 5 "t=42\." logs/latest.log` (everything around t=42). Field extraction needs no tool: `rg event=WAYPOINT_REACHED logs/latest.log | grep -o "err_m=[0-9.]*"`.
-2. **Arc summary**: `just log summary` (re)generates and prints `logs/latest_summary.json` (run arc, errors, per-scenario pass/fail). E2E prints it automatically at the end.
-3. **Live tail**: `just log tail` follows `logs/latest.log`.
-4. **One scenario's verdict**: `just scenario-status [name]` prints the PASS/FAIL line for a single run from `logs/scenario_<name>.json` (default: the most recent), exit 0 pass / 1 fail / 2 missing. No `jq`.
+1. **Incremental read**: `just log since` prints only what appended since your last call (events+errors by default, `--raw` for everything), with an aggregate trailer. An empty result is definitive. `just log events --run <id>` slices the events view to one run record's time window.
+2. **Grep it directly**: `rg src=px4 logs/latest.log` (one source), `rg event= logs/latest.log` (state transitions), `rg ERROR logs/latest.log`, `rg -C 5 "t=42\." logs/latest.log` (everything around t=42). Field extraction needs no tool: `rg event=WAYPOINT_REACHED logs/latest.log | grep -o "err_m=[0-9.]*"`.
+3. **Arc summary**: `just log summary` (re)generates and prints `logs/latest_summary.json` (run arc, errors, per-scenario pass/fail). E2E prints it automatically at the end.
+4. **Live tail**: `just log tail` follows `logs/latest.log`.
+5. **Run verdicts**: `just runs` lists recent run records (id, verdict, reason, age); `just wait run` blocks (bounded) on the active run and prints its verdict.
 
 Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing else is filtered, so a smoking gun is never hidden.
 
@@ -148,11 +168,11 @@ Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing
 | X | Check |
 |---|-------|
 | `just check` | `log/latest_build/`; confirm `src/px4_msgs` is on `release/1.17` (`just check`); ensure ROS is sourced or distrobox is available (handled automatically by `justfile` now) |
-| `just sim` hangs at Gazebo | `.env` has correct `PX4_DIR`; `${PX4_DIR}/build/px4_sitl_default/bin/px4` exists; on WSL confirm WSLg for GUI; `just sim` is headless by default (GUI only via `--gui`) |
+| `just sim start` hangs at Gazebo | `.env` has correct `PX4_DIR`; `${PX4_DIR}/build/px4_sitl_default/bin/px4` exists; on WSL confirm WSLg for GUI; `just sim start` is headless by default (GUI only via `--gui`) |
 | No `/fmu/out/*` topics | PX4 SITL is running and MicroXRCEAgent is on UDP 8888 (`ss -ulnp | grep 8888`); check `logs/latest.log` (`rg src=xrce`) for the XRCE handshake |
 | Scenario arm fail | `gcs_heartbeat` via `uv run`; `just stop` kills MicroXRCEAgent (session key rotates each launch); `arm_delay_s` in `config/params/sim.yaml` (sim default 10s, hardware 5s) |
 | Mission stuck in `takeoff` | Gate: effective ENU z (`max(pose, controller alt)`) >= `takeoff_altitude_m - takeoff_altitude_tolerance_m`. Check `position_node` output: `rg "First pose published" logs/latest.log` and confirm `/drone/odom` is publishing (`just log topics`). |
-| Mission never enters `marker_hover` | Boot with `just sim --vision aruco`; check `/drone/marker_detection` publishes valid detections (`rg src=aruco_pose_publisher logs/latest.log`); the `marker_stable` guard needs `n` consecutive fresh detections (default 5) |
+| Mission never enters `marker_hover` | Boot with `just sim start --vision aruco`; check `/drone/marker_detection` publishes valid detections (`rg src=aruco_pose_publisher logs/latest.log`); the `marker_stable` guard needs `n` consecutive fresh detections (default 5) |
 | `just log topics` reports missing | Topic backticked in `docs/TOPICS.md` but never published; either fix the node or remove from the manifest |
 | MCP errors | See [docs/MCP.md](docs/MCP.md); confirm port 9090 open and `which uvx` path correct for the OS hosting rosbridge |
 | Stale ROS daemon between runs | `just stop` (kills sim processes plus `ros2 daemon stop`) before relaunching |
@@ -165,11 +185,11 @@ Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing
   1. Create it under `src/core/ros_px4_template_core/nodes/`.
   2. Add an entry to `entry_points["console_scripts"]` in `src/core/setup.py`.
   3. Add a `Node(...)` line in `hardware/launch/hardware.launch.py` so both sim and hardware launches pick it up.
-  4. `just check` then verify with `just status` or `ros2 node list`.
+  4. `just check` then verify with bare `just` or `ros2 node list`.
 - New libraries go in `src/core/ros_px4_template_core/lib/`. Add unit tests in `tests/unit/`. `lib/` must remain `rclpy` free where possible (see `StructuredLogger` Protocol pattern).
 - Always use `StructuredLogger` for agent-facing diagnostics. Call `self.slog.close()` from `destroy_node`.
 - Missions are data-driven YAML state graphs. New behaviors/guards go in `src/core/ros_px4_template_core/lib/mission/` and are registered in `src/core/ros_px4_template_core/lib/mission/registry.py`; missions are loaded by `src/core/ros_px4_template_core/lib/mission/loader.py`. Do not embed phase logic in `src/core/ros_px4_template_core/nodes/mission_manager.py`. After adding a behavior or guard, regenerate the schema (`just mission schema > schemas/mission.schema.json`) and add its row to the `docs/MISSIONS.md` Behaviors/Guards table (both are unit-enforced).
-- New scenarios go in `tests/scenarios/<NN>_<name>.py` using `spin_until` and `PX4_QOS` from `tests/scenarios/_common.py`. Scaffold a runnable stub with `just scenario-new <NN>_<name>` (writes the `Scenario` boilerplate and prints the `capabilities.toml` snippet to add), then edit the `done()` predicate. Each must end by calling `write_report`, which prints a rich one-line verdict (`PASS`/`FAIL <name> <detail> <Ns>`); pass a real `detail` (waypoint error, hold time, or the fail reason), never a bare pass. Add a claim entry in `tests/capabilities.toml` with `requires`, `scenario_file`, and `platforms = ["sim"]`; after a PASS, run `just cap record <id>` and commit the evidence file.
+- New scenarios go in `tests/scenarios/<NN>_<name>.py` using `spin_until` and `PX4_QOS` from `tests/scenarios/_common.py`. Scaffold a runnable stub with `just scenario-new <NN>_<name>` (writes the `Scenario` boilerplate and prints the `capabilities.toml` snippet to add), then edit the `done()` predicate. Each must end by calling `write_report`, which prints a rich one-line verdict (`PASS`/`FAIL <name> <detail> <Ns>`); pass a real `detail` (waypoint error, hold time, or the fail reason), never a bare pass. Add a claim entry in `tests/capabilities.toml` with `requires`, `scenario_file`, and `platforms = ["sim"]`; run it with `just run <NN>_<name>`; after a PASS, run `just cap record <id>` and commit the evidence file.
 - Do not commit `.env`, `logs/`, `build/`, `install/`, or `log/`.
 
 ## House style

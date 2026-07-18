@@ -77,13 +77,13 @@ just setup            # clones px4_msgs, uv sync, rosdep, and builds
 1. Launch the full simulation stack:
 
 ```bash
-just sim              # Gazebo (headless), PX4 SITL, XRCE, ROS nodes, rosbridge
+just sim start              # Gazebo (headless), PX4 SITL, XRCE, ROS nodes, rosbridge
 ```
 
 1. With the sim loaded, run a scenario and record the capability:
 
 ```bash
-just scenario 01_arm_takeoff
+just run 01_arm_takeoff
 just cap record arm_takeoff
 ```
 
@@ -127,14 +127,17 @@ ros-px4-template/
 ## Everyday commands
 
 ```bash
-just                              # list all workflows
+just                              # live status snapshot + where to go next
 just setup                        # one-time setup (px4_msgs, uv, rosdep, build)
 just check                        # format, lint, typecheck, build, unit tests
-just sim                          # boot headless sim detached, wait until ready, return
-just sim --gui                    # same, with the Gazebo GUI
+just sim start                    # boot headless sim detached, wait until ready, return
+just sim start --gui              # same, with the Gazebo GUI
 just stop                         # exhaustive cold teardown of the whole stack
-just status                       # JSON status snapshot of running sim
-just scenario <name>              # live scenario (e.g. 01_arm_takeoff)
+just run <name>                   # one scenario, supervised (e.g. 01_arm_takeoff)
+just e2e                          # full headless cycle (--detach for background)
+just wait run                     # bounded wait on the active run/cycle (exit 3 = still going)
+just runs                         # recent run records: id, verdict, reason, age
+just log since                    # new log lines since your last call (events+errors)
 just mission validate <name>      # validate a mission YAML in <1s, no sim
 just cap show                     # print derived capability rungs
 just cap plan [claim]             # print the dependency-first claims frontier

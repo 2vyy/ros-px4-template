@@ -2,8 +2,8 @@
 
 ## Overview
 
-`just sim --record` records a ROS 2 bag (the bridge/agent topics) and, on
-teardown, captures the matching PX4 SITL ULog. A default `just sim` records
+`just sim start --record` records a ROS 2 bag (the bridge/agent topics) and, on
+teardown, captures the matching PX4 SITL ULog. A default `just sim start` records
 nothing; recording is opt-in for runs you plan to inspect with `just analyze`.
 Those two recorded logs share no clock: the bag is wall time, the ULog is PX4
 boot time, and Gazebo may be running faster or slower than real time.
@@ -23,7 +23,7 @@ the ULog comes from PX4 SITL running under `$PX4_DIR`, not a real autopilot.
 
 - skein checked out as a sibling repo at `../skein` (i.e. next to this repo's
   directory), or set `SKEIN_DIR=/path/to/skein` to point elsewhere.
-- The `ubuntu` distrobox — `just sim`, `just stop`, and `just analyze` all
+- The `ubuntu` distrobox — `just sim start`, `just stop`, and `just analyze` all
   route through `_run`, which auto-enters the distrobox when host ROS isn't
   present. You don't need to enter it manually.
 - `PX4_DIR` set in `.env`, pointing at your PX4 source checkout (needed for
@@ -33,10 +33,10 @@ the ULog comes from PX4 SITL running under `$PX4_DIR`, not a real autopilot.
 ## 1. Record a run
 
 ```bash
-just sim --record --overlay auto_arm
+just sim start --record --overlay auto_arm
 ```
 
-Recording is opt-in; a default `just sim` records nothing and `just analyze`
+Recording is opt-in; a default `just sim start` records nothing and `just analyze`
 requires a `--record` run. Once the stack is up, the readiness verdict confirms
 recording started:
 
@@ -168,7 +168,7 @@ The bag records this minimum useful topic set (defined in
   `vehicle_local_position`).
 - `--stats` — print per-channel rate/gap aggregates instead of (or alongside)
   query results.
-- Each `just sim --record` produces exactly one run under `logs/runs/<id>/`.
+- Each `just sim start --record` produces exactly one run under `logs/runs/<id>/`.
   `just clean` wipes `logs/runs/` entirely.
 
 ## SITL-only & caveats
@@ -176,7 +176,7 @@ The bag records this minimum useful topic set (defined in
 - No flight controller is involved — this is PX4 SITL only. The ULog comes
   from `$PX4_DIR/build/px4_sitl_default/rootfs/log/`.
 - Recording is best-effort: if the bag recorder fails to start or the ULog
-  can't be found/copied, `just sim` / `just stop` still complete — recording
+  can't be found/copied, `just sim start` / `just stop` still complete — recording
   never aborts the sim.
 - Bag rotation / size caps are not implemented. Long-running sessions will
   grow the bag file without bound.
@@ -186,8 +186,8 @@ The bag records this minimum useful topic set (defined in
 
 ## Troubleshooting
 
-- `no run at logs/runs/…` — record a run first with `just sim --record` (or
-  `just sim --record --overlay auto_arm`) before analyzing.
+- `no run at logs/runs/…` — record a run first with `just sim start --record` (or
+  `just sim start --record --overlay auto_arm`) before analyzing.
 - `skein project not found …` — set `SKEIN_DIR=/path/to/skein` if skein
   isn't checked out as a sibling at `../skein`.
 - `Warning: no session.ulg for this run` — overlay proceeds bag-only. Either
