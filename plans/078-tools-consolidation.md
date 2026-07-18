@@ -216,11 +216,11 @@ Then:
   `from reports import build_block, build_status, format_scenario_status`,
   dedupe the shared header lines. Assertions unchanged.
 
-- [ ] Step 1: create reports.py, delete the three files, rewire tasks.py
-- [ ] Step 2: merge the test files; `uv run pytest tests/unit/ -q` all pass
-- [ ] Step 3: `just check` (check_docs runs; confirms no doc referenced the
+- [x] Step 1: create reports.py, delete the three files, rewire tasks.py
+- [x] Step 2: merge the test files; `uv run pytest tests/unit/ -q` all pass
+- [x] Step 3: `just check` (check_docs runs; confirms no doc referenced the
       old filenames)
-- [ ] Step 4: commit `refactor(tools): merge verdict readers into reports.py`
+- [x] Step 4: commit `refactor(tools): merge verdict readers into reports.py`
 
 ### Task 2: shared probes for port + rosapi checks
 
@@ -304,11 +304,11 @@ def _get_topics_via_ws(port: int = _ROSBRIDGE_PORT, timeout: float = 1.0) -> lis
 Do NOT touch `tools/preflight.py` (068 owns its port semantics, and its
 `_port_free` for 8888 is UDP-aware after 068).
 
-- [ ] Step 1: apply; `uv run pytest tests/unit/ -q` (test_wait_ready and
+- [x] Step 1: apply; `uv run pytest tests/unit/ -q` (test_wait_ready and
       test_status patch module-level names, which still exist)
-- [ ] Step 2: live spot-check: with `just sim` up, `just status` shows
+- [x] Step 2: live spot-check: with `just sim` up, `just status` shows
       `stack: UP` with nodes (ws path); `just stop`
-- [ ] Step 3: commit `refactor(tools): shared probes for port + rosapi checks`
+- [x] Step 3: commit `refactor(tools): shared probes for port + rosapi checks`
 
 ### Task 3: fold log_query.py into tasks.py
 
@@ -343,10 +343,10 @@ Delete `tools/log_query.py`. Update the `check_docs.py` `_SUBCOMMANDS` comment
 (it names `tools/log_query.py` as a source of log subcommands; point it at
 `tasks.py` instead).
 
-- [ ] Step 1: apply; `just log summary` and `just log tail` behave as before
+- [x] Step 1: apply; `just log summary` and `just log tail` behave as before
       (`just log topics` unchanged, it was already defined in tasks.py)
-- [ ] Step 2: `just check`
-- [ ] Step 3: commit `refactor(tasks): absorb the two-command log_query shim`
+- [x] Step 2: `just check`
+- [x] Step 3: commit `refactor(tasks): absorb the two-command log_query shim`
 
 ### Task 4: cache check_docs corpus scans
 
@@ -369,20 +369,20 @@ all 8 `test_check_docs.py` call sites pass unmodified. Membership is the only
 use of `_recipes`' result, so frozenset is drop-in. Each pytest tmp_path is a
 distinct cache key, so tests that build different roots are unaffected.
 
-- [ ] Step 1: apply; `uv run pytest tests/unit/test_check_docs.py -q` all pass
-- [ ] Step 2: `time uv run python tools/check_docs.py` - expect a large drop
+- [x] Step 1: apply; `uv run pytest tests/unit/test_check_docs.py -q` all pass
+- [x] Step 2: `time uv run python tools/check_docs.py` - expect a large drop
       (the corpus was re-read per identifier token); record before/after in
       the commit message
-- [ ] Step 3: commit `perf(check_docs): scan the corpus and justfile once, not per token`
+- [x] Step 3: commit `perf(check_docs): scan the corpus and justfile once, not per token`
 
 ### Task 5: final gate + metrics
 
-- [ ] `just check` all pass
-- [ ] `just test e2e` all 8 PASS (one full live gate for the whole plan)
-- [ ] Record: `ls tools/*.py | wc -l` (22 -> 19),
+- [x] `just check` all pass
+- [x] `just test e2e` all 8 PASS (one full live gate for the whole plan)
+- [x] Record: `ls tools/*.py | wc -l` (22 -> 19),
       `git ls-files 'tools/*.py' | xargs wc -l | tail -1` (expect roughly
       3,067 -> ~2,800), tests file count (62 -> 60)
-- [ ] Update `plans/README.md` row
+- [x] Update `plans/README.md` row
 
 ## STOP conditions
 

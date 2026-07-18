@@ -1,12 +1,12 @@
 {
   "claim": "arm_takeoff",
   "platform": "sim",
-  "commit": "7861e11",
-  "run_id": "20260718_031216",
+  "commit": "9565931",
+  "run_id": "20260718_042311",
   "verdict": "PASS",
-  "elapsed_s": 33.79,
+  "elapsed_s": 34.32,
   "detail": {
-    "z_enu": 2.996731698513031,
+    "z_enu": 3.0038532465696335,
     "controller_state": "OFFBOARD_TRACK",
     "mission_phase": "hover"
   },

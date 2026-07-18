@@ -1,17 +1,17 @@
 {
   "claim": "precision_land",
   "platform": "sim",
-  "commit": "7861e11",
-  "run_id": "20260718_031826",
+  "commit": "9565931",
+  "run_id": "20260718_042918",
   "verdict": "PASS",
-  "elapsed_s": 42.5,
+  "elapsed_s": 38.24,
   "detail": {
-    "detail": "landed xy_err=0.07m",
+    "detail": "landed xy_err=0.04m",
     "entered_descend": true,
     "froze_on_loss": true,
     "reacquired": true,
     "min_z_seen": -0.07,
-    "xy_err_at_min_z": 0.07,
+    "xy_err_at_min_z": 0.04,
     "nav_land_ack": "ACCEPTED",
     "disarmed_seen": true
   },
