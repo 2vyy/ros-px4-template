@@ -85,13 +85,7 @@ def _git_branch(path: Path) -> str:
     return result.stdout.strip() if result.returncode == 0 else "<unknown>"
 
 
-def main() -> None:
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", default="gui")
-    args = parser.parse_args()
-
+def run(mode: str = "gui") -> bool:
     ros_setup = os.environ.get("ROS_SETUP", "")
     px4_dir = os.environ.get("PX4_DIR", "")
     px4_msgs = ROOT / "src" / "px4_msgs"
@@ -127,7 +121,7 @@ def main() -> None:
         )
     )
 
-    if args.mode not in ("px4", "edit"):
+    if mode not in ("px4", "edit"):
         port_8888_free = _udp_port_free(8888)
         pid_8888 = "" if port_8888_free else _port_pid(8888, "udp")
         results.append(
@@ -150,7 +144,7 @@ def main() -> None:
     uv_ok = shutil.which("uv") is not None
     results.append(_check("uv on PATH", uv_ok))
 
-    if args.mode == "hw":
+    if mode == "hw":
         microxrce_ok = shutil.which("MicroXRCEAgent") is not None
         results.append(
             _check(
@@ -192,7 +186,7 @@ def main() -> None:
     )
 
     rosbridge_py_ok = False
-    if ros_setup and Path(ros_setup).exists() and args.mode not in ("px4", "edit"):
+    if ros_setup and Path(ros_setup).exists() and mode not in ("px4", "edit"):
         r = subprocess.run(
             [
                 "bash",
@@ -222,7 +216,16 @@ def main() -> None:
     all_ok = all(results)
     print()
     print("Preflight OK." if all_ok else "Preflight FAILED — fix issues above before launching.")
-    sys.exit(0 if all_ok else 1)
+    return all_ok
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", default="gui")
+    args = parser.parse_args()
+    sys.exit(0 if run(args.mode) else 1)
 
 
 if __name__ == "__main__":

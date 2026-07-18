@@ -68,11 +68,16 @@ def check_px4_msgs_branch(px4_msgs: Path = PX4_MSGS) -> bool:
     return True
 
 
-def main() -> None:
+def run() -> bool:
     ok = check_px4_msgs_branch()
-    if not ok:
+    if ok:
+        print("All invariant checks passed.")
+    return ok
+
+
+def main() -> None:
+    if not run():
         sys.exit(1)
-    print("All invariant checks passed.")
 
 
 if __name__ == "__main__":

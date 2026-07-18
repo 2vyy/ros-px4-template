@@ -126,10 +126,7 @@ def _px4_standby(not_before: float) -> bool:
         return False
 
 
-@app.command()
-def main(
-    timeout: int = typer.Option(180, "--timeout", help="Seconds before giving up"),
-) -> None:
+def wait(timeout: int = 180) -> bool:
     deadline = time.monotonic() + timeout
     # Wall-clock reference for the params-flag freshness gate (mtime is wall clock).
     # wait_ready is invoked after the stack spawns, so this session's flag is always
@@ -166,14 +163,22 @@ def main(
             # from the world SDF at boot.
             typer.echo("  [OK] Physics at realtime (world SDF defaults)")
             typer.echo("Stack ready.")
-            raise typer.Exit(0)
+            return True
 
         time.sleep(_POLL_INTERVAL_S)
     typer.echo(
         f"TIMEOUT after {timeout}s — topic={topic_ok} rosbridge={rosbridge_ok} standby={standby_ok}",
         err=True,
     )
-    sys.exit(1)
+    return False
+
+
+@app.command()
+def main(
+    timeout: int = typer.Option(180, "--timeout", help="Seconds before giving up"),
+) -> None:
+    if not wait(timeout):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

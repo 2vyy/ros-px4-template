@@ -154,13 +154,8 @@ def _doc_files(root: Path) -> list[Path]:
     return [f for f in files if f.is_file()]
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--verbose", action="store_true")
-    args = parser.parse_args(argv)
-
-    root = args.root.resolve()
+def run(root: Path, verbose: bool = False) -> int:
+    root = root.resolve()
     failed = 0
     checked = 0
     skipped = 0
@@ -170,12 +165,12 @@ def main(argv: list[str] | None = None) -> None:
             kind = classify(token)
             if kind == "skip":
                 skipped += 1
-                if args.verbose:
+                if verbose:
                     print(f"  [SKIP] {rel}: {token}")
                 continue
             checked += 1
             if check_token(token, kind, root):
-                if args.verbose:
+                if verbose:
                     print(f"  [OK]   {rel}: {token}")
             else:
                 failed += 1
@@ -183,8 +178,19 @@ def main(argv: list[str] | None = None) -> None:
 
     if failed:
         print(f"Docs identifier check FAILED: {failed} failed, {checked} checked")
-        raise SystemExit(1)
+        return failed
     print(f"Docs identifier check OK: {checked} checked, {skipped} skipped.")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--verbose", action="store_true")
+    args = parser.parse_args(argv)
+
+    if run(args.root, verbose=args.verbose) != 0:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

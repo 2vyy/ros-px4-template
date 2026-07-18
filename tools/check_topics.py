@@ -130,28 +130,18 @@ def _topics_in_source(topics: list[str], source_roots: list[Path]) -> set[str]:
     return found
 
 
-@app.command()
-def main(
-    manifest: Path = typer.Option(Path("docs/TOPICS.md"), "--manifest"),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Grep source files instead of querying live ros2 topic list"
-    ),
-    source_dir: Path = typer.Option(
-        Path("."),
-        "--source-dir",
-        help="Root to search for .py files in dry-run mode (default: repo root)",
-    ),
-    vision: bool = typer.Option(
-        False,
-        "--vision",
-        help="Enforce vision-conditional topics too (default: skip them)",
-    ),
-) -> None:
+def run(
+    manifest: Path,
+    *,
+    dry_run: bool = False,
+    source_dir: Path = Path("."),
+    vision: bool = False,
+) -> int:
     text = manifest.read_text(encoding="utf-8")
     expected = sorted(set(TOPIC_RE.findall(text)))
     if not expected:
         typer.echo("No topics found in manifest", err=True)
-        raise typer.Exit(1)
+        return 1
 
     if dry_run:
         roots = [source_dir / d for d in ("src", "sim", "hardware", "tools")]
@@ -162,9 +152,9 @@ def main(
             typer.echo(f"  [{status}] {topic}")
         if missing:
             typer.echo(f"{len(missing)} topic(s) not found in source", err=True)
-            raise typer.Exit(1)
+            return 1
         typer.echo(f"All {len(expected)} documented topics found in source.")
-        return
+        return 0
 
     specs = parse_manifest(text)
     failed_count = 0
@@ -184,8 +174,31 @@ def main(
             typer.echo(f"  [OK] {spec.name}")
     if failed_count:
         typer.echo(f"{failed_count} topic(s) failed", err=True)
-        raise typer.Exit(1)
+        return 1
     typer.echo(f"All {checked_count} checked topics match (type + direction).")
+    return 0
+
+
+@app.command()
+def main(
+    manifest: Path = typer.Option(Path("docs/TOPICS.md"), "--manifest"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Grep source files instead of querying live ros2 topic list"
+    ),
+    source_dir: Path = typer.Option(
+        Path("."),
+        "--source-dir",
+        help="Root to search for .py files in dry-run mode (default: repo root)",
+    ),
+    vision: bool = typer.Option(
+        False,
+        "--vision",
+        help="Enforce vision-conditional topics too (default: skip them)",
+    ),
+) -> None:
+    code = run(manifest, dry_run=dry_run, source_dir=source_dir, vision=vision)
+    if code:
+        raise typer.Exit(code)
 
 
 if __name__ == "__main__":
