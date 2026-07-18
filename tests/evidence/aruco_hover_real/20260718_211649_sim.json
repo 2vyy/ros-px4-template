@@ -1,21 +1,21 @@
 {
   "claim": "aruco_hover_real",
   "platform": "sim",
-  "commit": "a57d015",
-  "run_id": "20260718_083357",
+  "commit": "8c220d2",
+  "run_id": "20260718_211649",
   "verdict": "PASS",
-  "elapsed_s": 32.52,
+  "elapsed_s": 30.53,
   "detail": {
     "valid_detections": 70,
-    "best_window_median_horiz_m": 0.105,
-    "min_horiz_m": 0.036,
+    "best_window_median_horiz_m": 0.142,
+    "min_horiz_m": 0.055,
     "arm_trigger_ok": true
   },
   "conditions": {
     "world": "marker_field",
     "model": "x500_mono_cam_down",
     "vision": "aruco",
-    "run_record": "09_aruco_hover_real_20260718_033357"
+    "run_record": "09_aruco_hover_real_20260718_161649"
   },
   "grade": null
 }
