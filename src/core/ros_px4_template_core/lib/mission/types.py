@@ -52,5 +52,3 @@ class Mission:
     transitions: tuple[TransitionDef, ...]
     terminal: frozenset[str]
     requires: tuple[str, ...] = ()
-
-# staleness probe (075)
