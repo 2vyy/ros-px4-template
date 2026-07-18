@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from functools import cache
 from pathlib import Path
 
 _BACKTICK_RE = re.compile(r"`([^`\n]+)`")
@@ -27,7 +28,7 @@ _ALLOWLIST = frozenset(
 )
 
 # Sub-commands of the typer sub-apps (add_typer in tasks.py; commands in
-# tools/log_query.py, tools/capabilities.py, tools/mission_cli.py). A deliberate
+# tasks.py log_app, tools/capabilities.py, tools/mission_cli.py). A deliberate
 # single-file hardcode: when a sub-app gains a command the docs check fails on
 # the new doc line until this dict learns it. Cheap, visible, self-announcing.
 _SUBCOMMANDS = {
@@ -81,18 +82,20 @@ def classify(token: str) -> str:
     return "skip"
 
 
-def _recipes(root: Path) -> set[str]:
+@cache
+def _recipes(root: Path) -> frozenset[str]:
     path = root / "justfile"
     if not path.is_file():
-        return set()
+        return frozenset()
     recipes: set[str] = set()
     for raw in path.read_text(encoding="utf-8").splitlines():
         match = _RECIPE_RE.match(raw)
         if match is not None and not match.group(1).startswith("_"):
             recipes.add(match.group(1))
-    return recipes
+    return frozenset(recipes)
 
 
+@cache
 def _corpus_text(root: Path) -> str:
     chunks: list[str] = []
     for dirname in _CORPUS_DIRS:

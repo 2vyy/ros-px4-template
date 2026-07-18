@@ -196,10 +196,32 @@ import wait_ready
 from capabilities import app as cap_app
 from capabilities import scenario_sim_configs
 from cli_verdict import ExitCode, format_not_ready, format_ready, format_stopped
-from log_query import app as log_app
 from log_summary import build_run_summary, format_failure_digest
+from log_summary import main as log_summary_main
 from mission_cli import app as mission_app
 from scenario_scaffold import render_scenario
+
+log_app = typer.Typer()
+
+
+@log_app.command()
+def summary(
+    log: Path = typer.Option(Path("./logs/latest.log"), "--log"),
+    out: Path = typer.Option(Path("./logs/latest_summary.json"), "--out"),
+    run_id: str | None = typer.Option(None, "--run-id"),
+) -> None:
+    """(Re)generate logs/latest_summary.json from logs/latest.log and print it."""
+    log_summary_main(log=log, out=out, run_id=run_id)
+
+
+@log_app.command()
+def tail(log: Path = typer.Option(Path("./logs/latest.log"), "--log")) -> None:
+    """Follow the live session log (logfmt is already readable)."""
+    if not log.exists():
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.touch()
+    subprocess.run(["tail", "-f", str(log)], check=False)
+
 
 # Register sub-apps
 app.add_typer(log_app, name="log", help="Query, merge, tail, or view logs/status/topics.")
