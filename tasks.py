@@ -183,9 +183,18 @@ def _ros2_launch_capture_argv(launch_args: list[str], cwd: Path = ROOT) -> list[
 # Ensure tools/ is on path to import sub-apps
 sys.path.append(str(ROOT / "tools"))
 import bag_recorder
+import check_docs
+import check_invariants
+import check_topics
+import e2e_report
+import e2e_status as e2e_status_tool
+import preflight
+import scenario_status as scenario_status_tool
 import sim_cleanup
 import skein_analyze
+import status as status_tool
 import ulog_retrieve
+import wait_ready
 from capabilities import app as cap_app
 from capabilities import scenario_sim_configs
 from cli_verdict import ExitCode, format_not_ready, format_ready, format_stopped
@@ -377,9 +386,10 @@ def _e2e_run(configs: list[dict], registry: dict | None = None) -> None:
         _summarize_logs_silent()
 
         print("Generating E2E Report...")
-        res_report = subprocess.run(["uv", "run", "python", "tools/e2e_report.py"], cwd=str(ROOT))
+        block, report_code = e2e_report.build_block(LOG_DIR)
+        print(block)
 
-        if fails > 0 or res_report.returncode != 0:
+        if fails > 0 or report_code != 0:
             state["status"] = "failed"
             _print_failure_digest()
             raise typer.Exit(int(ExitCode.FAIL))
@@ -667,10 +677,7 @@ def check():
         failed_steps.append("ruff format")
 
     print("Checking branch invariants...")
-    res = subprocess.run(
-        ["uv", "run", "python", "tools/check_invariants.py"], cwd=str(ROOT), env=env
-    )
-    if res.returncode != 0:
+    if not check_invariants.run():
         failed_steps.append("branch invariants")
 
     print("Validating claims registry...")
@@ -683,8 +690,7 @@ def check():
         failed_steps.append("claims registry")
 
     print("Checking agent docs identifiers...")
-    res = subprocess.run(["uv", "run", "python", "tools/check_docs.py"], cwd=str(ROOT), env=env)
-    if res.returncode != 0:
+    if check_docs.run(ROOT) != 0:
         failed_steps.append("docs identifiers")
 
     print("Running static typecheck...")
@@ -765,10 +771,7 @@ def sim(
 
     # Preflight (precondition class). A pidless crashed stack still holding a
     # port fails here with an accurate "run: just stop" message.
-    res = subprocess.run(
-        ["uv", "run", "python", "tools/preflight.py", "--mode=headless"], cwd=str(ROOT)
-    )
-    if res.returncode != 0:
+    if not preflight.run("headless"):
         print("Preflight failed. Aborting launch.", file=sys.stderr)
         raise typer.Exit(int(ExitCode.PRECONDITION))
 
@@ -799,19 +802,9 @@ def sim(
     proc = _spawn_stack(launch_args, env, append=False)
     (LOG_DIR / "sim.pid").write_text(str(proc.pid))
 
-    res = subprocess.run(
-        [
-            "uv",
-            "run",
-            "python",
-            "tools/wait_ready.py",
-            "--timeout",
-            str(timeout),
-        ],
-        cwd=str(ROOT),
-    )
+    ready = wait_ready.wait(timeout)
     elapsed = _time.monotonic() - started
-    if res.returncode != 0:
+    if not ready:
         print(
             format_not_ready(
                 "stack did not reach readiness (topics/rosbridge/GCS params)", elapsed
@@ -959,8 +952,7 @@ def hw(
         print("Existing stack found — tearing it down first.")
         _teardown()
 
-    res = subprocess.run(["uv", "run", "python", "tools/preflight.py", "--mode=hw"], cwd=str(ROOT))
-    if res.returncode != 0:
+    if not preflight.run("hw"):
         print("Preflight failed. Aborting hardware launch.", file=sys.stderr)
         raise typer.Exit(int(ExitCode.PRECONDITION))
 
@@ -984,12 +976,9 @@ def hw(
     proc = _spawn_stack(launch_args, env, append=False)
     (LOG_DIR / "sim.pid").write_text(str(proc.pid))
 
-    res = subprocess.run(
-        ["uv", "run", "python", "tools/wait_ready.py", "--timeout", str(timeout)],
-        cwd=str(ROOT),
-    )
+    ready = wait_ready.wait(timeout)
     elapsed = _time.monotonic() - started
-    if res.returncode != 0:
+    if not ready:
         print(
             format_not_ready("hardware stack did not reach readiness (topics/rosbridge)", elapsed),
             file=sys.stderr,
@@ -1074,20 +1063,7 @@ def _run_e2e_sim_group(
     fails = 0
     try:
         print("Waiting for simulation to stabilize...")
-        try:
-            subprocess.run(
-                [
-                    "uv",
-                    "run",
-                    "python",
-                    "tools/wait_ready.py",
-                    "--timeout",
-                    "180",
-                ],
-                check=True,
-                cwd=str(ROOT),
-            )
-        except subprocess.CalledProcessError:
+        if not wait_ready.wait(180):
             print(
                 f"  [FAIL] sim never became ready; failing {len(scenarios)} scenario(s) "
                 f"in group (vision={vision} overlay={overlay} model={model} world={world})",
@@ -1209,11 +1185,7 @@ def _run_e2e_sim_group(
 
         if audit_topics:
             print("Auditing topic graph...")
-            res_topics = subprocess.run(
-                ["uv", "run", "python", "tools/check_topics.py", "--manifest", "docs/TOPICS.md"],
-                cwd=str(ROOT),
-            )
-            if res_topics.returncode != 0:
+            if check_topics.run(Path("docs/TOPICS.md")) != 0:
                 print("  [FAIL] topic graph violates docs/TOPICS.md", file=sys.stderr)
                 fails += 1
     finally:
@@ -1298,8 +1270,7 @@ def test(
 
         _smart_build(True)
 
-        res = subprocess.run(["uv", "run", "python", "tools/preflight.py"], cwd=str(ROOT))
-        if res.returncode != 0:
+        if not preflight.run("gui"):
             print("Preflight check failed. Aborting E2E cycle.", file=sys.stderr)
             raise typer.Exit(int(ExitCode.PRECONDITION)) from None
 
@@ -1371,8 +1342,11 @@ def e2e_worker() -> None:
 @app.command("e2e-status")
 def e2e_status_cmd() -> None:
     """Print progress/verdict of the current or last e2e run (poll while detached)."""
-    res = subprocess.run(["uv", "run", "python", "tools/e2e_status.py"], cwd=str(ROOT))
-    raise typer.Exit(res.returncode)
+    text, code = e2e_status_tool.build_status(
+        LOG_DIR, e2e_status_tool._pid_alive(LOG_DIR / "e2e.pid")
+    )
+    print(text)
+    raise typer.Exit(code)
 
 
 @app.command()
@@ -1470,7 +1444,7 @@ def scenario_new(
 @app.command()
 def status():
     """Concise English workspace snapshot (nodes, live status, capabilities)."""
-    subprocess.run(["uv", "run", "python", "tools/status.py"], cwd=str(ROOT))
+    status_tool.main()
 
 
 @app.command("scenario-status")
@@ -1478,11 +1452,9 @@ def scenario_status(
     name: str = typer.Argument("", help="Scenario name; default: the most recent run."),
 ) -> None:
     """Print the verdict of one scenario's last run from logs/scenario_<name>.json."""
-    args = ["uv", "run", "python", "tools/scenario_status.py"]
-    if name:
-        args.append(name)
-    res = subprocess.run(args, cwd=str(ROOT))
-    raise typer.Exit(res.returncode)
+    line, code = scenario_status_tool.format_scenario_status(LOG_DIR, name or None)
+    print(line)
+    raise typer.Exit(code)
 
 
 @log_app.command()
@@ -1492,10 +1464,7 @@ def topics(
     ),
 ):
     """Audit live topics against docs/TOPICS.md."""
-    cmd = ["uv", "run", "python", "tools/check_topics.py", "--manifest", "docs/TOPICS.md"]
-    if vision:
-        cmd.append("--vision")
-    subprocess.run(cmd, cwd=str(ROOT))
+    raise typer.Exit(check_topics.run(Path("docs/TOPICS.md"), vision=vision))
 
 
 if __name__ == "__main__":
