@@ -40,7 +40,7 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | Lifecycle | `just stop` | Exhaustive cold teardown; no process survives |
 | Verification suite | `just test [type]` / `just scenario <name>` | Smart-builds first. Types: `unit`, `e2e`. e2e blocks by default (captures terminal, ends with PASS/FAIL); `--detach` runs it in the background, poll with `just e2e-status` |
 | Forensic toolkit | `just log [subcmd]` | Observability helper: `summary`, `tail`, `topics` |
-| Capabilities | `just cap [subcmd]` | Exposes verified capabilities: `show`, `mark` |
+| Claims ladder | `just cap [subcmd]` | Derived capability rungs: `show`, `plan`, `record` |
 
 `just check` runs lint, invariants, typecheck, and unit tests in that order. Run this before every commit.
 
@@ -63,7 +63,8 @@ Never run `just build`, `just sim`, or `colcon` from PowerShell or cmd. Gazebo, 
 | View live workspace status | `just status` |
 | Validate live topic graph | `just log topics` |
 | Show capability registry | `just cap show` |
-| Record verified capability | `just cap mark <id> sim` |
+| Record verified capability | `just cap record <id>` |
+| Plan next claim action | `just cap plan [id]` |
 
 Sim flags: `just sim [--gui] [--world <world>] [--model <model>] [--vision <bool>] [--overlay auto_arm|inspect|hover] [--record] [--no-build] [--timeout <s>]`. Defaults: headless, `default` world, `x500`, vision off, no overlay (boots disarmed), recording off. There is no speed flag: physics comes solely from the world SDF; any live gz `set_physics` call corrupts PX4's estimator (see `plans/065-e2e-speed-factor.md`). `just sim` always detaches and returns after readiness; watch with `just log tail`, stop with `just stop`.
 
@@ -76,11 +77,24 @@ Sim flags: `just sim [--gui] [--world <world>] [--model <model>] [--vision <bool
 | Graph | `just log topics` | `just sim` running |
 | Live | `just scenario 01_arm_takeoff` | Full sim |
 | All-in-one | `just test e2e` | `just setup` done, ports free |
-| Record | `just cap mark <id> sim` | Scenario PASS |
+| Record | `just cap record <id>` | Scenario PASS |
+| Claims | `just cap show` / `just cap plan [id]` | Nothing running |
 
 `/clock` missing in a hardware-style launch is expected. Use `just sim` so the Gazebo clock bridge in `sim_full.launch.py` publishes `/clock`.
 
-Capability registry: `tests/capabilities.toml`. `just cap show` shows status. After a scenario passes in sim, run `just cap mark <id> sim` to update `status` and `last_verified`.
+## Claims
+
+Rungs are derived, never stored: `declared < simulated < sim-flown-stale < sim-flown`. The stale rung displays as `sim-flown (stale, since <commit>)`.
+
+| Command | Purpose |
+|---------|---------|
+| `just cap show` | Print every derived rung, evidence age, and stale reason. |
+| `just cap plan [id]` | Print the dependency-first next-action frontier. Exit 1 while actions remain. |
+| `just cap record <id>` | Record a fresh PASS after a scenario. Commit the evidence file. |
+
+Add a claim by editing `tests/capabilities.toml`, then run `just check`. Advance it by running the action from `just cap plan`, recording the PASS, and committing `tests/evidence/<id>/`.
+
+Nothing under `src/` reads the test registry. Full field, evidence, staleness, and exit-code contract: [docs/CLAIMS.md](docs/CLAIMS.md).
 
 ## Command verdicts and exit codes
 
@@ -106,6 +120,7 @@ Every command ends in a concise English verdict that states what was verified, n
 | Topic owners and types | [docs/TOPICS.md](docs/TOPICS.md) |
 | MCP / rosbridge | [docs/MCP.md](docs/MCP.md). Config: `.cursor/mcp.json` |
 | Mission phases and YAML schema | [docs/MISSIONS.md](docs/MISSIONS.md) |
+| Claims, evidence, derived rungs | [docs/CLAIMS.md](docs/CLAIMS.md) |
 | Node I/O | ROS 2 Interface block in `src/core/ros_px4_template_core/nodes/*.py` |
 | Open ideas | [docs/BACKLOG.md](docs/BACKLOG.md) |
 
@@ -153,7 +168,7 @@ Consecutive-identical lines are collapsed to one with a trailing `(xN)`; nothing
 - New libraries go in `src/core/ros_px4_template_core/lib/`. Add unit tests in `tests/unit/`. `lib/` must remain `rclpy` free where possible (see `StructuredLogger` Protocol pattern).
 - Always use `StructuredLogger` for agent-facing diagnostics. Call `self.slog.close()` from `destroy_node`.
 - Missions are data-driven YAML state graphs. New behaviors/guards go in `src/core/ros_px4_template_core/lib/mission/` and are registered in `src/core/ros_px4_template_core/lib/mission/registry.py`; missions are loaded by `src/core/ros_px4_template_core/lib/mission/loader.py`. Do not embed phase logic in `src/core/ros_px4_template_core/nodes/mission_manager.py`. After adding a behavior or guard, regenerate the schema (`just mission schema > schemas/mission.schema.json`) and add its row to the `docs/MISSIONS.md` Behaviors/Guards table (both are unit-enforced).
-- New scenarios go in `tests/scenarios/<NN>_<name>.py` using `spin_until` and `PX4_QOS` from `tests/scenarios/_common.py`. Scaffold a runnable stub with `just scenario-new <NN>_<name>` (writes the `Scenario` boilerplate and prints the `capabilities.toml` snippet to add), then edit the `done()` predicate. Each must end by calling `write_report`, which prints a rich one-line verdict (`PASS`/`FAIL <name> <detail> <Ns>`); pass a real `detail` (waypoint error, hold time, or the fail reason), never a bare pass. Add a capability entry in `tests/capabilities.toml`: `platforms = ["sim"]` declares intent (enables `just scenario` and e2e to boot the declared sim config); `status` stays `"unverified"` until `just cap mark <id> sim` after a PASS.
+- New scenarios go in `tests/scenarios/<NN>_<name>.py` using `spin_until` and `PX4_QOS` from `tests/scenarios/_common.py`. Scaffold a runnable stub with `just scenario-new <NN>_<name>` (writes the `Scenario` boilerplate and prints the `capabilities.toml` snippet to add), then edit the `done()` predicate. Each must end by calling `write_report`, which prints a rich one-line verdict (`PASS`/`FAIL <name> <detail> <Ns>`); pass a real `detail` (waypoint error, hold time, or the fail reason), never a bare pass. Add a claim entry in `tests/capabilities.toml` with `requires`, `scenario_file`, and `platforms = ["sim"]`; after a PASS, run `just cap record <id>` and commit the evidence file.
 - Do not commit `.env`, `logs/`, `build/`, `install/`, or `log/`.
 
 ## House style

@@ -36,9 +36,12 @@ def _justfile(tmp_path: Path, *recipes: str) -> Path:
 
 
 def test_check_token_validates_subcommands(tmp_path: Path) -> None:
-    root = _justfile(tmp_path, "log", "sim")
+    root = _justfile(tmp_path, "log", "cap", "sim")
     assert check_docs.check_token("just log tail", "just", root) is True
     assert check_docs.check_token("just log frobnicate", "just", root) is False
+    assert check_docs.check_token("just cap plan", "just", root) is True
+    assert check_docs.check_token("just cap record", "just", root) is True
+    assert check_docs.check_token("just cap " + "ma" + "rk", "just", root) is False
     assert check_docs.check_token("just sim --gui", "just", root) is True  # flag, not a subcmd
     assert check_docs.check_token("just ghost", "just", root) is False  # unknown recipe
 

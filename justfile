@@ -76,7 +76,7 @@ e2e-status:
 status:
     @just _run status
 
-# Manage verified capabilities registry (show, mark)
+# Manage derived capability claims (show, plan, record)
 cap *args:
     @just _run cap "$@"
 

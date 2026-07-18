@@ -204,6 +204,11 @@ def sim_cmd(
     name: str = typer.Argument(..., help="Mission name (e.g. 'demo') or path to a .yaml"),
     tick_rate_hz: float = typer.Option(10.0, "--tick-rate", help="Engine ticks per sim-second"),
     max_ticks: int = typer.Option(3000, "--max-ticks", help="Give up (stall) after this many"),
+    require_terminal: bool = typer.Option(
+        False,
+        "--require-terminal",
+        help="Fail unless simulation reaches a declared terminal state.",
+    ),
 ) -> None:
     """Simulate a mission's GRAPH LOGIC over a kinematic model (no sim boot).
 
@@ -251,8 +256,15 @@ def sim_cmd(
         )
         raise typer.Exit(0)
     if not m.terminal:
+        if require_terminal:
+            typer.echo(
+                f"FAIL {name}: mission has no terminal states",
+                err=True,
+            )
+            raise typer.Exit(1)
         typer.echo(
-            f"OK {name}: steady state in {result.final_state} after {sim_s:.1f} sim-s (no terminal states)"
+            f"OK {name}: steady state in {result.final_state} "
+            f"after {sim_s:.1f} sim-s (no terminal states)"
         )
         raise typer.Exit(0)
     typer.echo(

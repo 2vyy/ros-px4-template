@@ -32,7 +32,7 @@ _ALLOWLIST = frozenset(
 # the new doc line until this dict learns it. Cheap, visible, self-announcing.
 _SUBCOMMANDS = {
     "log": {"summary", "tail", "topics"},
-    "cap": {"show", "mark"},
+    "cap": {"show", "plan", "record"},
     "mission": {"list", "validate", "show", "sim", "schema"},
     "test": {"unit", "scenario", "e2e"},
 }

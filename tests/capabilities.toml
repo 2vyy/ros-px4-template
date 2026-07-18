@@ -1,83 +1,76 @@
 [capabilities.arm_takeoff]
 description = "Vehicle arms in OFFBOARD and reaches target altitude"
-status = "verified"
+requires = []
 platforms = [
     "sim",
 ]
 scenario_file = "01_arm_takeoff.py"
 sim_vision = "none"
 sim_overlay = "hover"
-last_verified = "2026-05-27"
 
 [capabilities.hover_hold]
 description = "Vehicle holds position within tolerance for 30s"
-status = "verified"
+requires = ["arm_takeoff"]
 platforms = [
     "sim",
 ]
 scenario_file = "02_hover_hold.py"
 sim_vision = "none"
 sim_overlay = "hover"
-last_verified = "2026-05-27"
 
 [capabilities.waypoint_nav]
 description = "Vehicle follows a multi-waypoint path"
-status = "verified"
+requires = ["arm_takeoff"]
 platforms = [
     "sim",
 ]
 scenario_file = "03_waypoint.py"
 sim_vision = "none"
 sim_overlay = "auto_arm"
-last_verified = "2026-05-27"
 
 [capabilities.aruco_hover]
 description = "Vehicle detects ArUco marker and enters marker_hover phase"
-status = "verified"
+requires = ["arm_takeoff"]
 platforms = [
     "sim",
 ]
 scenario_file = "05_aruco_hover.py"
 sim_vision = "aruco"
 sim_overlay = "marker_hover"
-last_verified = "2026-06-05"
 
 [capabilities.search_relocalize]
 description = "Vehicle searches a lawnmower pattern, relocalizes on a known marker (/drone/pose_override), and returns to origin"
-status = "verified"
+requires = ["waypoint_nav", "aruco_hover"]
 platforms = [
     "sim",
 ]
 scenario_file = "06_search_relocalize.py"
 sim_vision = "aruco"
 sim_overlay = "search_relocalize"
-last_verified = "2026-06-05"
 
 [capabilities.yaw_control]
 description = "Mission-commanded ENU yaw reaches PX4 as NED heading and the vehicle turns to it"
-status = "verified"
+requires = ["arm_takeoff"]
 platforms = [
     "sim",
 ]
 scenario_file = "07_yaw_control.py"
 sim_vision = "none"
 sim_overlay = "yaw_demo"
-last_verified = "2026-07-09"
 
 [capabilities.precision_land]
 description = "Vehicle centers on the marker, descends, and PX4 lands it; no auto-rearm"
-status = "verified"
+requires = ["aruco_hover"]
 platforms = [
     "sim",
 ]
 scenario_file = "08_precision_land.py"
 sim_vision = "aruco"
 sim_overlay = "precision_land"
-last_verified = "2026-07-09"
 
 [capabilities.aruco_hover_real]
 description = "Vehicle detects a REAL rendered ArUco marker via the camera model and reports an accurate body-FLU offset (not fabricated)"
-status = "verified"
+requires = ["aruco_hover"]
 platforms = [
     "sim",
 ]
@@ -86,4 +79,3 @@ sim_vision = "aruco"
 sim_overlay = "auto_arm"
 sim_model = "x500_mono_cam_down"
 sim_world = "marker_field"
-last_verified = "2026-07-17"
