@@ -15,6 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
+import reports
 from log_summary import parse_logfmt
 
 LOG_DIR = Path(__file__).resolve().parents[1] / "logs"
@@ -120,6 +121,63 @@ def list_run_records(runs_dir: Path = RUNS_DIR, limit: int = 50) -> list[dict]:
         except (OSError, json.JSONDecodeError):
             continue
     return records
+
+
+def _age(recorded_at: float, now: float | None = None) -> str:
+    delta = max(0.0, (time.time() if now is None else now) - recorded_at)
+    if delta < 60:
+        return f"{delta:.0f}s ago"
+    if delta < 3600:
+        return f"{delta / 60:.0f}m ago"
+    if delta < 86400:
+        return f"{delta / 3600:.1f}h ago"
+    return f"{delta / 86400:.1f}d ago"
+
+
+def format_runs(records: list[dict]) -> str:
+    """Aligned run-record table (id, verdict, reason, age); definitive when empty."""
+    if not records:
+        return "no runs recorded (run one with `just scenario <name>`)"
+    rows = [
+        (
+            str(rec.get("record") or rec.get("name", "?")),
+            str(rec.get("verdict", "?")),
+            str(rec.get("reason") or "-"),
+            _age(float(rec.get("recorded_at", 0.0))),
+        )
+        for rec in records
+    ]
+    widths = [max(len(row[i]) for row in rows) for i in range(3)]
+    return "\n".join(
+        f"{row[0]:<{widths[0]}}  {row[1]:<{widths[1]}}  {row[2]:<{widths[2]}}  {row[3]}"
+        for row in rows
+    )
+
+
+def resolve_wait_target(log_dir: Path) -> tuple[str, dict]:
+    """What should `wait run` wait on right now?
+
+    Returns ("e2e", state) when a detached e2e cycle is running with a live
+    supervisor pid; ("run", {}) when a single supervised run's pid is alive;
+    ("record", rec) when nothing is active but a newest record exists;
+    ("none", {}) otherwise.
+    """
+    try:
+        state = json.loads((log_dir / "e2e_state.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        state = None
+    if (
+        isinstance(state, dict)
+        and state.get("status") == "running"
+        and reports.pid_alive(log_dir / "e2e.pid") is True
+    ):
+        return "e2e", state
+    if reports.pid_alive(log_dir / "run.pid") is True:
+        return "run", {}
+    recs = list_run_records(log_dir / "runs", limit=1)
+    if recs:
+        return "record", recs[0]
+    return "none", {}
 
 
 def supervise(

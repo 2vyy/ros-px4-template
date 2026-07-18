@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
@@ -10,8 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 from run_supervisor import (
     derive_heartbeat,
     format_heartbeat,
+    format_runs,
     list_run_records,
     parse_heartbeat,
+    resolve_wait_target,
     supervise,
     write_run_record,
 )
@@ -109,6 +114,51 @@ def test_list_run_records_skips_unparseable(tmp_path: Path) -> None:
     (tmp_path / "junk.json").write_text("{not json", encoding="utf-8")
     recs = list_run_records(tmp_path)
     assert [r["name"] for r in recs] == ["good"]
+
+
+# ── runs table + wait-target resolution ───────────────────────────────────────
+
+
+def test_format_runs_table_order_and_empty() -> None:
+    now = time.time()
+    out = format_runs(
+        [
+            {"name": "01_arm_takeoff", "verdict": "PASS", "reason": None, "recorded_at": now - 300},
+            {
+                "name": "02_hover_hold",
+                "verdict": "STUCK",
+                "reason": "stuck:log_silent",
+                "recorded_at": now - 60,
+            },
+        ]
+    )
+    assert "STUCK" in out
+    assert out.index("01_arm_takeoff") < out.index("02_hover_hold")  # order preserved as given
+    assert format_runs([]) == "no runs recorded (run one with `just scenario <name>`)"
+
+
+def test_resolve_wait_target_precedence(tmp_path: Path) -> None:
+    assert resolve_wait_target(tmp_path) == ("none", {})
+
+    write_run_record(tmp_path / "runs", "s", "PASS", None, 0.0, 1.0, "done", {})
+    kind, rec = resolve_wait_target(tmp_path)
+    assert kind == "record"
+    assert rec["verdict"] == "PASS"
+
+    (tmp_path / "run.pid").write_text(str(os.getpid()), encoding="utf-8")
+    assert resolve_wait_target(tmp_path)[0] == "run"
+
+    (tmp_path / "run.pid").write_text("99999999", encoding="utf-8")  # dead pid
+    assert resolve_wait_target(tmp_path)[0] == "record"
+
+    (tmp_path / "e2e_state.json").write_text(
+        json.dumps({"status": "running", "groups": []}), encoding="utf-8"
+    )
+    (tmp_path / "e2e.pid").write_text(str(os.getpid()), encoding="utf-8")
+    assert resolve_wait_target(tmp_path)[0] == "e2e"
+
+    (tmp_path / "e2e.pid").write_text("99999999", encoding="utf-8")  # dead cycle pid
+    assert resolve_wait_target(tmp_path)[0] == "record"
 
 
 # ── supervise: bounded child execution ────────────────────────────────────────
