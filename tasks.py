@@ -188,6 +188,7 @@ import check_invariants
 import check_topics
 import preflight
 import reports
+import run_supervisor
 import sim_cleanup
 import skein_analyze
 import status as status_tool
@@ -257,6 +258,9 @@ def _teardown() -> bool:
     was_recording = bag_recorder.BAG_PIDFILE.exists()
     bag_recorder.stop()  # graceful SIGINT first; finalizes the MCAP. Non-fatal.
     result = sim_cleanup.teardown()
+    # A stale heartbeat must never describe a dead stack.
+    run_supervisor.HEARTBEAT.unlink(missing_ok=True)
+    run_supervisor.RUN_PID.unlink(missing_ok=True)
     if was_recording:
         # PX4 is dead now, so its ULog is final. Best-effort, SITL-only.
         ulog_retrieve.retrieve(bag_recorder.RUNS_DIR / "latest")
@@ -455,6 +459,7 @@ def _auto_record(
     overlay: str,
     model: str,
     world: str,
+    run_record: str | None = None,
 ) -> None:
     """Write evidence for a passing scenario unless the tree is dirty."""
     from cap_evidence import EVIDENCE_ROOT, build_record, dirty_flight_paths, write_record
@@ -484,12 +489,15 @@ def _auto_record(
         cwd=str(ROOT),
     ).stdout.strip()
     report = json.loads((LOG_DIR / f"scenario_{scenario}.json").read_text(encoding="utf-8"))
+    conditions = {"world": world, "model": model, "vision": vision}
+    if run_record is not None:
+        conditions["run_record"] = run_record
     rec = build_record(
         claim,
         "sim",
         commit,
         report,
-        {"world": world, "model": model, "vision": vision},
+        conditions,
     )
     write_record(rec, EVIDENCE_ROOT)
     print(f"  [EVIDENCE] {scenario} PASS recorded @ {commit}")
@@ -998,6 +1006,32 @@ def _fallback_scenario_report(scenario: str, reason: str, config: dict[str, str]
     )
 
 
+def _write_run_record_for(name: str, report: Path, stuck: str | None) -> Path:
+    """Always-written run record (spec: verdict-file contract). Never raises."""
+    s: dict
+    try:
+        s = json.loads(report.read_text(encoding="utf-8"))
+    except Exception:
+        s = {"passed": False, "detail": {"reason": "unreadable_report"}}
+    hb: dict = {}
+    try:
+        hb = run_supervisor.parse_heartbeat(run_supervisor.HEARTBEAT.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    verdict = "STUCK" if stuck else ("PASS" if s.get("passed") else "FAIL")
+    reason = f"stuck:{stuck}" if stuck else s.get("detail", {}).get("reason")
+    return run_supervisor.write_run_record(
+        run_supervisor.RUNS_DIR,
+        name,
+        verdict,
+        reason,
+        t_start=hb.get("t_start", 0.0),
+        t_end=hb.get("t", 0.0),
+        last_phase=hb.get("phase", "unknown"),
+        detail=s.get("detail", {}),
+    )
+
+
 def _run_e2e_sim_group(
     vision: str,
     overlay: str,
@@ -1079,6 +1113,7 @@ def _run_e2e_sim_group(
                     ),
                     encoding="utf-8",
                 )
+                _write_run_record_for(s, LOG_DIR / f"scenario_{s}.json", None)
             return len(scenarios)
 
         for s in scenarios:
@@ -1103,16 +1138,47 @@ def _run_e2e_sim_group(
                         ),
                         encoding="utf-8",
                     )
+                    _write_run_record_for(s, LOG_DIR / f"scenario_{s}.json", None)
                     continue
 
             print(f"Running scenario {s}...")
             report = LOG_DIR / f"scenario_{s}.json"
             started_at = time.time()
-            res_s = subprocess.run(
-                ["uv", "run", "python", f"tests/scenarios/{s}.py"], cwd=str(ROOT)
+            rc, stuck = run_supervisor.supervise(
+                ["uv", "run", "python", f"tests/scenarios/{s}.py"],
+                s,
+                deadline_s=300.0,
+                silence_s=30.0,
+                log_path=LOG_DIR / "latest.log",
+                cwd=ROOT,
             )
             fresh = report.exists() and report.stat().st_mtime >= started_at
-            if res_s.returncode != 0:
+            if stuck is not None:
+                fails += 1
+                if registry is not None and failed_claims is not None:
+                    from capabilities import claim_for_scenario
+
+                    failed_claims.add(claim_for_scenario(registry, s) or s)
+                print(
+                    f"  [STUCK] {s} killed by supervisor ({stuck}); "
+                    "read the stack log, not the mission events",
+                    file=sys.stderr,
+                )
+                if not fresh:
+                    report.write_text(
+                        _fallback_scenario_report(
+                            s,
+                            f"stuck:{stuck}",
+                            {
+                                "vision": vision,
+                                "overlay": overlay,
+                                "model": model,
+                                "world": world,
+                            },
+                        ),
+                        encoding="utf-8",
+                    )
+            elif rc != 0:
                 fails += 1
                 if registry is not None and failed_claims is not None:
                     from capabilities import claim_for_scenario
@@ -1120,7 +1186,7 @@ def _run_e2e_sim_group(
                     failed_claims.add(claim_for_scenario(registry, s) or s)
                 if not fresh:
                     print(
-                        f"  [FAIL] {s} exited {res_s.returncode} without writing a report; "
+                        f"  [FAIL] {s} exited {rc} without writing a report; "
                         "synthesizing crashed_before_report",
                         file=sys.stderr,
                     )
@@ -1161,7 +1227,9 @@ def _run_e2e_sim_group(
                     ),
                     encoding="utf-8",
                 )
-            elif registry is not None:
+
+            record_path = _write_run_record_for(s, report, stuck)
+            if stuck is None and rc == 0 and fresh and registry is not None:
                 _auto_record(
                     registry,
                     s,
@@ -1169,6 +1237,7 @@ def _run_e2e_sim_group(
                     overlay=overlay,
                     model=model,
                     world=world,
+                    run_record=record_path.stem,
                 )
 
         if audit_topics:
