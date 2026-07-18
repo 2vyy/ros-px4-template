@@ -6,6 +6,7 @@ mission:
   safety:
     - {guard: estimate_invalid, to: hold_safe}
     - {guard: inputs_stale, params: {t: 1.0}, to: hold_safe}
+    - {guard: time_budget, params: {budget_s: 300}, to: hold_safe}
   states:
     takeoff:   {behavior: hold, params: {z: 3.0}}
     follow:    {behavior: follow_waypoints, params: {path_file: config/paths/demo.yaml, hold_s: 2.0, tolerance_m: 0.4}}
@@ -14,4 +15,6 @@ mission:
   transitions:
     - {from: takeoff, guard: armed_at_altitude, to: follow}
     - {from: follow,  guard: waypoints_done,    to: done}
+    - {from: takeoff, guard: phase_timeout, params: {timeout_s: 60},  to: hold_safe}
+    - {from: follow,  guard: phase_timeout, params: {timeout_s: 120}, to: hold_safe}
   terminal: [done]

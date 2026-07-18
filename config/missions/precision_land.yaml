@@ -25,6 +25,7 @@ mission:
   safety:
     - {guard: estimate_invalid, to: hold_safe}
     - {guard: inputs_stale, params: {t: 1.0}, to: hold_safe}
+    - {guard: time_budget, params: {budget_s: 300}, to: hold_safe}
   states:
     takeoff:    {behavior: hold, params: {z: 3.0}}
     approach:   {behavior: follow_waypoints, params: {waypoints: [[8.0, 0.0, 3.0]], tolerance_m: 0.6, hold_s: 1.0}}
@@ -39,4 +40,8 @@ mission:
     - {from: reacquire,  guard: marker_stable, params: {id: 0, n: 5}, to: descend}
     - {from: descend,    guard: marker_lost_signal,                   to: reacquire}
     - {from: descend,    guard: disarmed,                             to: done}
+    - {from: takeoff,    guard: phase_timeout, params: {timeout_s: 60},  to: hold_safe}
+    - {from: approach,   guard: phase_timeout, params: {timeout_s: 120}, to: hold_safe}
+    - {from: reacquire,  guard: phase_timeout, params: {timeout_s: 60},  to: hold_safe}
+    - {from: descend,    guard: phase_timeout, params: {timeout_s: 90},  to: hold_safe}
   terminal: [done]

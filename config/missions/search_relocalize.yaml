@@ -13,6 +13,7 @@ mission:
     - {guard: estimate_invalid, to: hold_safe}
     - {guard: inputs_stale, params: {t: 1.0}, to: hold_safe}
     - {guard: geofence_breach, params: {radius_m: 30.0}, to: return_to_origin}
+    - {guard: time_budget, params: {budget_s: 300}, to: hold_safe}
   states:
     takeoff:          {behavior: hold, params: {z: 3.0}}
     search:           {behavior: search_lawnmower, params: {center: [0.0, 0.0], spacing_m: 8.0, legs: 2, altitude_m: 3.0}}
@@ -24,4 +25,7 @@ mission:
     - {from: search,           guard: marker_stable, params: {id: 0, n: 5}, to: return_to_origin}
     - {from: search,           guard: search_complete,                      to: return_to_origin}
     - {from: return_to_origin, guard: reached,                              to: done}
+    - {from: takeoff,          guard: phase_timeout, params: {timeout_s: 60},  to: hold_safe}
+    - {from: search,           guard: phase_timeout, params: {timeout_s: 120}, to: hold_safe}
+    - {from: return_to_origin, guard: phase_timeout, params: {timeout_s: 120}, to: hold_safe}
   terminal: [done]

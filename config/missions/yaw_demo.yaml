@@ -6,10 +6,12 @@ mission:
   safety:
     - {guard: estimate_invalid, to: hold_safe}
     - {guard: inputs_stale, params: {t: 1.0}, to: hold_safe}
+    - {guard: time_budget, params: {budget_s: 300}, to: hold_safe}
   states:
     takeoff:   {behavior: hold, params: {z: 3.0}}
     yaw_hold:  {behavior: hold, params: {z: 3.0, yaw_deg: 90.0}}
     hold_safe: {behavior: hold}
   transitions:
     - {from: takeoff, guard: armed_at_altitude, to: yaw_hold}
+    - {from: takeoff, guard: phase_timeout, params: {timeout_s: 60}, to: hold_safe}
   terminal: [yaw_hold]

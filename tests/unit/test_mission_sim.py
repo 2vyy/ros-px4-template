@@ -132,6 +132,40 @@ def test_stall_is_reported_not_a_false_pass() -> None:
     assert result.final_state == "hover"
 
 
+def test_phase_timeout_bounds_a_stalled_mission() -> None:
+    """A state whose only progress guard never fires is still bounded: the
+    phase_timeout edge routes it to hold_safe instead of stalling forever."""
+    mission = load_mission_dict(
+        {
+            "mission": {
+                "initial": "hover",
+                "states": {
+                    "hover": {"behavior": "hold", "params": {"z": 3.0}},
+                    "done": {"behavior": "hold"},
+                    "hold_safe": {"behavior": "hold"},
+                },
+                "transitions": [
+                    {"from": "hover", "guard": "waypoints_done", "to": "done"},
+                    {
+                        "from": "hover",
+                        "guard": "phase_timeout",
+                        "params": {"timeout_s": 5.0},
+                        "to": "hold_safe",
+                    },
+                ],
+                "terminal": ["done", "hold_safe"],
+            }
+        }
+    )
+    result = simulate(mission, tick_rate_hz=10.0, max_ticks=200)
+    assert result.final_state == "hold_safe"
+    assert result.terminated
+    fired = [e for e in result.events if e.get("guard") == "phase_timeout"]
+    assert fired
+    assert fired[0]["from"] == "hover"
+    assert fired[0]["to"] == "hold_safe"
+
+
 def test_safety_diversion_on_lost_estimate() -> None:
     """estimate_ok=False mid-flight diverts demo to its hold_safe safety sink."""
     mission = _load("demo")
