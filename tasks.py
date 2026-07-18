@@ -284,7 +284,7 @@ def _resolve_scenario_script(name: str) -> Path:
     print(f"Error: scenario not found: {name}.py", file=sys.stderr)
     if available:
         print(f"Available: {', '.join(available)}", file=sys.stderr)
-    raise typer.Exit(1) from None
+    raise typer.Exit(int(ExitCode.USAGE)) from None
 
 
 E2E_STATE = LOG_DIR / "e2e_state.json"
@@ -297,6 +297,27 @@ def _e2e_write_state(state: dict) -> None:
     tmp = E2E_STATE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, E2E_STATE)
+
+
+def _e2e_initial_state(configs: list[dict]) -> dict:
+    """Fresh e2e progress state: one isolated sim group per declared scenario."""
+    return {
+        "status": "running",
+        "started_at": time.time(),
+        "finished_at": None,
+        "groups": [
+            {
+                "vision": c["vision"],
+                "overlay": c["overlay"],
+                "model": c["model"],
+                "world": c["world"],
+                "scenarios": [c["scenario"]],
+                "state": "pending",
+                "fails": 0,
+            }
+            for c in configs
+        ],
+    }
 
 
 def _pid_running(pidfile: Path) -> bool:
@@ -339,41 +360,24 @@ def _e2e_run(configs: list[dict], registry: dict | None = None) -> None:
     atexit.register(cleanup)
 
     gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
-    group_items = _e2e_sim_groups(configs)
     failed_claims: set[str] = set()
-    state = {
-        "status": "running",
-        "started_at": time.time(),
-        "finished_at": None,
-        "groups": [
-            {
-                "vision": v,
-                "overlay": o,
-                "model": m,
-                "world": w,
-                "scenarios": s,
-                "state": "pending",
-                "fails": 0,
-            }
-            for v, o, m, w, s in group_items
-        ],
-    }
+    state = _e2e_initial_state(configs)
     _e2e_write_state(state)
 
     try:
         fails = 0
         (LOG_DIR / "latest.log").write_text("", encoding="utf-8")
-        for idx, (vision, overlay, model, world, scenarios) in enumerate(group_items):
+        for idx, cfg in enumerate(configs):
             state["groups"][idx]["state"] = "running"
             _e2e_write_state(state)
             group_fails = _run_e2e_sim_group(
-                vision,
-                overlay,
-                scenarios,
+                cfg["vision"],
+                cfg["overlay"],
+                [cfg["scenario"]],
                 gz_resource=gz_resource,
-                model=model,
-                world=world,
-                audit_topics=idx == len(group_items) - 1,
+                model=cfg["model"],
+                world=cfg["world"],
+                audit_topics=idx == len(configs) - 1,
                 registry=registry,
                 failed_claims=failed_claims,
             )
@@ -410,19 +414,6 @@ def _e2e_run(configs: list[dict], registry: dict | None = None) -> None:
         _e2e_write_state(state)
         cleanup()
         atexit.unregister(cleanup)
-
-
-def _e2e_sim_groups(configs: list[dict]) -> list[tuple[str, str, str, str, list[str]]]:
-    """Return one isolated sim launch group per scenario config.
-
-    Each tuple is ``(vision, overlay, model, world, [scenario])``. model/world let
-    a perception scenario boot a camera model + marker world in its own sim while
-    the synthetic scenarios stay on the default x500/default-world.
-    """
-    return [
-        (cfg["vision"], cfg["overlay"], cfg["model"], cfg["world"], [cfg["scenario"]])
-        for cfg in configs
-    ]
 
 
 def _blocked_by(data: dict, scenario: str, failed_claims: set[str]) -> str | None:
@@ -635,6 +626,17 @@ def build():
     _build_workspace()
 
 
+def _clear_log_dir() -> None:
+    """Wipe logs/ except .gitkeep (per-run artifacts only; build cache untouched)."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    for f in LOG_DIR.glob("*"):
+        if f.name != ".gitkeep":
+            if f.is_file() or f.is_symlink():
+                f.unlink()
+            elif f.is_dir():
+                shutil.rmtree(f)
+
+
 @app.command()
 def clean():
     """Wipe build artifacts, build logs, and per-run logs."""
@@ -644,13 +646,7 @@ def clean():
         if p.exists():
             shutil.rmtree(p)
 
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    for f in LOG_DIR.glob("*"):
-        if f.name != ".gitkeep":
-            if f.is_file() or f.is_symlink():
-                f.unlink()
-            elif f.is_dir():
-                shutil.rmtree(f)
+    _clear_log_dir()
     print("Cleanup complete.")
 
 
@@ -666,15 +662,12 @@ def check():
     failed_steps: list[str] = []
 
     print("Running ruff format and lint auto-fixes")
-    res = subprocess.run(
-        ["uv", "run", "ruff", "check", "--fix", *ruff_paths_str], cwd=str(ROOT), env=env
-    )
-    if res.returncode != 0:
-        failed_steps.append("ruff check")
-
-    res = subprocess.run(["uv", "run", "ruff", "format", *ruff_paths_str], cwd=str(ROOT), env=env)
-    if res.returncode != 0:
-        failed_steps.append("ruff format")
+    for label, argv in (
+        ("ruff check", ["uv", "run", "ruff", "check", "--fix", *ruff_paths_str]),
+        ("ruff format", ["uv", "run", "ruff", "format", *ruff_paths_str]),
+    ):
+        if subprocess.run(argv, cwd=str(ROOT), env=env).returncode != 0:
+            failed_steps.append(label)
 
     print("Checking branch invariants...")
     if not check_invariants.run():
@@ -1245,13 +1238,7 @@ def test(
 
         # Clear per-run logs, keeping build/install cache intact
         print("Clearing previous simulation logs...")
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        for f in LOG_DIR.glob("*"):
-            if f.name != ".gitkeep":
-                if f.is_file() or f.is_symlink():
-                    f.unlink()
-                elif f.is_dir():
-                    shutil.rmtree(f)
+        _clear_log_dir()
 
         _smart_build(True)
 
@@ -1280,26 +1267,7 @@ def test(
 
         # Seed the state file before spawning so `just e2e-status` never sees
         # a live pid with no state (the worker overwrites it on startup).
-        group_items = _e2e_sim_groups(configs)
-        _e2e_write_state(
-            {
-                "status": "running",
-                "started_at": time.time(),
-                "finished_at": None,
-                "groups": [
-                    {
-                        "vision": v,
-                        "overlay": o,
-                        "model": m,
-                        "world": w,
-                        "scenarios": s,
-                        "state": "pending",
-                        "fails": 0,
-                    }
-                    for v, o, m, w, s in group_items
-                ],
-            }
-        )
+        _e2e_write_state(_e2e_initial_state(configs))
         out_fh = (LOG_DIR / "e2e.log").open("w", encoding="utf-8")
         proc = subprocess.Popen(
             ["uv", "run", "python", "tasks.py", "e2e-worker"],
@@ -1309,7 +1277,7 @@ def test(
             cwd=str(ROOT),
         )
         E2E_PIDFILE.write_text(str(proc.pid))
-        n = len(group_items)
+        n = len(configs)
         print(
             f"E2E STARTED: {len(configs)} scenario(s) in {n} group(s), "
             f"est ~{max(1, round(n * 65 / 60))} min. "
@@ -1347,9 +1315,9 @@ def scenario(
     config fall back to running against whatever sim is already up.
     """
     _smart_build(True)
+    script = _resolve_scenario_script(name)
     cfg = _resolve_scenario_config(name)
     if cfg is None:
-        _resolve_scenario_script(name)
         print(
             f"No declared sim config for '{name}' in tests/capabilities.toml — "
             "running against the existing sim (start one with `just sim` first). "
@@ -1357,39 +1325,28 @@ def scenario(
             'with platforms = ["sim"] (see `just scenario-new` output).'
         )
         print(f"Running scenario test: {name}...")
-        passed = False
         try:
-            result = subprocess.run(
-                ["uv", "run", "python", str(ROOT / "tests" / "scenarios" / f"{name}.py")],
-                cwd=str(ROOT),
-            )
-            passed = result.returncode == 0
+            result = subprocess.run(["uv", "run", "python", str(script)], cwd=str(ROOT))
+            fails = 0 if result.returncode == 0 else 1
         finally:
             _summarize_logs_silent()
-        if not passed:
-            _print_failure_digest()
-            raise typer.Exit(int(ExitCode.FAIL))
-        return
-
-    _resolve_scenario_script(name)
-    print(f"Tearing down any existing stack before booting {name}'s declared sim...")
-    _teardown()
-
-    gz_resource = f"{ROOT}/sim/worlds:{ROOT}/sim/models"
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    (LOG_DIR / "latest.log").write_text("", encoding="utf-8")
-    try:
-        fails = _run_e2e_sim_group(
-            cfg["vision"],
-            cfg["overlay"],
-            [cfg["scenario"]],
-            gz_resource=gz_resource,
-            model=cfg["model"],
-            world=cfg["world"],
-        )
-    finally:
-        _summarize_logs_silent()
-    if fails > 0:
+    else:
+        print(f"Tearing down any existing stack before booting {name}'s declared sim...")
+        _teardown()
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        (LOG_DIR / "latest.log").write_text("", encoding="utf-8")
+        try:
+            fails = _run_e2e_sim_group(
+                cfg["vision"],
+                cfg["overlay"],
+                [cfg["scenario"]],
+                gz_resource=f"{ROOT}/sim/worlds:{ROOT}/sim/models",
+                model=cfg["model"],
+                world=cfg["world"],
+            )
+        finally:
+            _summarize_logs_silent()
+    if fails:
         _print_failure_digest()
         raise typer.Exit(int(ExitCode.FAIL))
 

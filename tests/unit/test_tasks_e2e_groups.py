@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 
-from tasks import _e2e_sim_groups, _fallback_scenario_report
+from tasks import _e2e_initial_state, _fallback_scenario_report
 
 
-def test_e2e_sim_groups_isolates_scenarios_with_same_config() -> None:
+def test_e2e_initial_state_isolates_scenarios_with_same_config() -> None:
     configs = [
         {
             "scenario": "01_arm_takeoff",
@@ -23,10 +23,42 @@ def test_e2e_sim_groups_isolates_scenarios_with_same_config() -> None:
         },
     ]
 
-    assert _e2e_sim_groups(configs) == [
+    groups = _e2e_initial_state(configs)["groups"]
+    assert [
+        (g["vision"], g["overlay"], g["model"], g["world"], g["scenarios"]) for g in groups
+    ] == [
         ("none", "hover", "x500", "default", ["01_arm_takeoff"]),
         ("none", "hover", "x500", "default", ["02_hover_hold"]),
     ]
+    for g in groups:
+        assert g["state"] == "pending"
+        assert g["fails"] == 0
+
+
+def test_e2e_initial_state_keys() -> None:
+    state = _e2e_initial_state(
+        [
+            {
+                "scenario": "01_arm_takeoff",
+                "vision": "none",
+                "overlay": "hover",
+                "model": "x500",
+                "world": "default",
+            }
+        ]
+    )
+    assert set(state) == {"status", "started_at", "finished_at", "groups"}
+    assert state["status"] == "running"
+    assert state["finished_at"] is None
+    assert set(state["groups"][0]) == {
+        "vision",
+        "overlay",
+        "model",
+        "world",
+        "scenarios",
+        "state",
+        "fails",
+    }
 
 
 def test_fallback_report_matches_write_report_shape() -> None:
