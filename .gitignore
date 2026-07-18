@@ -16,3 +16,4 @@ docs/superpowers/
 .codebase-memory/
 docs/BACKLOG.md
 src/px4_msgs/
+.worktrees/

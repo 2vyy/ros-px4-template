@@ -1,0 +1,24 @@
+{
+  "claim": "waypoint_nav",
+  "platform": "sim",
+  "commit": "f8bb24f",
+  "run_id": "20260718_034711",
+  "verdict": "PASS",
+  "elapsed_s": 31.72,
+  "detail": {
+    "waypoints_done": 0,
+    "phase": "done",
+    "wp_min_dists": [
+      0.05,
+      0.08,
+      0.04
+    ],
+    "arm_trigger_ok": true
+  },
+  "conditions": {
+    "world": "default",
+    "model": "x500",
+    "vision": "none"
+  },
+  "grade": null
+}

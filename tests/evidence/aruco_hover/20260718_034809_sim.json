@@ -1,0 +1,15 @@
+{
+  "claim": "aruco_hover",
+  "platform": "sim",
+  "commit": "f8bb24f",
+  "run_id": "20260718_034809",
+  "verdict": "PASS",
+  "elapsed_s": 30.04,
+  "detail": {},
+  "conditions": {
+    "world": "default",
+    "model": "x500",
+    "vision": "aruco"
+  },
+  "grade": null
+}
