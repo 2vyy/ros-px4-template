@@ -135,7 +135,7 @@ personally re-vetted against the code.
 | 072  | Challenge authoring kit: `gen_world.py` (spec YAML → world SDF + marker map, golden-locked to marker_field) + `docs/CHALLENGES.md` rules-doc-to-verified-scenario playbook | P1 | M | 066 | TODO |
 | 073  | Rules assertion vocabulary: `altitude_ceiling` / `time_budget` / `keep_out_box` guards (+ `Inputs.mission_elapsed_s`), `HeldThroughout` scenario sampler | P2 | M | — | DONE (2026-07-17, branch `advisor/073-rules-assertion-vocabulary`, commit `ed4aac1`; `just check`: 404 passed; 3 guards registered, docs + schema locks pass, simulate-level time_budget test, HeldThroughout sampler with injected-clock tests) |
 | 074  | Claims ladder core: derived rungs (declared/simulated/sim-flown + staleness), committed evidence ledger, `cap show/record/plan`, `requires` DAG, retire `cap mark` | P1 | L | — | DONE (2026-07-17, branch `advisor/074-claims-ladder-core`, commits `dc815bf`..`f8bc5f6`; `just check`: 453 passed; `cap show`: 8 simulated; `cap plan`: 8 actions, exit 1) |
-| 075  | Claims integration: mission `requires`, e2e DAG ordering + `prerequisite_failed` skipping, auto-recorded evidence, live ledger seeding | P1 | M | 074, 070; soft 069 | TODO |
+| 075  | Claims integration: mission `requires`, e2e DAG ordering + `prerequisite_failed` skipping, auto-recorded evidence, live ledger seeding | P1 | M | 074, 070; soft 069 | DONE (2026-07-17, branch `advisor/075-claims-integration`, commits `fe2f362`..`1dfffee`; e2e 8/8 PASS + `[EVIDENCE]`; `cap show` 8/8 sim-flown; `cap plan` LADDER COMPLETE exit 0; staleness probe: src commit -> stale, revert -> fresh) |
 
 ### Round 7 (2026-07-17, against `d769ffe`) — simplification push
 
