@@ -152,6 +152,22 @@ non-test, tasks.py alone 139); radon avg CC A (3.6), worst file tasks.py
 | 077  | tasks.py dedup: shared sim/hw boot path, one e2e state seed, `_clear_log_dir`, unified `scenario()`, ruff-pair loop | P2 | M | 076, 068 | DONE (2026-07-17, branch `advisor/077-tasks-dedup`; tasks.py 1471→1413, radon avg A 4.7; e2e 8/8 PASS) |
 | 078  | tools/ consolidation: `reports.py` merges e2e_report/e2e_status/scenario_status, shared `probes.py`, log_query fold-in, check_docs corpus cache | P2 | M | 076; after 068; 077 recommended first | DONE (2026-07-17, branch `advisor/078-tools-consolidation`; tools 27→25; check_docs ~0.17s; e2e 8/8 PASS) |
 
+### Round 8 (2026-07-17, against `82c21d0`) — agent-first CLI redesign
+
+Implements the approved spec `plans/079-agent-first-cli-design.md`: the
+bounded-command invariant ("no command may be unbounded"), run supervisor +
+STUCK verdict + always-written run records, bounded `wait` verbs, cursor-based
+log reads, and the full noun-verb regrammar with a documented harness
+contract (agnostic core, Claude-Code-aware fast path).
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 079  | Agent-first CLI redesign spec (design doc, no code) | — | — | — | DONE (committed `82c21d0`) |
+| 080  | Mission-level deadlines: `phase_timeout` guard + engine time-in-state (`state_elapsed_s`), `time_budget` wired into shipped missions | P1 | M | — | TODO |
+| 081  | Run supervisor: bounded scenario execution (deadline + log-silence watchdog), `logs/heartbeat`, run records `logs/runs/*.json`, STUCK verdict | P1 | M/L | before 082 | TODO |
+| 082  | Agent read-side: `just wait ready\|run`, `just runs`, `just log since\|events`, contextual disclosure on verdicts | P1 | M | 081 | TODO |
+| 083  | CLI regrammar: `sim start`/`run`/`e2e` noun-verb surface, content-first bare `just`, delete status trio, AGENTS.md harness contract, check_docs map | P1 | M/L | 081, 082; 080 first recommended | TODO |
+
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
 064 and 065 were added 2026-07-11 from profiling the first live e2e run
@@ -162,6 +178,29 @@ were considered and deferred (machine-bound ~3x ceiling on 12 cores/15GiB).
 065 was subsequently REJECTED by its own spike (2026-07-16, see its row).
 
 ## Dependency notes
+
+### Round 8 (2026-07-17) — agent-first CLI redesign
+
+- **Order**: 080 first (independent, pytest + `mission sim` verifiable, no
+  file overlap with the others), then 081 → 082 → 083 strictly sequentially
+  (all three edit `tasks.py`; 082 reads 081's artifacts; 083 renames what
+  081/082 built). Do not interleave with any other round in `tasks.py`.
+- **081/082 stay additive; 083 is the only breaking plan**: until 083 lands,
+  the old surface (`just scenario`, `just e2e-status`, `just test e2e`)
+  keeps working alongside the new verbs, so a partial landing never strands
+  the docs. AGENTS.md/README are rewritten only in 083, atomically with the
+  renames, gated by `check_docs`.
+- **Spec deviations recorded in-plan**: 080 aborts to `hold_safe` (no `land`
+  behavior exists; spec wording said land+disarm); run records live in
+  `logs/runs/` as FILES beside the bag-recording run DIRS (skein
+  `resolve_run_dir` unaffected); 083 ships `just run <name>` WITHOUT the
+  spec table's `--detach` flag (single runs are supervisor-bounded and
+  short; `just e2e --detach` is the detach path - YAGNI until a real
+  need appears).
+- **Live-verification gates**: 080 (scenarios 01/03 + e2e), 081 (forced
+  STUCK + e2e), 082 (detached e2e + wait/since smoke), 083 (full final
+  cycle on the regrammared surface). 080-083 all have pytest-first tasks an
+  operator-less executor can complete before the live sign-off.
 
 ### Round 7 (2026-07-17) — simplification push
 
