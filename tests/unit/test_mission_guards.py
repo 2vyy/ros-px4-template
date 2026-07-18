@@ -203,3 +203,41 @@ def test_keep_out_box_boundaries_and_optional_altitude() -> None:
 def test_keep_out_box_rejects_missing_or_inverted_bounds(params: dict) -> None:
     with pytest.raises(ValueError, match="keep_out_box"):
         get_guard("keep_out_box")(_inputs(), {}, params)
+
+
+def test_phase_timeout_fires_after_budget() -> None:
+    g = get_guard("phase_timeout")
+    assert g(_inputs(), {"state_elapsed_s": 31.0}, {"timeout_s": 30}) is True
+    assert g(_inputs(), {"state_elapsed_s": 29.0}, {"timeout_s": 30}) is False
+
+
+def test_phase_timeout_empty_signals_is_false() -> None:
+    # _probe_mission calls guards with signals={}; must not raise.
+    assert get_guard("phase_timeout")(_inputs(), {}, {"timeout_s": 30}) is False
+
+
+@pytest.mark.parametrize("params", [{}, {"timeout_s": 0}, {"timeout_s": -5}, {"timeout_s": "x"}])
+def test_phase_timeout_param_validation(params: dict) -> None:
+    with pytest.raises(ValueError, match="phase_timeout"):
+        get_guard("phase_timeout")(_inputs(), {}, params)
+
+
+def test_phase_timeout_mission_loads_via_probe() -> None:
+    """A mission using phase_timeout must survive load-time probing (signals={})."""
+    from ros_px4_template_core.lib.mission.loader import load_mission_dict
+
+    doc = {
+        "mission": {
+            "initial": "a",
+            "states": {
+                "a": {"behavior": "hold", "params": {"z": 3.0}},
+                "hold_safe": {"behavior": "hold"},
+            },
+            "transitions": [
+                {"from": "a", "guard": "phase_timeout", "params": {"timeout_s": 60}, "to": "hold_safe"}
+            ],
+            "terminal": ["hold_safe"],
+        }
+    }
+    m = load_mission_dict(doc)
+    assert m.transitions[0].guard == "phase_timeout"

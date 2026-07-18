@@ -99,6 +99,22 @@ def time_budget(inputs: Inputs, signals: dict, params: dict) -> bool:
     return inputs.mission_elapsed_s > budget
 
 
+@guard("phase_timeout")
+def phase_timeout(inputs: Inputs, signals: dict, params: dict) -> bool:
+    """True after ``timeout_s`` seconds in the current state.
+
+    Reads the engine-reserved ``state_elapsed_s`` signal; absent (load-time
+    probing calls guards with ``signals={}``) it is treated as 0 and the guard
+    is False.
+    """
+    if "timeout_s" not in params:
+        raise ValueError("phase_timeout: required param 'timeout_s' is missing")
+    timeout = _as_float(params["timeout_s"], "phase_timeout", "timeout_s")
+    if timeout <= 0.0:
+        raise ValueError(f"phase_timeout: 'timeout_s' must be > 0, got {timeout}")
+    return float(signals.get("state_elapsed_s", 0.0)) > timeout
+
+
 @guard("keep_out_box")
 def keep_out_box(inputs: Inputs, signals: dict, params: dict) -> bool:
     """True inside an axis-aligned ENU box. Intended for safety-tier transitions."""
