@@ -163,10 +163,10 @@ contract (agnostic core, Claude-Code-aware fast path).
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 079  | Agent-first CLI redesign spec (design doc, no code) | — | — | — | DONE (committed `82c21d0`) |
-| 080  | Mission-level deadlines: `phase_timeout` guard + engine time-in-state (`state_elapsed_s`), `time_budget` wired into shipped missions | P1 | M | — | TODO |
-| 081  | Run supervisor: bounded scenario execution (deadline + log-silence watchdog), `logs/heartbeat`, run records `logs/runs/*.json`, STUCK verdict | P1 | M/L | before 082 | TODO |
-| 082  | Agent read-side: `just wait ready\|run`, `just runs`, `just log since\|events`, contextual disclosure on verdicts | P1 | M | 081 | TODO |
-| 083  | CLI regrammar: `sim start`/`run`/`e2e` noun-verb surface, content-first bare `just`, delete status trio, AGENTS.md harness contract, check_docs map | P1 | M/L | 081, 082; 080 first recommended | TODO |
+| 080  | Mission-level deadlines: `phase_timeout` guard + engine time-in-state (`state_elapsed_s`), `time_budget` wired into shipped missions | P1 | M | — | DONE (`745875e`..`29b9d1b`; live gate: scenarios 01/03 + e2e 8/8 PASS, zero `guard=phase_timeout` hits in flight logs; evidence refreshed `e0ddec3`) |
+| 081  | Run supervisor: bounded scenario execution (deadline + log-silence watchdog), `logs/heartbeat`, run records `logs/runs/*.json`, STUCK verdict | P1 | M/L | before 082 | DONE (`4e94012`..`b36572d`; live gate: PASS record + deterministic forced STUCK + e2e 8/8; `silence_s` raised 30 to 90 after a measured 35.3s legitimate quiet stretch in steady hover) |
+| 082  | Agent read-side: `just wait ready\|run`, `just runs`, `just log since\|events`, contextual disclosure on verdicts | P1 | M | 081 | DONE (`e23cc77`..`0938a70` + follow-up fix; live smoke: wait exit 3 with heartbeat mid-cycle, delta-only `log since`, run-sliced `log events`; plan's 5 commits collapsed to 3 since they share tasks.py) |
+| 083  | CLI regrammar: `sim start`/`run`/`e2e` noun-verb surface, content-first bare `just`, delete status trio, AGENTS.md harness contract, check_docs map | P1 | M/L | 081, 082; 080 first recommended | DONE (`0c5881d`..`6642fc6`; live gate: full cycle on the regrammared surface - snapshot bare `just`, `sim start` READY, `run 01_arm_takeoff` PASS, detached e2e 8/8 PASS via bounded `wait run`, zero stale references; evidence refreshed `6642fc6`) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
@@ -201,6 +201,14 @@ were considered and deferred (machine-bound ~3x ceiling on 12 cores/15GiB).
   STUCK + e2e), 082 (detached e2e + wait/since smoke), 083 (full final
   cycle on the regrammared surface). 080-083 all have pytest-first tasks an
   operator-less executor can complete before the live sign-off.
+- **Round closed 2026-07-18, all four plans DONE.** Execution deviations
+  beyond the in-plan ones: per-task commits sharing `tasks.py` were
+  collapsed into single green commits (082: 5 to 3; 083: per the five-way
+  file partition); supervisor `silence_s` default raised 30 to 90 after a
+  measured 35.3s legitimately-quiet stretch in steady hover produced a
+  false STUCK; `resolve_wait_target` precedence reworked post-082 so a
+  finished e2e cycle reports its aggregate verdict instead of the newest
+  single-run record (`0c5881d`).
 
 ### Round 7 (2026-07-17) — simplification push
 
