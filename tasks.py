@@ -1,16 +1,7 @@
 #!/usr/bin/env uv run
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     # Minimal isolated env for the task runner (uv script mode) - intentionally
-#     # smaller than pyproject [project]; keep floors aligned when both declare a pkg.
-#     "typer>=0.12",
-#     "rich>=13.7.0",
-#     "tomli-w>=1.0.0",
-#     "pyyaml>=6.0",
-#     "numpy>=1.26,<2.0",
-# ]
-# ///
+# Runs in the project venv (pyproject.toml). `just _run` invokes `uv run
+# tasks.py`, which resolves the project environment now that there is no
+# inline script metadata.
 # ruff: noqa: E402,S603
 
 from __future__ import annotations

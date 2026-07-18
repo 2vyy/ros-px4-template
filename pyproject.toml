@@ -17,7 +17,7 @@ dependencies = [
     "opencv-python-headless>=4.7.0",
 ]
 
-# tasks.py runs in uv script mode with its own smaller inline dep list (see tasks.py:1-12).
+# tasks.py runs in this same project environment (uv run tasks.py).
 [dependency-groups]
 dev = [
     "pytest>=8.2",
