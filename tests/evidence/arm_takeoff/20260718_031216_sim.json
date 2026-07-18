@@ -1,0 +1,19 @@
+{
+  "claim": "arm_takeoff",
+  "platform": "sim",
+  "commit": "7861e11",
+  "run_id": "20260718_031216",
+  "verdict": "PASS",
+  "elapsed_s": 33.79,
+  "detail": {
+    "z_enu": 2.996731698513031,
+    "controller_state": "OFFBOARD_TRACK",
+    "mission_phase": "hover"
+  },
+  "conditions": {
+    "world": "default",
+    "model": "x500",
+    "vision": "none"
+  },
+  "grade": null
+}

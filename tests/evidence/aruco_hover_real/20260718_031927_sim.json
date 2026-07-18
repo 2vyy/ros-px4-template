@@ -1,0 +1,20 @@
+{
+  "claim": "aruco_hover_real",
+  "platform": "sim",
+  "commit": "7861e11",
+  "run_id": "20260718_031927",
+  "verdict": "PASS",
+  "elapsed_s": 34.85,
+  "detail": {
+    "valid_detections": 70,
+    "best_window_median_horiz_m": 0.042,
+    "min_horiz_m": 0.026,
+    "arm_trigger_ok": true
+  },
+  "conditions": {
+    "world": "marker_field",
+    "model": "x500_mono_cam_down",
+    "vision": "aruco"
+  },
+  "grade": null
+}

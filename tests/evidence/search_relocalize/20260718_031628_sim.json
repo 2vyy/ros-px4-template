@@ -1,0 +1,17 @@
+{
+  "claim": "search_relocalize",
+  "platform": "sim",
+  "commit": "7861e11",
+  "run_id": "20260718_031628",
+  "verdict": "PASS",
+  "elapsed_s": 26.23,
+  "detail": {
+    "override_count": 20
+  },
+  "conditions": {
+    "world": "default",
+    "model": "x500",
+    "vision": "aruco"
+  },
+  "grade": null
+}
