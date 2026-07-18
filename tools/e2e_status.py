@@ -57,14 +57,12 @@ def build_status(log_dir: Path, pid_alive: bool | None) -> tuple[str, int]:
             if current
             else f"between groups ({done}/{len(groups)} done)"
         )
-        speed = state.get("speed", 1.0)
-        speed_txt = f" at {speed}x" if speed != 1.0 else ""
         latest = log_dir / "latest.log"
         age = f"{time.time() - latest.stat().st_mtime:.0f}s ago" if latest.exists() else "n/a"
         lines = []
         if any(log_dir.glob("scenario_*.json")):
             lines.append(build_block(log_dir)[0])
-        lines.append(f"RUNNING {current_txt}{speed_txt}, last activity {age}")
+        lines.append(f"RUNNING {current_txt}, last activity {age}")
         return ("\n".join(lines), 3)
 
     if state.get("status") == "aborted":

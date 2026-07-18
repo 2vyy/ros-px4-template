@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compact sim/stack status snapshot for agents.
 
-Outputs JSON: sim_alive, live nodes, last scenario results, last log event.
+Concise English workspace snapshot (nodes, live status, capabilities).
 Exit 0 always — meant as a read-only diagnostic, not a gating check.
 """
 
