@@ -133,7 +133,7 @@ personally re-vetted against the code.
 | 070  | e2e report integrity: a scenario that crashes before writing its report gets a synthesized FAIL JSON (`crashed_before_report` / `no_report_written`); stale reports never trusted | P1 | S | — | TODO |
 | 071  | Scenario evidence hardening: shared `_fake_camera.py` (dedupe 05/06/08), independent PX4 cross-checks in 01/05/06, `pose_out_of_bounds` estimator tripwire | P2 | M | — | TODO |
 | 072  | Challenge authoring kit: `gen_world.py` (spec YAML → world SDF + marker map, golden-locked to marker_field) + `docs/CHALLENGES.md` rules-doc-to-verified-scenario playbook | P1 | M | 066 | TODO |
-| 073  | Rules assertion vocabulary: `altitude_ceiling` / `time_budget` / `keep_out_box` guards (+ `Inputs.mission_elapsed_s`), `HeldThroughout` scenario sampler | P2 | M | — | TODO |
+| 073  | Rules assertion vocabulary: `altitude_ceiling` / `time_budget` / `keep_out_box` guards (+ `Inputs.mission_elapsed_s`), `HeldThroughout` scenario sampler | P2 | M | — | DONE (2026-07-17, branch `advisor/073-rules-assertion-vocabulary`, commit `ed4aac1`; `just check`: 404 passed; 3 guards registered, docs + schema locks pass, simulate-level time_budget test, HeldThroughout sampler with injected-clock tests) |
 | 074  | Claims ladder core: derived rungs (declared/simulated/sim-flown + staleness), committed evidence ledger, `cap show/record/plan`, `requires` DAG, retire `cap mark` | P1 | L | — | TODO (spec: docs/superpowers/specs/2026-07-17-claims-ladder-design.md) |
 | 075  | Claims integration: mission `requires`, e2e DAG ordering + `prerequisite_failed` skipping, auto-recorded evidence, live ledger seeding | P1 | M | 074, 070; soft 069 | TODO |
 
