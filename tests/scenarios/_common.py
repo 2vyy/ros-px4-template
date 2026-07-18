@@ -1,4 +1,4 @@
-"""Shared helpers for live scenario scripts (not pytest)."""
+"""Shared live-scenario helpers, including continuously sampled rule invariants."""
 
 from __future__ import annotations
 
@@ -93,6 +93,46 @@ async def spin_until(
             await asyncio.sleep(poll_s)
     finally:
         executor.remove_node(node)
+
+
+class HeldThroughout:
+    """Continuously sampled invariant for scenarios: ``X`` held for the whole run.
+
+    Call :meth:`sample` from any callback or ``done`` predicate. :meth:`detail`
+    provides violation count and first-violation timing for scenario reports.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        ok: Callable[[], bool],
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.name = name
+        self._ok = ok
+        self._clock = clock
+        self._t0 = clock()
+        self.violations = 0
+        self.first_violation_t: float | None = None
+
+    def sample(self) -> None:
+        if not self._ok():
+            self.violations += 1
+            if self.first_violation_t is None:
+                self.first_violation_t = self._clock() - self._t0
+
+    @property
+    def held(self) -> bool:
+        return self.violations == 0
+
+    def detail(self) -> dict:
+        return {
+            f"{self.name}_held": self.held,
+            f"{self.name}_violations": self.violations,
+            f"{self.name}_first_violation_s": (
+                round(self.first_violation_t, 1) if self.first_violation_t is not None else None
+            ),
+        }
 
 
 def scenario_verdict_line(name: str, passed: bool, elapsed_s: float, detail: dict) -> str:

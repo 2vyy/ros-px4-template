@@ -32,6 +32,7 @@ class MissionManagerState:
     have_odom: bool
     odom_time: float
     armed: bool
+    first_armed_time: float | None
     ctrl_alt: float
     estimate_ok: bool
     marker_offset_body: tuple[float, float, float] | None
@@ -95,5 +96,6 @@ def build_inputs(
         },
         battery_remaining=s.battery_remaining,
         failsafe_active=s.failsafe_active,
+        mission_elapsed_s=((now - s.first_armed_time) if s.first_armed_time is not None else 0.0),
     )
     return inputs, marker_stability

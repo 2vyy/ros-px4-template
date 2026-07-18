@@ -22,6 +22,7 @@ def _inputs(
     input_ages: dict[str, float] | None = None,
     battery_remaining: float | None = None,
     failsafe_active: bool = False,
+    mission_elapsed_s: float = 0.0,
 ) -> Inputs:
     return Inputs(
         now=now,
@@ -35,6 +36,7 @@ def _inputs(
         input_ages={"odom": 0.0} if input_ages is None else input_ages,
         battery_remaining=battery_remaining,
         failsafe_active=failsafe_active,
+        mission_elapsed_s=mission_elapsed_s,
     )
 
 
@@ -140,3 +142,64 @@ def test_marker_lost_signal_guard() -> None:
     assert get_guard("marker_lost_signal")(_inputs(), {"marker_lost": True}, {}) is True
     assert get_guard("marker_lost_signal")(_inputs(), {"marker_lost": False}, {}) is False
     assert get_guard("marker_lost_signal")(_inputs(), {}, {}) is False
+
+
+def test_altitude_ceiling_boundaries() -> None:
+    ceiling = get_guard("altitude_ceiling")
+    assert ceiling(_inputs(pose_enu=(0.0, 0.0, 9.9)), {}, {"ceiling_m": 10.0}) is False
+    assert ceiling(_inputs(pose_enu=(0.0, 0.0, 10.0)), {}, {"ceiling_m": 10.0}) is True
+    assert ceiling(_inputs(pose_enu=(0.0, 0.0, 10.1)), {}, {"ceiling_m": 10.0}) is True
+
+
+@pytest.mark.parametrize(
+    "params", [{}, {"ceiling_m": 0.0}, {"ceiling_m": -1.0}, {"ceiling_m": None}]
+)
+def test_altitude_ceiling_rejects_invalid_params(params: dict) -> None:
+    with pytest.raises(ValueError, match="altitude_ceiling"):
+        get_guard("altitude_ceiling")(_inputs(), {}, params)
+
+
+def test_time_budget_uses_armed_elapsed_time() -> None:
+    budget = get_guard("time_budget")
+    assert budget(_inputs(mission_elapsed_s=0.0), {}, {"budget_s": 300.0}) is False
+    assert budget(_inputs(mission_elapsed_s=300.0), {}, {"budget_s": 300.0}) is False
+    assert budget(_inputs(mission_elapsed_s=301.0), {}, {"budget_s": 300.0}) is True
+
+
+@pytest.mark.parametrize("params", [{}, {"budget_s": 0.0}, {"budget_s": -1.0}, {"budget_s": None}])
+def test_time_budget_rejects_invalid_params(params: dict) -> None:
+    with pytest.raises(ValueError, match="time_budget"):
+        get_guard("time_budget")(_inputs(), {}, params)
+
+
+def test_keep_out_box_boundaries_and_optional_altitude() -> None:
+    keep_out = get_guard("keep_out_box")
+    xy = {"x_min": -1.0, "x_max": 1.0, "y_min": -2.0, "y_max": 2.0}
+    assert keep_out(_inputs(pose_enu=(0.0, 0.0, 50.0)), {}, xy) is True
+    assert keep_out(_inputs(pose_enu=(1.0, 2.0, 0.0)), {}, xy) is True
+    assert keep_out(_inputs(pose_enu=(1.1, 0.0, 0.0)), {}, xy) is False
+
+    xyz = {**xy, "z_min": 0.0, "z_max": 3.0}
+    assert keep_out(_inputs(pose_enu=(0.0, 0.0, 3.1)), {}, xyz) is False
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"x_min": 0.0, "x_max": 0.0, "y_min": -1.0, "y_max": 1.0},
+        {"x_min": -1.0, "x_max": 1.0, "y_min": 2.0, "y_max": 1.0},
+        {"x_min": None, "x_max": 1.0, "y_min": -1.0, "y_max": 1.0},
+        {
+            "x_min": -1.0,
+            "x_max": 1.0,
+            "y_min": -1.0,
+            "y_max": 1.0,
+            "z_min": 4.0,
+            "z_max": 3.0,
+        },
+    ],
+)
+def test_keep_out_box_rejects_missing_or_inverted_bounds(params: dict) -> None:
+    with pytest.raises(ValueError, match="keep_out_box"):
+        get_guard("keep_out_box")(_inputs(), {}, params)

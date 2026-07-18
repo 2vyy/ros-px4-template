@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
 from ros_px4_template_core.lib.mission.registry import guard
 from ros_px4_template_core.lib.mission.types import Inputs
@@ -15,6 +16,13 @@ def _fresh(inputs: Inputs, target_id: int | None, t: float) -> bool:
         if inputs.now - d.stamp <= t:
             return True
     return False
+
+
+def _as_float(value: Any, guard_name: str, param_name: str) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{guard_name}: '{param_name}' must be numeric, got {value!r}") from None
 
 
 @guard("armed_at_altitude")
@@ -67,6 +75,47 @@ def marker_lost(inputs: Inputs, signals: dict, params: dict) -> bool:
 def geofence_breach(inputs: Inputs, signals: dict, params: dict) -> bool:
     radius = float(params.get("radius_m", 50.0))
     return math.hypot(inputs.pose_enu[0], inputs.pose_enu[1]) >= radius
+
+
+@guard("altitude_ceiling")
+def altitude_ceiling(inputs: Inputs, signals: dict, params: dict) -> bool:
+    """True at or above the ENU z ceiling. Intended for safety-tier transitions."""
+    if "ceiling_m" not in params:
+        raise ValueError("altitude_ceiling: required param 'ceiling_m' is missing")
+    ceiling = _as_float(params["ceiling_m"], "altitude_ceiling", "ceiling_m")
+    if ceiling <= 0.0:
+        raise ValueError(f"altitude_ceiling: 'ceiling_m' must be > 0, got {ceiling}")
+    return inputs.pose_enu[2] >= ceiling
+
+
+@guard("time_budget")
+def time_budget(inputs: Inputs, signals: dict, params: dict) -> bool:
+    """True after the armed-time budget. Intended for safety-tier transitions."""
+    if "budget_s" not in params:
+        raise ValueError("time_budget: required param 'budget_s' is missing")
+    budget = _as_float(params["budget_s"], "time_budget", "budget_s")
+    if budget <= 0.0:
+        raise ValueError(f"time_budget: 'budget_s' must be > 0, got {budget}")
+    return inputs.mission_elapsed_s > budget
+
+
+@guard("keep_out_box")
+def keep_out_box(inputs: Inputs, signals: dict, params: dict) -> bool:
+    """True inside an axis-aligned ENU box. Intended for safety-tier transitions."""
+    required = ("x_min", "x_max", "y_min", "y_max")
+    missing = [key for key in required if key not in params]
+    if missing:
+        raise ValueError(f"keep_out_box: required params missing: {missing}")
+    x0 = _as_float(params["x_min"], "keep_out_box", "x_min")
+    x1 = _as_float(params["x_max"], "keep_out_box", "x_max")
+    y0 = _as_float(params["y_min"], "keep_out_box", "y_min")
+    y1 = _as_float(params["y_max"], "keep_out_box", "y_max")
+    z0 = _as_float(params.get("z_min", float("-inf")), "keep_out_box", "z_min")
+    z1 = _as_float(params.get("z_max", float("inf")), "keep_out_box", "z_max")
+    if x0 >= x1 or y0 >= y1 or z0 >= z1:
+        raise ValueError("keep_out_box: each *_min must be < its *_max")
+    x, y, z = inputs.pose_enu
+    return (x0 <= x <= x1) and (y0 <= y <= y1) and (z0 <= z <= z1)
 
 
 @guard("estimate_invalid")

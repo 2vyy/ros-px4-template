@@ -171,6 +171,9 @@ Registered in `lib/mission/guards.py`. Each is a pure predicate over the snapsho
 | `marker_stable` | `id`, `n` (5) | `id` seen on ≥ `n` consecutive fresh detections |
 | `marker_lost` | `id`, `t` (3.0) | no detection of `id` within `t` s |
 | `geofence_breach` | `radius_m` (50.0) | horizontal distance from origin ≥ `radius_m` |
+| `altitude_ceiling` | `ceiling_m` (required, > 0) | ENU z is at/above `ceiling_m`; intended for safety-tier transitions |
+| `time_budget` | `budget_s` (required, > 0) | armed mission time exceeds `budget_s`; intended for safety-tier transitions |
+| `keep_out_box` | `x_min`, `x_max`, `y_min`, `y_max` (required); `z_min`, `z_max` (optional) | vehicle is inside or on the boundary of the axis-aligned ENU box; intended for safety-tier transitions |
 | `estimate_invalid` | — | the state estimate is not OK |
 | `inputs_stale` | `key` (`odom`), `t` (1.0) | named input older than `t` s |
 | `battery_low` | `frac` (0.2), `max_age_s` (5.0) | battery is connected, fresh (age <= `max_age_s`), and remaining fraction <= `frac` |

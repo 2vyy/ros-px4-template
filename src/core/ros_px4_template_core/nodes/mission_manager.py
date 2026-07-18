@@ -88,6 +88,7 @@ class MissionManager(Node):
         self._have_odom = False
         self._odom_time = 0.0
         self._armed = False
+        self._first_armed_time: float | None = None
         self._ctrl_alt = 0.0
         self._estimate_ok = True
         self._marker_offset_body: tuple[float, float, float] | None = None
@@ -149,7 +150,10 @@ class MissionManager(Node):
         self.slog.info("MissionManager ready", mission=str(p), initial=self._mission.initial)
 
     def _controller_cb(self, msg: ControllerStatus) -> None:
+        now = self.get_clock().now().nanoseconds / 1e9
         with self._state_lock:
+            if msg.armed and self._first_armed_time is None:
+                self._first_armed_time = now
             self._armed = msg.armed
             self._ctrl_alt = float(msg.altitude_enu_m)
 
@@ -214,6 +218,7 @@ class MissionManager(Node):
                 have_odom=self._have_odom,
                 odom_time=self._odom_time,
                 armed=self._armed,
+                first_armed_time=self._first_armed_time,
                 ctrl_alt=self._ctrl_alt,
                 estimate_ok=self._estimate_ok,
                 marker_offset_body=self._marker_offset_body,

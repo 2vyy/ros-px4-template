@@ -18,6 +18,7 @@ def _state(**over: Any) -> MissionManagerState:
         have_odom=True,
         odom_time=0.0,
         armed=False,
+        first_armed_time=None,
         ctrl_alt=0.0,
         estimate_ok=True,
         marker_offset_body=None,
@@ -108,3 +109,13 @@ def test_estimate_ok_passes_through() -> None:
     assert inp.estimate_ok is True
     inp2, _ = _build(0.0, estimate_ok=False)
     assert inp2.estimate_ok is False
+
+
+def test_mission_elapsed_is_zero_before_first_arm() -> None:
+    inp, _ = _build(12.0, first_armed_time=None)
+    assert inp.mission_elapsed_s == 0.0
+
+
+def test_mission_elapsed_is_seconds_since_first_arm() -> None:
+    inp, _ = _build(12.0, first_armed_time=5.0)
+    assert inp.mission_elapsed_s == 7.0
