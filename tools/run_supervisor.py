@@ -15,6 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
+import log_view
 import reports
 from log_summary import parse_logfmt
 
@@ -214,14 +215,8 @@ def supervise(
     try:
         while True:
             rc = proc.poll()
-            size = log_path.stat().st_size if log_path.exists() else 0
-            if size < offset:  # log truncated (new boot): restart cursor
-                offset = 0
-            if size > offset:
-                with log_path.open("r", encoding="utf-8", errors="replace") as fh:
-                    fh.seek(offset)
-                    new = fh.read().splitlines()
-                offset = size
+            new, offset = log_view.read_new(log_path, offset)
+            if new:
                 last_growth = time.monotonic()
                 if any("event=" in ln for ln in new):
                     wall_last_event = time.time()

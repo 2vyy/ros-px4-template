@@ -1118,6 +1118,10 @@ def _fallback_scenario_report(scenario: str, reason: str, config: dict[str, str]
     )
 
 
+def _print_run_failure_hint(record_stem: str, t_end: int) -> None:
+    print(f'next: just log events --run {record_stem} | rg -C5 "t={t_end}\\." logs/latest.log')
+
+
 def _write_run_record_for(name: str, report: Path, stuck: str | None) -> Path:
     """Always-written run record (spec: verdict-file contract). Never raises."""
     s: dict
@@ -1195,6 +1199,18 @@ def _run_e2e_sim_group(
     proc = _spawn_stack(launch_args, env, append=True)
     pidfile.write_text(str(proc.pid))
 
+    from capabilities import claim_for_scenario
+
+    config = {"vision": vision, "overlay": overlay, "model": model, "world": world}
+
+    def record_failure(s: str, reason: str, *, write_report: bool) -> None:
+        if registry is not None and failed_claims is not None:
+            failed_claims.add(claim_for_scenario(registry, s) or s)
+        if write_report:
+            (LOG_DIR / f"scenario_{s}.json").write_text(
+                _fallback_scenario_report(s, reason, config), encoding="utf-8"
+            )
+
     fails = 0
     try:
         print("Waiting for simulation to stabilize...")
@@ -1207,52 +1223,26 @@ def _run_e2e_sim_group(
             # Write a failure report per scenario (same shape as write_report in
             # tests/scenarios/_common.py) so the e2e report block lists them
             # instead of silently omitting scenarios that never ran.
-            if registry is not None and failed_claims is not None:
-                from capabilities import claim_for_scenario
-
-                for s in scenarios:
-                    failed_claims.add(claim_for_scenario(registry, s) or s)
             for s in scenarios:
-                (LOG_DIR / f"scenario_{s}.json").write_text(
-                    _fallback_scenario_report(
-                        s,
-                        "sim_never_ready",
-                        {
-                            "vision": vision,
-                            "overlay": overlay,
-                            "model": model,
-                            "world": world,
-                        },
-                    ),
-                    encoding="utf-8",
-                )
+                record_failure(s, "sim_never_ready", write_report=True)
                 _write_run_record_for(s, LOG_DIR / f"scenario_{s}.json", None)
             return len(scenarios)
 
         for s in scenarios:
-            if registry is not None and failed_claims is not None:
-                blocker = _blocked_by(registry, s, failed_claims)
-                if blocker is not None:
-                    fails += 1
-                    print(
-                        f"  [SKIP] {s}: prerequisite claim '{blocker}' failed this run",
-                        file=sys.stderr,
-                    )
-                    (LOG_DIR / f"scenario_{s}.json").write_text(
-                        _fallback_scenario_report(
-                            s,
-                            f"prerequisite_failed:{blocker}",
-                            {
-                                "vision": vision,
-                                "overlay": overlay,
-                                "model": model,
-                                "world": world,
-                            },
-                        ),
-                        encoding="utf-8",
-                    )
-                    _write_run_record_for(s, LOG_DIR / f"scenario_{s}.json", None)
-                    continue
+            blocker = (
+                _blocked_by(registry, s, failed_claims)
+                if registry is not None and failed_claims is not None
+                else None
+            )
+            if blocker is not None:
+                fails += 1
+                print(
+                    f"  [SKIP] {s}: prerequisite claim '{blocker}' failed this run",
+                    file=sys.stderr,
+                )
+                record_failure(s, f"prerequisite_failed:{blocker}", write_report=True)
+                _write_run_record_for(s, LOG_DIR / f"scenario_{s}.json", None)
+                continue
 
             print(f"Running scenario {s}...")
             report = LOG_DIR / f"scenario_{s}.json"
@@ -1269,98 +1259,53 @@ def _run_e2e_sim_group(
             )
             fresh = report.exists() and report.stat().st_mtime >= started_at
             if stuck is not None:
-                fails += 1
-                if registry is not None and failed_claims is not None:
-                    from capabilities import claim_for_scenario
-
-                    failed_claims.add(claim_for_scenario(registry, s) or s)
-                print(
+                reason = f"stuck:{stuck}"
+                msg = (
                     f"  [STUCK] {s} killed by supervisor ({stuck}); "
-                    "read the stack log, not the mission events",
-                    file=sys.stderr,
+                    "read the stack log, not the mission events"
                 )
-                if not fresh:
-                    report.write_text(
-                        _fallback_scenario_report(
-                            s,
-                            f"stuck:{stuck}",
-                            {
-                                "vision": vision,
-                                "overlay": overlay,
-                                "model": model,
-                                "world": world,
-                            },
-                        ),
-                        encoding="utf-8",
-                    )
             elif rc != 0:
-                fails += 1
-                if registry is not None and failed_claims is not None:
-                    from capabilities import claim_for_scenario
-
-                    failed_claims.add(claim_for_scenario(registry, s) or s)
-                if not fresh:
-                    print(
-                        f"  [FAIL] {s} exited {rc} without writing a report; "
-                        "synthesizing crashed_before_report",
-                        file=sys.stderr,
-                    )
-                    report.write_text(
-                        _fallback_scenario_report(
-                            s,
-                            "crashed_before_report",
-                            {
-                                "vision": vision,
-                                "overlay": overlay,
-                                "model": model,
-                                "world": world,
-                            },
-                        ),
-                        encoding="utf-8",
-                    )
+                reason = "crashed_before_report"
+                msg = (
+                    f"  [FAIL] {s} exited {rc} without writing a report; "
+                    "synthesizing crashed_before_report"
+                )
             elif not fresh:
                 # Exit 0 but no fresh report: never trust it as a pass.
+                reason = "no_report_written"
+                msg = f"  [FAIL] {s} exited 0 but wrote no report; counting as FAIL"
+            else:
+                reason = None
+                msg = None
+
+            if reason is not None:
                 fails += 1
-                if registry is not None and failed_claims is not None:
-                    from capabilities import claim_for_scenario
-
-                    failed_claims.add(claim_for_scenario(registry, s) or s)
-                print(
-                    f"  [FAIL] {s} exited 0 but wrote no report; counting as FAIL",
-                    file=sys.stderr,
-                )
-                report.write_text(
-                    _fallback_scenario_report(
-                        s,
-                        "no_report_written",
-                        {
-                            "vision": vision,
-                            "overlay": overlay,
-                            "model": model,
-                            "world": world,
-                        },
-                    ),
-                    encoding="utf-8",
-                )
-
-            record_path = _write_run_record_for(s, report, stuck)
-            if stuck is not None or rc != 0 or not fresh:
+                # [STUCK] always prints (even with a fresh report); the FAIL
+                # messages print only when there is no fresh report to speak
+                # for itself.
+                if stuck is not None or not fresh:
+                    print(msg, file=sys.stderr)
+                # Write the (possibly-synthesized) report BEFORE the run
+                # record: _write_run_record_for reads the report file, so a
+                # stale on-disk report must be overwritten first or the
+                # record would trust it (e.g. a stale passed:true).
+                record_failure(s, reason, write_report=not fresh)
+                record_path = _write_run_record_for(s, report, stuck)
                 rec = json.loads(record_path.read_text(encoding="utf-8"))
                 t_end = int(rec.get("t_end") or 0)
-                print(
-                    f"next: just log events --run {record_path.stem} | "
-                    f'rg -C5 "t={t_end}\\." logs/latest.log'
-                )
-            if stuck is None and rc == 0 and fresh and registry is not None:
-                _auto_record(
-                    registry,
-                    s,
-                    vision=vision,
-                    overlay=overlay,
-                    model=model,
-                    world=world,
-                    run_record=record_path.stem,
-                )
+                _print_run_failure_hint(record_path.stem, t_end)
+            else:
+                record_path = _write_run_record_for(s, report, stuck)
+                if registry is not None:
+                    _auto_record(
+                        registry,
+                        s,
+                        vision=vision,
+                        overlay=overlay,
+                        model=model,
+                        world=world,
+                        run_record=record_path.stem,
+                    )
 
         if audit_topics:
             print("Auditing topic graph...")
@@ -1397,12 +1342,6 @@ def e2e(
         False,
         "--detach",
         help="Run in a background supervisor; poll with just wait run.",
-    ),
-    wait: bool = typer.Option(
-        False,
-        "--wait",
-        hidden=True,
-        help="Deprecated: e2e blocks by default; this flag is a no-op.",
     ),
 ):
     """Run the full headless e2e cycle (blocks; ends with the aggregate verdict).
@@ -1445,7 +1384,7 @@ def e2e(
 
     if not detach:
         # Blocking by default: capture the terminal, end with the aggregate
-        # verdict and exit code. `--wait` is the deprecated no-op alias.
+        # verdict and exit code.
         _e2e_run(configs, registry=registry)
         return
 
@@ -1486,51 +1425,42 @@ def run_cmd(
     Boots the sim config (vision/overlay) the scenario declares in
     ``tests/capabilities.toml``, runs it in isolation, and tears the sim down
     afterward — matching the e2e harness so a manual single run can't be
-    silently tested against the wrong mission. Scenarios with no declared
-    config fall back to running against whatever sim is already up.
+    silently tested against the wrong mission.
     """
     _smart_build(True)
-    script = _resolve_scenario_script(name)
+    _resolve_scenario_script(name)
     cfg = _resolve_scenario_config(name)
     if cfg is None:
         print(
-            f"No declared sim config for '{name}' in tests/capabilities.toml — "
-            "running against the existing sim (start one with `just sim start` first). "
-            f"To make `just run {name}` boot the right sim, add the entry "
-            'with platforms = ["sim"] (see `just scenario-new` output).'
+            f"No declared sim config for '{name}' in tests/capabilities.toml. "
+            "Add the claim entry (see `just scenario-new` output) so the run is "
+            "bounded and recorded; every shipped scenario declares one.",
+            file=sys.stderr,
         )
-        print(f"Running scenario test: {name}...")
-        try:
-            result = subprocess.run(["uv", "run", "python", str(script)], cwd=str(ROOT))
-            fails = 0 if result.returncode == 0 else 1
-        finally:
-            _summarize_logs_silent()
-    else:
-        print(f"Tearing down any existing stack before booting {name}'s declared sim...")
-        _teardown()
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        (LOG_DIR / "latest.log").write_text("", encoding="utf-8")
-        try:
-            fails = _run_e2e_sim_group(
-                cfg["vision"],
-                cfg["overlay"],
-                [cfg["scenario"]],
-                gz_resource=f"{ROOT}/sim/worlds:{ROOT}/sim/models",
-                model=cfg["model"],
-                world=cfg["world"],
-                deadline_s=float(timeout),
-            )
-        finally:
-            _summarize_logs_silent()
+        raise typer.Exit(int(ExitCode.PRECONDITION))
+
+    print(f"Tearing down any existing stack before booting {name}'s declared sim...")
+    _teardown()
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    (LOG_DIR / "latest.log").write_text("", encoding="utf-8")
+    try:
+        fails = _run_e2e_sim_group(
+            cfg["vision"],
+            cfg["overlay"],
+            [cfg["scenario"]],
+            gz_resource=f"{ROOT}/sim/worlds:{ROOT}/sim/models",
+            model=cfg["model"],
+            world=cfg["world"],
+            deadline_s=float(timeout),
+        )
+    finally:
+        _summarize_logs_silent()
     if fails:
         _print_failure_digest()
         recs = run_supervisor.list_run_records(limit=1)
         if recs and recs[0].get("record"):
             t_end = int(recs[0].get("t_end") or 0)
-            print(
-                f"next: just log events --run {recs[0]['record']} | "
-                f'rg -C5 "t={t_end}\\." logs/latest.log'
-            )
+            _print_run_failure_hint(recs[0]["record"], t_end)
         raise typer.Exit(int(ExitCode.FAIL))
 
 

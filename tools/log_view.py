@@ -20,6 +20,23 @@ def _is_error(rec: dict) -> bool:
     return rec.get("level") == "error"
 
 
+def read_new(log_path: Path, offset: int) -> tuple[list[str], int]:
+    """Lines appended past ``offset``; new offset. Truncation resets to 0.
+
+    Shared primitive: stat size, treat a log smaller than ``offset`` as a
+    new boot (reset the cursor), read only the appended bytes otherwise.
+    """
+    size = log_path.stat().st_size if log_path.exists() else 0
+    if size < offset:
+        offset = 0
+    lines: list[str] = []
+    if size > offset:
+        with log_path.open("r", encoding="utf-8", errors="replace") as fh:
+            fh.seek(offset)
+            lines = fh.read().splitlines()
+    return lines, size
+
+
 def read_since(log_path: Path, cursor_path: Path) -> tuple[list[str], dict]:
     """Return (new lines, {"raw": n, "errors": n}) since the cursor; advance it.
 
@@ -33,14 +50,7 @@ def read_since(log_path: Path, cursor_path: Path) -> tuple[list[str], dict]:
         offset = int(cur.get("offset", 0))
     except (OSError, ValueError, TypeError):
         offset = 0
-    size = log_path.stat().st_size if log_path.exists() else 0
-    if size < offset:
-        offset = 0
-    lines: list[str] = []
-    if size > offset:
-        with log_path.open("r", encoding="utf-8", errors="replace") as fh:
-            fh.seek(offset)
-            lines = fh.read().splitlines()
+    lines, size = read_new(log_path, offset)
     cursor_path.write_text(json.dumps({"offset": size, "size": size}) + "\n", encoding="utf-8")
     errors = sum(1 for ln in lines if _is_error(parse_logfmt(ln)))
     return lines, {"raw": len(lines), "errors": errors}
