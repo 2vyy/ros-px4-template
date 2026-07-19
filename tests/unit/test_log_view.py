@@ -7,7 +7,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 
-from log_view import filter_events, format_trailer, read_since, slice_by_t
+from log_view import filter_events, format_trailer, read_new, read_since, slice_by_t
+
+
+def test_read_new_returns_appended_lines_then_resets_on_truncation(tmp_path: Path) -> None:
+    log = tmp_path / "latest.log"
+    log.write_text("a\nb\n")
+    lines, offset = read_new(log, 0)
+    assert lines == ["a", "b"]
+    log.write_text("a\nb\nc\n")
+    lines, offset = read_new(log, offset)
+    assert lines == ["c"]
+    log.write_text("new\n")  # new boot clobbered the log
+    lines, offset = read_new(log, offset)
+    assert lines == ["new"]
+    assert offset == log.stat().st_size
 
 
 def test_read_since_returns_only_new_lines(tmp_path: Path) -> None:
