@@ -360,11 +360,8 @@ def build_world_sdf(
     markers = spec.get("markers") or []
     if markers:
         parts.append("")
-        for i, marker in enumerate(markers):
-            if i > 0:
-                parts.append(_build_marker_include(marker))
-            else:
-                parts.append(_build_marker_include(marker))
+        for marker in markers:
+            parts.append(_build_marker_include(marker))
     parts.append("  </world>")
     parts.append("</sdf>")
     parts.append("")  # trailing newline

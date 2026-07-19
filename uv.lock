@@ -322,7 +322,6 @@ dependencies = [
     { name = "pymavlink" },
     { name = "pyyaml" },
     { name = "rich" },
-    { name = "tomli-w" },
     { name = "typer" },
     { name = "websocket-client" },
 ]
@@ -334,6 +333,7 @@ dev = [
     { name = "lark" },
     { name = "pytest" },
     { name = "ruff" },
+    { name = "tomli-w" },
     { name = "ty" },
 ]
 
@@ -344,7 +344,6 @@ requires-dist = [
     { name = "pymavlink", specifier = ">=2.4" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.7" },
-    { name = "tomli-w", specifier = ">=1.0" },
     { name = "typer", specifier = ">=0.12" },
     { name = "websocket-client", specifier = ">=1.6" },
 ]
@@ -356,6 +355,7 @@ dev = [
     { name = "lark", specifier = ">=1.1.9" },
     { name = "pytest", specifier = ">=8.2" },
     { name = "ruff", specifier = ">=0.15,<0.16" },
+    { name = "tomli-w", specifier = ">=1.0" },
     { name = "ty", specifier = ">=0.0.1a8" },
 ]
 

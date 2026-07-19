@@ -11,7 +11,6 @@ dependencies = [
     "numpy>=1.26,<2.0",
     "rich>=13.7",
     "typer>=0.12",
-    "tomli-w>=1.0",
     "pymavlink>=2.4",
     "websocket-client>=1.6",
     "opencv-python-headless>=4.7.0",
@@ -20,6 +19,7 @@ dependencies = [
 # tasks.py runs in this same project environment (uv run tasks.py).
 [dependency-groups]
 dev = [
+    "tomli-w>=1.0",
     "pytest>=8.2",
     "ruff>=0.15,<0.16",
     "ty>=0.0.1a8",

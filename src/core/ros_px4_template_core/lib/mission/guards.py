@@ -5,17 +5,13 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from ros_px4_template_core.lib.mission.detection import detections_for
 from ros_px4_template_core.lib.mission.registry import guard
 from ros_px4_template_core.lib.mission.types import Inputs
 
 
 def _fresh(inputs: Inputs, target_id: int | None, t: float) -> bool:
-    for d in inputs.detections:
-        if target_id is not None and d.id != target_id:
-            continue
-        if inputs.now - d.stamp <= t:
-            return True
-    return False
+    return any(inputs.now - d.stamp <= t for d in detections_for(inputs.detections, target_id))
 
 
 def _as_float(value: Any, guard_name: str, param_name: str) -> float:

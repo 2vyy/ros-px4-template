@@ -6,19 +6,13 @@ import math
 
 from ros_px4_template_core.lib.frames import marker_world_from_drone
 from ros_px4_template_core.lib.mission.commands import BehaviorResult, GoTo, Land
-from ros_px4_template_core.lib.mission.detection import Detection
+from ros_px4_template_core.lib.mission.detection import Detection, detections_for
 from ros_px4_template_core.lib.mission.registry import behavior
 from ros_px4_template_core.lib.mission.types import Inputs
 
 
 def _latest(detections: tuple[Detection, ...], target_id: int | None) -> Detection | None:
-    best: Detection | None = None
-    for d in detections:
-        if target_id is not None and d.id != target_id:
-            continue
-        if best is None or d.stamp >= best.stamp:
-            best = d
-    return best
+    return max(detections_for(detections, target_id), key=lambda d: d.stamp, default=None)
 
 
 @behavior("hold")

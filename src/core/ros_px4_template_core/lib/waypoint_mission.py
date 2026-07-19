@@ -1,4 +1,4 @@
-"""Load ENU path geometry and evaluate waypoint reachability."""
+"""Load ENU path geometry."""
 
 from __future__ import annotations
 
@@ -15,20 +15,6 @@ class EnuPoint:
     x: float
     y: float
     z: float
-
-
-@dataclass(frozen=True)
-class MissionDefaults:
-    tolerance_m: float = 0.4
-    hold_s: float = 2.0
-    z_tolerance_m: float | None = None  # None → 3D distance fallback
-
-
-@dataclass(frozen=True)
-class WaypointMission:
-    frame_id: str
-    defaults: MissionDefaults
-    waypoints: tuple[EnuPoint, ...]
 
 
 def _point_from_dict(d: dict[str, Any]) -> EnuPoint:
@@ -54,29 +40,3 @@ def load_path_yaml(path: str | Path) -> tuple[EnuPoint, ...]:
         return _waypoints_from_raw(data["waypoints"])
     msg = f"path file must be a waypoint list or contain waypoints: {path}"
     raise ValueError(msg)
-
-
-def reached(
-    current: tuple[float, float, float],
-    target: EnuPoint,
-    tolerance_m: float,
-    *,
-    z_tolerance_m: float | None = None,
-) -> bool:
-    """True when position is within tolerance of target.
-
-    If z_tolerance_m is None, uses 3D Euclidean distance (backward-compatible).
-    If set, enforces separate horizontal (XY) and vertical (Z) tolerances.
-    """
-    dx = current[0] - target.x
-    dy = current[1] - target.y
-    dz = current[2] - target.z
-    if z_tolerance_m is None:
-        return math.sqrt(dx * dx + dy * dy + dz * dz) <= tolerance_m
-    return math.sqrt(dx * dx + dy * dy) <= tolerance_m and abs(dz) <= z_tolerance_m
-
-
-def current_waypoint(mission: WaypointMission, index: int) -> EnuPoint | None:
-    if index < 0 or index >= len(mission.waypoints):
-        return None
-    return mission.waypoints[index]

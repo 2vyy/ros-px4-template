@@ -18,3 +18,8 @@ class Detection:
     offset_body_flu: tuple[float, float, float]
     stamp: float
     pose_world: tuple[float, float, float] | None = None
+
+
+def detections_for(detections: tuple[Detection, ...], target_id: int | None):
+    """Detections matching ``target_id`` (all of them when ``target_id`` is None)."""
+    return (d for d in detections if target_id is None or d.id == target_id)
