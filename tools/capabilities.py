@@ -226,9 +226,9 @@ def plan(
         load_records,
         real_evidence_committed,
     )
-    from cap_plan import format_plan
     from cap_status import (
         derive_all,
+        format_plan,
         real_artifacts_ok,
         real_changed_since,
         real_mission_ok,
@@ -259,14 +259,25 @@ def plan(
     raise typer.Exit(0 if complete else 1)
 
 
-def scenarios_for_platform(platform: str = "sim", registry: Path = REGISTRY) -> list[str]:
-    """Return scenario names (without .py) for the given platform, in TOML order."""
-    data = _load(registry)
-    result = []
-    for cap in data.get("capabilities", {}).values():
-        if platform in cap.get("platforms", []) and cap.get("scenario_file"):
-            result.append(cap["scenario_file"].removesuffix(".py"))
-    return result
+def _sim_config(entry: dict) -> dict:
+    """The one config-dict shape the e2e harness and single runs consume.
+
+    Defaults keep older registries working: vision="none", overlay="auto_arm",
+    model="x500", world="default"."""
+    return {
+        "scenario": entry["scenario_file"].removesuffix(".py"),
+        "vision": entry.get("sim_vision", "none"),
+        "overlay": entry.get("sim_overlay", "auto_arm"),
+        "model": entry.get("sim_model", "x500"),
+        "world": entry.get("sim_world", "default"),
+    }
+
+
+def _flyable(data: dict, platform: str):
+    """(name, entry) pairs declared for the platform with a scenario file."""
+    for name, entry in data.get("capabilities", {}).items():
+        if platform in entry.get("platforms", []) and entry.get("scenario_file"):
+            yield name, entry
 
 
 def claim_for_scenario(data: dict, scenario: str) -> str | None:
@@ -285,28 +296,20 @@ def e2e_roster(
 
     Same config shape as scenario_sim_configs; composites never enter the
     roster (nothing to fly)."""
-    from cap_plan import topo_order
+    from cap_status import topo_order
 
     caps = data.get("capabilities", {})
+    flyable = {name: entry for name, entry in _flyable(data, platform)}
     configs: list[dict] = []
     excluded: list[str] = []
     for name in topo_order(data):
-        entry = caps[name]
-        if platform not in entry.get("platforms", []) or not entry.get("scenario_file"):
+        if name not in flyable:
             continue
-        ok, _why = artifacts_ok(entry)
+        ok, _why = artifacts_ok(caps[name])
         if not ok:
             excluded.append(name)
             continue
-        configs.append(
-            {
-                "scenario": entry["scenario_file"].removesuffix(".py"),
-                "vision": entry.get("sim_vision", "none"),
-                "overlay": entry.get("sim_overlay", "auto_arm"),
-                "model": entry.get("sim_model", "x500"),
-                "world": entry.get("sim_world", "default"),
-            }
-        )
+        configs.append(_sim_config(caps[name]))
     return configs, excluded
 
 
@@ -318,23 +321,10 @@ def scenario_sim_configs(platform: str = "sim", registry: Path = REGISTRY) -> li
     in the registry, letting the e2e harness launch an isolated sim per config so
     hold scenarios and path scenarios don't share (and corrupt) one sim, and so a
     perception scenario can boot a camera model + marker world while the synthetic
-    scenarios stay on the default model/world. Defaults keep older registries
-    working: vision="none", overlay="auto_arm", model="x500", world="default".
+    scenarios stay on the default model/world.
     """
     data = _load(registry)
-    result = []
-    for cap in data.get("capabilities", {}).values():
-        if platform in cap.get("platforms", []) and cap.get("scenario_file"):
-            result.append(
-                {
-                    "scenario": cap["scenario_file"].removesuffix(".py"),
-                    "vision": cap.get("sim_vision", "none"),
-                    "overlay": cap.get("sim_overlay", "auto_arm"),
-                    "model": cap.get("sim_model", "x500"),
-                    "world": cap.get("sim_world", "default"),
-                }
-            )
-    return result
+    return [_sim_config(entry) for _name, entry in _flyable(data, platform)]
 
 
 if __name__ == "__main__":

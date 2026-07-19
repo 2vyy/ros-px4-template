@@ -528,22 +528,16 @@ def _e2e_run(configs: list[dict], registry: dict | None = None) -> None:
 
 def _blocked_by(data: dict, scenario: str, failed_claims: set[str]) -> str | None:
     """First transitively-required claim of `scenario` that already failed."""
+    from cap_status import closure, topo_order
     from capabilities import claim_for_scenario
 
-    caps = data.get("capabilities", {})
     name = claim_for_scenario(data, scenario)
     if name is None:
         return None
-    seen: set[str] = set()
-    stack = list(caps.get(name, {}).get("requires", []))
-    while stack:
-        dep = stack.pop()
-        if dep in seen:
-            continue
-        seen.add(dep)
-        if dep in failed_claims:
+    ancestors = closure(data, name) - {name}
+    for dep in topo_order(data):
+        if dep in ancestors and dep in failed_claims:
             return dep
-        stack.extend(caps.get(dep, {}).get("requires", []))
     return None
 
 

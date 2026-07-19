@@ -10,8 +10,7 @@ from typer.testing import CliRunner
 
 import cap_evidence
 import capabilities
-from cap_plan import format_plan, next_action, topo_order
-from cap_status import RungInfo
+from cap_status import RungInfo, format_plan, next_action, topo_order
 
 
 def _reg() -> dict:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import tomli_w
 
-from capabilities import scenario_sim_configs, scenarios_for_platform
+from capabilities import scenario_sim_configs
 
 
 def _write_registry(path: Path, caps: dict) -> None:
@@ -31,7 +31,7 @@ def test_scenarios_for_platform_sim(tmp_path: Path) -> None:
             },
         },
     )
-    result = scenarios_for_platform("sim", registry=reg)
+    result = [c["scenario"] for c in scenario_sim_configs("sim", registry=reg)]
     assert result == ["01_arm_takeoff", "02_hover_hold"]
 
 
@@ -51,13 +51,13 @@ def test_scenarios_for_platform_excludes_no_scenario_file(tmp_path: Path) -> Non
             },
         },
     )
-    result = scenarios_for_platform("sim", registry=reg)
+    result = [c["scenario"] for c in scenario_sim_configs("sim", registry=reg)]
     assert result == ["01_arm_takeoff"]
 
 
 def test_scenarios_for_platform_empty_registry(tmp_path: Path) -> None:
     reg = tmp_path / "capabilities.toml"
-    assert scenarios_for_platform("sim", registry=reg) == []
+    assert [c["scenario"] for c in scenario_sim_configs("sim", registry=reg)] == []
 
 
 def test_scenario_sim_configs_reads_vision_and_overlay(tmp_path: Path) -> None:
@@ -177,3 +177,27 @@ def test_claim_for_scenario_maps_stem() -> None:
     data = {"capabilities": {"aruco_hover": {"scenario_file": "05_aruco_hover.py"}}}
     assert claim_for_scenario(data, "05_aruco_hover") == "aruco_hover"
     assert claim_for_scenario(data, "zz_missing") is None
+
+
+def test_e2e_roster_and_sim_configs_share_one_config_shape(tmp_path: Path) -> None:
+    """The two roster builders must emit the identical dict for the same entry."""
+    reg = tmp_path / "capabilities.toml"
+    _write_registry(
+        reg,
+        {
+            "aruco_hover_real": {
+                "description": "Real-pixel hover",
+                "scenario_file": "09_aruco_hover_real.py",
+                "platforms": ["sim"],
+                "sim_vision": "aruco",
+                "sim_model": "x500_mono_cam_down",
+                "sim_world": "marker_field",
+            },
+        },
+    )
+    from capabilities import _load, e2e_roster
+
+    data = _load(reg)
+    roster, excluded = e2e_roster(data, lambda entry: (True, ""))
+    assert excluded == []
+    assert roster == scenario_sim_configs("sim", registry=reg)

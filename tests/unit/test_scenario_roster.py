@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from capabilities import scenarios_for_platform
+from capabilities import scenario_sim_configs
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def scenarios_for_platform(platform: str) -> list[str]:
+    return [c["scenario"] for c in scenario_sim_configs(platform)]
 
 
 def _scenario_files() -> set[str]:

@@ -234,3 +234,77 @@ def real_mission_ok(name: str) -> tuple[bool, str]:
         False,
         f"mission sim failing: {name} (run: just mission sim {name} --require-terminal)",
     )
+
+
+# ── requires-DAG walkers + the `cap plan` frontier (folded in from cap_plan) ──
+
+
+def topo_order(data: dict) -> list[str]:
+    """Return dependencies first, preserving registry order among ties."""
+    capabilities = data.get("capabilities", {})
+    ordered: list[str] = []
+
+    def visit(name: str) -> None:
+        if name in ordered or name not in capabilities:
+            return
+        for dependency in capabilities[name].get("requires", []):
+            visit(dependency)
+        ordered.append(name)
+
+    for name in capabilities:
+        visit(name)
+    return ordered
+
+
+def closure(data: dict, target: str) -> set[str]:
+    """The target plus everything it transitively requires."""
+    capabilities = data.get("capabilities", {})
+    result: set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in result or name not in capabilities:
+            return
+        result.add(name)
+        for dependency in capabilities[name].get("requires", []):
+            visit(dependency)
+
+    visit(target)
+    return result
+
+
+def next_action(name: str, entry: dict, info: RungInfo) -> str:
+    """Return the next literal action for one incomplete claim."""
+    if "scenario_file" not in entry:
+        return "(composite: prove requires below)"
+    stem = entry["scenario_file"].removesuffix(".py")
+    if "scenario missing" in info.reason:
+        return f"just scenario-new {stem}"
+    if "mission sim failing" in info.reason or "mission missing" in info.reason:
+        return f"just mission sim {entry.get('mission', '')} --require-terminal".strip()
+    if info.rung == "declared":
+        return f"fix artifacts for {name}: {info.reason}"
+    return f"just run {stem}"
+
+
+def format_plan(
+    data: dict,
+    infos: dict[str, RungInfo],
+    target: str | None,
+) -> tuple[str, bool]:
+    """Format the incomplete frontier and whether the selected ladder is done."""
+    capabilities = data.get("capabilities", {})
+    scope = closure(data, target) if target else set(capabilities)
+    lines: list[str] = []
+    for name in topo_order(data):
+        if name not in scope:
+            continue
+        info = infos[name]
+        if info.rung == "sim-flown":
+            continue
+        lines.append(
+            f"{name:<22} {display(info):<34} {next_action(name, capabilities[name], info)}"
+        )
+    if not lines:
+        suffix = f" for {target}" if target else ""
+        return f"LADDER COMPLETE{suffix}: everything sim-flown and fresh", True
+    return "\n".join(lines), False
