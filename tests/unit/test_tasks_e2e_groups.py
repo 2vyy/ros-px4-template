@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 import types
 from pathlib import Path
 
@@ -139,6 +141,12 @@ _REGISTRY = {
 }
 
 
+def _newest_record(runs_dir: Path) -> dict:
+    files = sorted(runs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime_ns, reverse=True)
+    assert files, f"no run record written in {runs_dir}"
+    return json.loads(files[0].read_text(encoding="utf-8"))
+
+
 def test_stuck_marks_claim_and_leaves_fresh_report_untouched(tmp_path, monkeypatch) -> None:
     _patch_group_deps(monkeypatch, tmp_path)
     report_path = tmp_path / "scenario_01_arm_takeoff.json"
@@ -197,3 +205,46 @@ def test_crash_without_report_synthesizes_crashed_before_report(tmp_path, monkey
     data = json.loads(report_path.read_text(encoding="utf-8"))
     assert data["passed"] is False
     assert data["detail"]["reason"] == "crashed_before_report"
+    # The run record must be built from the just-synthesized fallback report,
+    # not written before it existed (which would fall back to unreadable_report).
+    record = _newest_record(tmp_path / "runs")
+    assert record["verdict"] == "FAIL"
+    assert record["reason"] == "crashed_before_report"
+
+
+def test_stale_report_is_overwritten_before_run_record_is_written(tmp_path, monkeypatch) -> None:
+    """A stale passed:true report left on disk from a previous run must never
+    be trusted: the fallback report has to overwrite it BEFORE the run record
+    is built (the run record reads the report file), or the record would say
+    PASS while the group simultaneously counts the scenario as FAIL."""
+    _patch_group_deps(monkeypatch, tmp_path)
+    report_path = tmp_path / "scenario_01_arm_takeoff.json"
+    report_path.write_text(
+        json.dumps({"scenario": "01_arm_takeoff", "passed": True, "detail": {}}),
+        encoding="utf-8",
+    )
+    stale_t = time.time() - 60
+    os.utime(report_path, (stale_t, stale_t))
+
+    def fake_supervise(argv, name, **kwargs):
+        return 1, None  # exited nonzero; leaves the stale report untouched
+
+    monkeypatch.setattr(tasks.run_supervisor, "supervise", fake_supervise)
+
+    failed_claims: set[str] = set()
+    fails = tasks._run_e2e_sim_group(
+        "none",
+        "hover",
+        ["01_arm_takeoff"],
+        gz_resource="x",
+        registry=_REGISTRY,
+        failed_claims=failed_claims,
+    )
+
+    assert fails == 1
+    data = json.loads(report_path.read_text(encoding="utf-8"))
+    assert data["passed"] is False
+    assert data["detail"]["reason"] == "crashed_before_report"
+    record = _newest_record(tmp_path / "runs")
+    assert record["verdict"] == "FAIL"
+    assert record["reason"] == "crashed_before_report"

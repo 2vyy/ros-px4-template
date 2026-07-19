@@ -1278,7 +1278,6 @@ def _run_e2e_sim_group(
                 reason = None
                 msg = None
 
-            record_path = _write_run_record_for(s, report, stuck)
             if reason is not None:
                 fails += 1
                 # [STUCK] always prints (even with a fresh report); the FAIL
@@ -1286,20 +1285,27 @@ def _run_e2e_sim_group(
                 # for itself.
                 if stuck is not None or not fresh:
                     print(msg, file=sys.stderr)
+                # Write the (possibly-synthesized) report BEFORE the run
+                # record: _write_run_record_for reads the report file, so a
+                # stale on-disk report must be overwritten first or the
+                # record would trust it (e.g. a stale passed:true).
                 record_failure(s, reason, write_report=not fresh)
+                record_path = _write_run_record_for(s, report, stuck)
                 rec = json.loads(record_path.read_text(encoding="utf-8"))
                 t_end = int(rec.get("t_end") or 0)
                 _print_run_failure_hint(record_path.stem, t_end)
-            elif registry is not None:
-                _auto_record(
-                    registry,
-                    s,
-                    vision=vision,
-                    overlay=overlay,
-                    model=model,
-                    world=world,
-                    run_record=record_path.stem,
-                )
+            else:
+                record_path = _write_run_record_for(s, report, stuck)
+                if registry is not None:
+                    _auto_record(
+                        registry,
+                        s,
+                        vision=vision,
+                        overlay=overlay,
+                        model=model,
+                        world=world,
+                        run_record=record_path.stem,
+                    )
 
         if audit_topics:
             print("Auditing topic graph...")
