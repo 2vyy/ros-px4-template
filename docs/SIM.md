@@ -33,20 +33,3 @@ just sim start --world marker_field --model x500_mono_cam_down --vision aruco
 bridges `/camera/image_raw` and `aruco_pose_publisher` detects the rendered marker (~0.06 m median horizontal error at 3 m, plan 062). Scenario `09_aruco_hover_real` exercises this end to end and runs in `just e2e` via its `sim_model`/`sim_world` fields in `tests/capabilities.toml`.
 
 Marker assets need an `<emissive_map>` to render in the gz camera SENSOR: a PBR `albedo_map` alone renders the marker as a solid black square (no error) that `detectMarkers` cannot decode. Fixed for markers 0/1/2; see the comment in `sim/models/aruco_marker_0/model.sdf` and `plans/062-findings.md`.
-
-## Record and analyze a run (skein)
-
-`just sim start --record` records a ROS 2 bag of the core topics and, on `just stop`, captures the matching PX4 SITL ULog into `logs/runs/<run-id>/` (`bag/`, `session.ulg`; `logs/runs/latest` symlinks the newest). Recording is opt-in; a default boot records nothing.
-
-The bag (wall time) and the ULog (PX4 boot time) share no clock. [skein](../../skein), checked out as a sibling repo (or `SKEIN_DIR=/path/to/skein`), reconciles them onto one canonical timeline:
-
-```bash
-just sim start --record --overlay auto_arm   # READY verdict confirms recording -> logs/runs/<id>/bag
-just stop                                    # finalizes the bag, copies the run's ULog
-just analyze                                 # overlays latest -> logs/runs/<id>/aligned.mcap
-just analyze latest --query 'z < -1' --stats # skein query over the aligned MCAP
-```
-
-`--channel`/`-c` selects the channel for `--query` (default `vehicle_local_position`); `--stats` prints per-channel rate/gap aggregates. The overlay reports a per-clock-domain confidence; a low `px4_boot` confidence means don't trust PX4-derived alignment for that run.
-
-SITL-only; best-effort (a failed recorder never aborts the sim); no bag rotation, so long sessions grow without bound. `just clean` wipes `logs/runs/`. Design rationale and the full clock model live in the skein repo's own docs.

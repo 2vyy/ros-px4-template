@@ -44,10 +44,6 @@ sim *args:
 stop:
     @just _run stop
 
-# Analyze a recorded run with skein (overlay bag+ULog; optional --query)
-analyze *args:
-    @just _run analyze "$@"
-
 # Hardware stack lifecycle (hw start [flags])
 hw *args:
     @just _run hw "$@"

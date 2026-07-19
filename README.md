@@ -132,7 +132,6 @@ just cap plan [claim]             # print the dependency-first claims frontier
 just cap record <claim>           # commit fresh PASS evidence after a scenario
 just log summary                  # regenerate latest_summary.json
 just log topics                   # audit live topics vs docs/TOPICS.md
-just analyze                      # overlay+query the latest recorded run via skein
 ```
 
 ## Missions are data
@@ -182,7 +181,7 @@ rg event=WAYPOINT_REACHED logs/latest.log # state transitions, greppable directl
 rg -C 5 "t=42\." logs/latest.log          # everything that happened around t=42
 ```
 
-`just log topics` audits the live graph against the topic manifest in [docs/TOPICS.md](docs/TOPICS.md) to prevent interface drift. `just sim start --record` captures a ROS bag plus the PX4 ULog for post-flight analysis with skein, a sibling-repo tool that reconciles the bag and ULog clocks onto one timeline (see [docs/SIM.md](docs/SIM.md)).
+`just log topics` audits the live graph against the topic manifest in [docs/TOPICS.md](docs/TOPICS.md) to prevent interface drift.
 
 ## Project structure
 

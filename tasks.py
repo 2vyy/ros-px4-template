@@ -182,7 +182,6 @@ def _ros2_launch_capture_argv(launch_args: list[str], cwd: Path = ROOT) -> list[
 
 # Ensure tools/ is on path to import sub-apps
 sys.path.append(str(ROOT / "tools"))
-import bag_recorder
 import check_docs
 import check_invariants
 import check_topics
@@ -191,9 +190,7 @@ import preflight
 import reports
 import run_supervisor
 import sim_cleanup
-import skein_analyze
 import status as status_tool
-import ulog_retrieve
 import wait_ready
 from capabilities import app as cap_app
 from capabilities import scenario_sim_configs
@@ -359,15 +356,10 @@ def _teardown() -> bool:
     Returns True if nothing survived. Used by `stop`, by failed launches, and at
     every e2e group boundary.
     """
-    was_recording = bag_recorder.BAG_PIDFILE.exists()
-    bag_recorder.stop()  # graceful SIGINT first; finalizes the MCAP. Non-fatal.
     result = sim_cleanup.teardown()
     # A stale heartbeat must never describe a dead stack.
     run_supervisor.HEARTBEAT.unlink(missing_ok=True)
     run_supervisor.RUN_PID.unlink(missing_ok=True)
-    if was_recording:
-        # PX4 is dead now, so its ULog is final. Best-effort, SITL-only.
-        ulog_retrieve.retrieve(bag_recorder.RUNS_DIR / "latest")
     print(format_stopped(result["killed"], result["survivors"]))
     return not result["survivors"]
 
@@ -896,9 +888,6 @@ def sim_start(
         "--overlay",
         help="Param overlay name from config/params/overlays (default: none, disarmed).",
     ),
-    record: bool = typer.Option(
-        False, "--record", help="Record an MCAP bag + retrieve the PX4 ULog for `just analyze`."
-    ),
     build: bool = typer.Option(True, "--build/--no-build", help="Smart-build before launch."),
     timeout: int = typer.Option(180, "--timeout", help="Seconds to wait for readiness."),
 ):
@@ -940,21 +929,9 @@ def sim_start(
         "stack did not reach readiness (topics/rosbridge/GCS params)",
     )
 
-    # readiness confirmed past this point
-    if record:
-        run_dir = bag_recorder.new_run_dir()
-        bag_proc = bag_recorder.start(run_dir, env)
-        rec_detail = (
-            f"recording -> {run_dir.relative_to(ROOT)}/bag"
-            if bag_proc is not None
-            else "recording: DISABLED (recorder failed to start)"
-        )
-    else:
-        bag_recorder.BAG_PIDFILE.unlink(missing_ok=True)
-        rec_detail = "recording: off (use --record)"
     print(
         format_ready(
-            ["/fmu topics up", "rosbridge:9090", "GCS params committed", rec_detail],
+            ["/fmu topics up", "rosbridge:9090", "GCS params committed"],
             elapsed,
         )
     )
@@ -984,74 +961,6 @@ def stop():
                 pass
     ok = _teardown()
     raise typer.Exit(int(ExitCode.OK) if ok else int(ExitCode.FAIL))
-
-
-@app.command()
-def analyze(
-    run: str = typer.Argument("latest", help="Run id under logs/runs/, or 'latest'."),
-    query: str = typer.Option(
-        "",
-        "--query",
-        "-q",
-        help="Run `skein query --where <expr>` on the aligned MCAP after overlay.",
-    ),
-    channel: str = typer.Option(
-        "vehicle_local_position", "--channel", "-c", help="Channel for --query."
-    ),
-    stats: bool = typer.Option(False, "--stats", help="Per-channel aggregates for --query."),
-):
-    """Overlay a recorded run's bag + ULog onto one timeline with skein, writing
-    logs/runs/<run>/aligned.mcap. With --query, also query that aligned MCAP.
-
-    skein is invoked as a separate uv project (uv run --project). Override its
-    location with SKEIN_DIR (default: ../skein beside this repo).
-    """
-    try:
-        skein_dir = skein_analyze.resolve_skein_dir()
-        run_dir = skein_analyze.resolve_run_dir(run)
-    except skein_analyze.AnalyzeError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        raise typer.Exit(int(ExitCode.USAGE)) from None
-
-    bag = skein_analyze.find_bag_mcap(run_dir)
-    ulog = run_dir / "session.ulg"
-    ulog = ulog if ulog.is_file() else None
-    if bag is None and ulog is None:
-        print(
-            f"Error: run {run_dir.name} has neither a bag (logs/runs/<id>/bag/*.mcap) "
-            "nor a session.ulg — did it record? (see plans 009/010)",
-            file=sys.stderr,
-        )
-        raise typer.Exit(int(ExitCode.USAGE))
-    if ulog is None:
-        print("Warning: no session.ulg for this run — overlaying bag only.", file=sys.stderr)
-    if bag is None:
-        print("Warning: no bag for this run — overlaying ULog only.", file=sys.stderr)
-
-    out = run_dir / "aligned.mcap"
-    env = _get_clean_env()
-    env.setdefault("UV_PROJECT_ENVIRONMENT", str(skein_analyze.skein_venv_dir()))
-    print(f"Overlaying {run_dir.name} -> {out.relative_to(ROOT)}")
-    res = subprocess.run(
-        skein_analyze.overlay_argv(skein_dir, bag=bag, ulog=ulog, out=out),
-        cwd=str(ROOT),
-        env=env,
-    )
-    if res.returncode != 0:
-        print("skein overlay failed.", file=sys.stderr)
-        raise typer.Exit(int(ExitCode.FAIL))
-
-    if query:
-        res = subprocess.run(
-            skein_analyze.query_argv(skein_dir, out, channel=channel, where=query, stats=stats),
-            cwd=str(ROOT),
-            env=env,
-        )
-        if res.returncode != 0:
-            print("skein query failed.", file=sys.stderr)
-            raise typer.Exit(int(ExitCode.FAIL))
-
-    print(f"ANALYZED {run_dir.name}: aligned.mcap written" + (" + query ok" if query else ""))
 
 
 hw_app = typer.Typer(help="Hardware stack lifecycle.")

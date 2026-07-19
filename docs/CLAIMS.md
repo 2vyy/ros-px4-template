@@ -145,6 +145,6 @@ Mission YAML may declare a top-level `requires` list of claim ids. The mission l
 | Slot | Already shaped | Not built |
 |------|----------------|-----------|
 | Hardware flight | `platform = "hw"`, shared conditions and detail schema | `hw-flown` derivation and hardware recorder. |
-| Golden simulation | `grade`, `conditions`, committed skein run artifacts | `sim-golden` rung and skein delta thresholding. |
+| Golden simulation | `grade`, `conditions` | `sim-golden` rung, run recording, and delta thresholding (the old bag/ULog recording pipeline was removed in plan 085 — resurrect from git history if this rung is ever built). |
 
 Also not built here: claim add/edit commands, FAIL evidence history, and automatic evidence commits (e2e writes evidence files; you still commit them).
