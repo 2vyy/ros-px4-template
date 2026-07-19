@@ -168,6 +168,24 @@ contract (agnostic core, Claude-Code-aware fast path).
 | 082  | Agent read-side: `just wait ready\|run`, `just runs`, `just log since\|events`, contextual disclosure on verdicts | P1 | M | 081 | DONE (`e23cc77`..`0938a70` + follow-up fix; live smoke: wait exit 3 with heartbeat mid-cycle, delta-only `log since`, run-sliced `log events`; plan's 5 commits collapsed to 3 since they share tasks.py) |
 | 083  | CLI regrammar: `sim start`/`run`/`e2e` noun-verb surface, content-first bare `just`, delete status trio, AGENTS.md harness contract, check_docs map | P1 | M/L | 081, 082; 080 first recommended | DONE (`0c5881d`..`6642fc6`; live gate: full cycle on the regrammared surface - snapshot bare `just`, `sim start` READY, `run 01_arm_takeoff` PASS, detached e2e 8/8 PASS via bounded `wait run`, zero stale references; evidence refreshed `6642fc6`) |
 
+### Round 9 (2026-07-18, against `d44126d`) — erasure audit
+
+Maintainer's ask: reduce branch count (if/for/while/try/match) via better
+abstractions AND remove features with no practical consumer, each removal
+absolutely justified with evidence. Metrics at `d44126d`: non-test 64 files /
+8,510 LOC / 837 branches (baseline 2026-07-17: 59 / 7,915 / 710 — Round 8's
+supervisor/claims/read-side code was net growth, audited for the first time
+this round). 4 parallel audit subagents; every table finding re-vetted
+against the code personally.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 084  | One failure-recording path in the e2e group runner; `just run` always bounded (fixes the unbounded no-config fallback + dead `--wait`) | P1 | M | — | EXECUTED (branch `advisor/084-run-path-dedup` @ `314a101` in worktree, review-APPROVED after 1 revision round: executor's first pass reordered the fallback-report/run-record writes, breaking the plan-070 stale-report guarantee — caught in review, fixed + regression-tested (stale passed:true report can no longer yield a PASS record). Reviewer re-verified: 516 unit tests, ruff, ty, branch count 139→133 (target ≤130 honestly missed — remaining branches are outside the duplication cluster), all greps clean, scope exact. Operator merge gate: `just check` in main tree + live `just run 01_arm_takeoff` PASS + no-config precondition exit 3) |
+| 085  | Remove the record/analyze (bag+ULog+skein) pipeline (~950 LOC, zero consumers, runbook already deleted) | P1 | M | not with 084 in flight (both edit tasks.py) | TODO |
+| 086  | Delete the legacy waypoint layer (`mission_profile.py` + dead `waypoint_mission` exports) + stranded hardware.yaml params, `tomli-w`→dev, gen_world identical branch, one detection-selection helper | P2 | S | — | TODO |
+| 087  | Claims cluster: one roster builder, cap_plan folded into cap_status, shared DAG walker | P2 | M | soft: 084, 085 first (tasks.py) | TODO |
+| 088  | check_docs: one (matcher, resolver) rule table instead of two parallel cascades | P3 | M | — | TODO |
+
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 
 064 and 065 were added 2026-07-11 from profiling the first live e2e run
@@ -178,6 +196,43 @@ were considered and deferred (machine-bound ~3x ceiling on 12 cores/15GiB).
 065 was subsequently REJECTED by its own spike (2026-07-16, see its row).
 
 ## Dependency notes
+
+### Round 9 (2026-07-18) — erasure audit
+
+- **Order**: 084 → 085 → 087 sequentially (all edit `tasks.py`; 087's
+  drift-check regions are disjoint from 084/085's but rebase anyway). 086
+  and 088 are independent and can interleave anywhere.
+- **085 is a product-decision plan**: the code evidence (zero consumers) is
+  HIGH-confidence, but it forecloses BACKLOG B53 (`just replay`) and the
+  spec's reserved `sim-golden` rung. The maintainer vetoes by marking the
+  row REJECTED; the plan tells the executor to check the row first.
+- **Live-verification gates**: 084 (`just run 01_arm_takeoff` + the
+  no-config precondition error), 085 (READY/STOPPED verdicts + run records
+  survive), 086 (`just run 03_waypoint`). 087/088 are pytest/CLI-only.
+- **Maintainer decisions surfaced by this round, deliberately NOT planned**
+  (resolve by editing this list):
+  - *Inert `mission` rung path*: no claim in `tests/capabilities.toml` sets
+    `mission`, so `cap_status.real_mission_ok` never runs in production
+    (unit tests + docs only); the `mission_ok` Callable threads through 6
+    call sites. Options: delete the path (update docs/CLAIMS.md), or make
+    it live with one line (`mission = "precision_land"` on that claim).
+    Same decision covers the consumer-less `params`/`source` author-metadata
+    fields (documented in CHALLENGES.md, validated, read by nothing).
+  - *Unused guard menu*: `marker_fresh`, `marker_lost`, `altitude_ceiling`,
+    `keep_out_box`, `battery_low`, `failsafe_active` appear in zero shipped
+    missions (verified by grep of `config/missions/`). But
+    `battery_low`/`failsafe_active` are the plan-044 safety menu
+    (live-verified) and `altitude_ceiling`/`keep_out_box` are plan-073
+    challenge vocabulary (one week old) — pruning them contradicts fresh
+    deliberate design. Honest candidates if shrinking: `marker_fresh` and
+    `marker_lost` only (superseded in every real mission by `marker_stable`
+    / `marker_lost_signal`); ~4 branches + doc/schema/test rows.
+  - *`landing_pad` / `obstacle_course` worlds*: referenced only by the
+    docs/SIM.md table; zero scenarios, zero specs, zero branches. Value is
+    manual GUI practice. Delete or annotate as inspection-only.
+  - *gen_world box-obstacle support* (~4 branches): no shipped spec uses
+    `type: box`; it is generator surface for future challenge authors.
+    Keep unless the generator contract is deliberately narrowed.
 
 ### Round 8 (2026-07-17) — agent-first CLI redesign
 
@@ -226,6 +281,34 @@ were considered and deferred (machine-bound ~3x ceiling on 12 cores/15GiB).
   conflict.
 - **Live-verification gates**: 076 and 077 each end with `just test e2e`;
   078's Task 5 runs one final full cycle.
+
+### Findings considered and rejected / no-action — Round 9 (2026-07-18)
+
+Vetted personally against the code at `d44126d`; surfaced by the audit but
+not planned:
+
+- **Shared markdown/backtick parser** for check_docs / check_topics /
+  test_missions_doc — REJECTED. The three parsers share only a trivial
+  regex; semantics differ (token corpus vs 4-column topic specs vs
+  heading-scoped tables). A shared module adds a concept to save ~6 lines —
+  the opposite of erasure.
+- **`wait_run` kind-dispatch table** (`tasks.py`) — REJECTED. The four arms
+  have heterogeneous control flow (different exit codes, different data
+  sources); a dict dispatch relocates branches without removing any.
+- **`tools/status.py` overlap with `just runs`** — NO ACTION. The bare-`just`
+  snapshot (last-cycle scenario reports) and the run-record history serve
+  different questions; verified all of status.py's paths are reachable.
+- **Claims-cluster "five files re-implement everything" hypothesis** —
+  REFUTED by the audit itself: rung derivation, evidence IO, and verdict
+  formatting each live in exactly one module; only the narrower items in
+  plan 087 are real duplication. The remaining ~120 branches are
+  load-bearing (DAG, staleness, evidence, git-freshness).
+- **Registry-diff (git-show) consolidation** across cap_evidence /
+  cap_status / capabilities.record — DEFERRED, recorded in plan 087's
+  maintenance notes; touches the `cap record` freshness gate.
+- **Scenario docstrings naming the old `just scenario` verb** — NO ACTION
+  here (comment text, not code); worth folding into any future scenario
+  edit.
 
 ### Findings considered and rejected / no-action — Round 7 (2026-07-17)
 
