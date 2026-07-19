@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from collections.abc import Callable
 from functools import cache
 from pathlib import Path
 
@@ -62,26 +63,28 @@ def _strip_fragment(token: str) -> str:
     return token.split("#", 1)[0]
 
 
+# Token taxonomy as one ordered rule list: the first matching rule names the
+# kind, and _VERIFIERS maps each checkable kind to its resolver. Order is
+# load-bearing: the placeholder/allowlist skip must precede everything, "just"
+# and "topic" must claim their tokens before the generic space/"=" skip, and
+# the known-suffix path rule must precede the pathish-without-suffix skip.
+_RULES: tuple[tuple[str, Callable[[str], bool]], ...] = (
+    # "<x>" and "[x]" are placeholder notation, not real tokens
+    ("skip", lambda t: t in _ALLOWLIST or any(c in t for c in ("<", "[", "*", "&&"))),
+    ("just", lambda t: t.startswith("just ")),
+    ("topic", lambda t: t.startswith("/") and " " not in t),
+    ("skip", lambda t: " " in t or "=" in t),
+    (
+        "path",
+        lambda t: "/" in _strip_fragment(t) and Path(_strip_fragment(t)).suffix in _PATH_SUFFIXES,
+    ),
+    ("skip", lambda t: "/" in _strip_fragment(t)),
+    ("identifier", lambda t: bool(_IDENT_RE.fullmatch(t)) and "_" in t),
+)
+
+
 def classify(token: str) -> str:
-    if token in _ALLOWLIST or "<" in token or "[" in token or "*" in token or "&&" in token:
-        return "skip"  # "<x>" and "[x]" are placeholder notation, not real tokens
-    if token.startswith("just "):
-        return "just"
-    if token.startswith("/") and " " not in token:
-        return "topic"
-    if " " in token or "=" in token:
-        return "skip"
-
-    pathish = _strip_fragment(token)
-    if "/" in pathish:
-        suffix = Path(pathish).suffix
-        if suffix in _PATH_SUFFIXES:
-            return "path"
-        return "skip"
-
-    if _IDENT_RE.fullmatch(token) and "_" in token:
-        return "identifier"
-    return "skip"
+    return next((kind for kind, matches in _RULES if matches(token)), "skip")
 
 
 @cache
@@ -123,30 +126,45 @@ def _corpus_text(root: Path) -> str:
     return "\n".join(chunks)
 
 
-def check_token(token: str, kind: str, root: Path) -> bool:
-    if kind == "path":
-        stripped = _strip_fragment(token)
-        if (root / stripped).exists():
-            return True
-        # Docs abbreviate src/core/ros_px4_template_core/{lib,nodes}/... as lib/... / nodes/...
-        return (root / "src" / "core" / "ros_px4_template_core" / stripped).exists()
-    if kind == "just":
-        parts = token.split()
-        if len(parts) < 2:
-            return False
-        if parts[1].startswith("-"):
-            return True
-        if parts[1] not in _recipes(root):
-            return False
-        # For a known sub-app, validate the second positional token (the
-        # sub-command); flags and plain-recipe args stay exempt.
-        subcmds = _SUBCOMMANDS.get(parts[1])
-        if subcmds is not None and len(parts) > 2 and not parts[2].startswith("-"):
-            return parts[2] in subcmds
+def _verify_path(token: str, root: Path) -> bool:
+    stripped = _strip_fragment(token)
+    if (root / stripped).exists():
         return True
-    if kind in {"identifier", "topic"}:
-        return token in _corpus_text(root)
+    # Docs abbreviate src/core/ros_px4_template_core/{lib,nodes}/... as lib/... / nodes/...
+    return (root / "src" / "core" / "ros_px4_template_core" / stripped).exists()
+
+
+def _verify_just(token: str, root: Path) -> bool:
+    parts = token.split()
+    if len(parts) < 2:
+        return False
+    if parts[1].startswith("-"):
+        return True
+    if parts[1] not in _recipes(root):
+        return False
+    # For a known sub-app, validate the second positional token (the
+    # sub-command); flags and plain-recipe args stay exempt.
+    subcmds = _SUBCOMMANDS.get(parts[1])
+    if subcmds is not None and len(parts) > 2 and not parts[2].startswith("-"):
+        return parts[2] in subcmds
     return True
+
+
+def _verify_in_corpus(token: str, root: Path) -> bool:
+    return token in _corpus_text(root)
+
+
+_VERIFIERS = {
+    "path": _verify_path,
+    "just": _verify_just,
+    "identifier": _verify_in_corpus,
+    "topic": _verify_in_corpus,
+}
+
+
+def check_token(token: str, kind: str, root: Path) -> bool:
+    verify = _VERIFIERS.get(kind)
+    return verify(token, root) if verify else True
 
 
 def _doc_files(root: Path) -> list[Path]:

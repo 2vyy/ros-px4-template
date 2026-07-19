@@ -24,6 +24,15 @@ def test_extract_backticked_dedups_in_order() -> None:
         ("--vision aruco", "skip"),
         ("<NN>_<name>", "skip"),
         ("just test [type]", "skip"),  # [x] is placeholder notation, like <x>
+        ("C:\\", "skip"),  # allowlisted external token
+        ("just sim start", "just"),  # sub-command claimed before the space-skip rule
+        ("a b", "skip"),  # free prose with a space
+        ("X=1", "skip"),  # assignment notation
+        ("docs/TOPICS.md", "path"),
+        ("docs/TOPICS.md#anchor", "path"),  # fragment stripped before suffix check
+        ("sim/worlds", "skip"),  # pathish but no known suffix
+        ("CamelCase", "skip"),  # identifier rule requires an underscore
+        ("plain", "skip"),
     ],
 )
 def test_classify_tokens(token: str, kind: str) -> None:
