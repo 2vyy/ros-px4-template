@@ -180,11 +180,19 @@ against the code personally.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 084  | One failure-recording path in the e2e group runner; `just run` always bounded (fixes the unbounded no-config fallback + dead `--wait`) | P1 | M | — | EXECUTED (branch `advisor/084-run-path-dedup` @ `314a101` in worktree, review-APPROVED after 1 revision round: executor's first pass reordered the fallback-report/run-record writes, breaking the plan-070 stale-report guarantee — caught in review, fixed + regression-tested (stale passed:true report can no longer yield a PASS record). Reviewer re-verified: 516 unit tests, ruff, ty, branch count 139→133 (target ≤130 honestly missed — remaining branches are outside the duplication cluster), all greps clean, scope exact. Operator merge gate: `just check` in main tree + live `just run 01_arm_takeoff` PASS + no-config precondition exit 3) |
-| 085  | Remove the record/analyze (bag+ULog+skein) pipeline (~950 LOC, zero consumers, runbook already deleted) | P1 | M | not with 084 in flight (both edit tasks.py) | TODO |
-| 086  | Delete the legacy waypoint layer (`mission_profile.py` + dead `waypoint_mission` exports) + stranded hardware.yaml params, `tomli-w`→dev, gen_world identical branch, one detection-selection helper | P2 | S | — | TODO |
-| 087  | Claims cluster: one roster builder, cap_plan folded into cap_status, shared DAG walker | P2 | M | soft: 084, 085 first (tasks.py) | TODO |
-| 088  | check_docs: one (matcher, resolver) rule table instead of two parallel cascades | P3 | M | — | TODO |
+| 084  | One failure-recording path in the e2e group runner; `just run` always bounded (fixes the unbounded no-config fallback + dead `--wait`) | P1 | M | — | DONE (Sonnet executor, review-APPROVED after 1 revision: first pass reordered the fallback-report/run-record writes, breaking the plan-070 stale-report guarantee — caught in review, fixed + regression-tested. Merged `d65dab7` (`ec5b3aa`+`314a101`); `just check` green post-merge; tasks.py branches 139→133 (≤130 honestly missed — rest is outside the duplication cluster). Live: covered by the Round 9 closing e2e) |
+| 085  | Remove the record/analyze (bag+ULog+skein) pipeline (~950 LOC, zero consumers, runbook already deleted) | P1 | M | after 084 | DONE (maintainer-directed; commit `aadc7dd`, −955 LOC net: 3 tools + 3 test files + `--record`/`analyze`/stop-ULog wiring + justfile recipe + SIM/README/AGENTS doc rows; BACKLOG B53 + CLAIMS reserved-extensions reworded to point at git history. `cap record`/run records verified independent; `just check` green. Live: closing e2e) |
+| 086  | Delete the legacy waypoint layer (`mission_profile.py` + dead `waypoint_mission` exports) + stranded hardware.yaml params, `tomli-w`→dev, gen_world identical branch, one detection-selection helper | P2 | S | — | DONE (commit `88e1fab`, −163 LOC net; waypoint_mission is now pure path IO; shared `detections_for` in lib/mission/detection.py unifies the marker id-filter; `_latest` tie-handling switched from last-max to `max()` first-max — unpinned, physically meaningless (equal float stamps); `just check` green. Live: closing e2e) |
+| 087  | Claims cluster: one roster builder, cap_plan folded into cap_status, shared DAG walker | P2 | M | 084, 085 first (tasks.py) | DONE (commit `76b5d2e`; `_sim_config`+`_flyable` are the one config shape (new drift test pins e2e_roster == scenario_sim_configs); scenarios_for_platform deleted (tests-only); cap_plan.py deleted, walkers live in cap_status; `_blocked_by` now topo-ordered — deterministic where the old DFS was stack-order; `cap show`/`cap plan` output diffed byte-identical against pre-change baseline; `just check` green. Live: closing e2e) |
+| 088  | check_docs: one (matcher, resolver) rule table instead of two parallel cascades | P3 | M | — | DONE (commit `d63fc88`; ordered `_RULES` + `_VERIFIERS` map, verifier bodies verbatim; characterization table extended to 17 pinned classifications, green before AND after; check_docs branches 40→30 (target ≤32); real-tree run identical: 265 checked / 328 skipped) |
+
+Round 9 metrics after landing (vs `d44126d` start): non-test 769 branches
+(was 837), 7,967 LOC (was 8,510), 59 files (was 64); tasks.py 123 branches /
+1,227 lines (was 139 / 1,588). Closing live gate PASSED: all 8 scenarios
+(01/02/03/05/06/07/08/09) flew PASS against the landed stack `d63fc88` — run
+records in `logs/runs/`, fresh sim-flown evidence re-recorded at
+`tests/evidence/*/20260719_*_sim.json` (each `verdict: PASS`, `commit:
+d63fc88`).
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (reason) | REJECTED (rationale)
 

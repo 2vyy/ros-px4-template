@@ -1,16 +1,16 @@
 {
   "claim": "waypoint_nav",
   "platform": "sim",
-  "commit": "72eb007",
-  "run_id": "20260718_084257",
+  "commit": "d63fc88",
+  "run_id": "20260719_025141",
   "verdict": "PASS",
-  "elapsed_s": 31.24,
+  "elapsed_s": 30.91,
   "detail": {
     "waypoints_done": 0,
     "phase": "done",
     "wp_min_dists": [
+      0.03,
       0.06,
-      0.07,
       0.03
     ],
     "arm_trigger_ok": true
@@ -19,7 +19,7 @@
     "world": "default",
     "model": "x500",
     "vision": "none",
-    "run_record": "03_waypoint_20260718_034257"
+    "run_record": "03_waypoint_20260718_215141"
   },
   "grade": null
 }

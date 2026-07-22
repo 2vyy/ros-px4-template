@@ -1,15 +1,15 @@
 {
   "claim": "hover_hold",
   "platform": "sim",
-  "commit": "72eb007",
-  "run_id": "20260718_084203",
+  "commit": "d63fc88",
+  "run_id": "20260719_025046",
   "verdict": "PASS",
-  "elapsed_s": 52.8,
+  "elapsed_s": 53.71,
   "detail": {
     "anchor": [
-      -0.000920211139600724,
-      0.015922358259558678,
-      2.9064481258392334
+      -0.02799377404153347,
+      0.027011321857571602,
+      3.0021767616271973
     ],
     "reason": "",
     "violations": 0
@@ -18,7 +18,7 @@
     "world": "default",
     "model": "x500",
     "vision": "none",
-    "run_record": "02_hover_hold_20260718_034203"
+    "run_record": "02_hover_hold_20260718_215046"
   },
   "grade": null
 }
