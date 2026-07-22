@@ -18,9 +18,9 @@ Each marker's black code is `0.2 m` square, matching `marker_size_m` used by `ar
 
 ## Boot path (default vs repo worlds)
 
-PX4's rcS (`px4-rc.gzsim`) sources `build/px4_sitl_default/rootfs/gz_env.sh`, which unconditionally resets `PX4_GZ_WORLDS` to PX4's own worlds directory, so PX4 can only start Gazebo on worlds it ships (`default`). For repo-only worlds, `_start_gz_px4.sh` pre-starts a **paused** gz server on the repo SDF; PX4 then detects the running world and adopts it via its first-class "gazebo already running" branch (which never sources `gz_env.sh`, so no clobber). A watcher unpauses physics once PX4 has spawned the model, keeping sim time from free-running before lockstep (an unpaused pre-start corrupts EKF2 timing; see the `_start_gz_px4.sh` header). The `default` world keeps the original PX4-starts-Gazebo path byte-identical.
+PX4's rcS (`px4-rc.gzsim`) sources `build/px4_sitl_default/rootfs/gz_env.sh`, which unconditionally resets `PX4_GZ_WORLDS` to PX4's own worlds directory, so PX4 can only start Gazebo on worlds it ships (`default`). For repo-only worlds, `_start_gz_px4.sh` pre-starts a **paused** gz server on the repo SDF; PX4 then detects the running world and adopts it via its first-class "gazebo already running" branch (which never sources `gz_env.sh`, so no clobber). A watcher unpauses physics once PX4 has spawned the model. This stops sim time from running free before lockstep; an unpaused pre-start corrupts EKF2 timing (see the `_start_gz_px4.sh` header). The `default` world keeps the original PX4-starts-Gazebo path byte-identical.
 
-Physics speed is a boot-time property of the world SDF and nothing else. Any live gz `set_physics` call - even a no-op payload - latently corrupts PX4's estimator (plan 065). There is no `--speed` flag by design.
+Physics speed is a boot-time property of the world SDF and nothing else. Any live gz `set_physics` call - even a no-op payload - quietly corrupts PX4's estimator (plan 065). There is no `--speed` flag by design.
 
 ## Perception: synthetic (default) vs real (camera model)
 

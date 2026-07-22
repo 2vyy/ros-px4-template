@@ -28,7 +28,7 @@ Status: `idea` | `explore`.
 | ID | Idea | Status | Notes |
 |----|------|--------|-------|
 | B62 | Complete the real-pixel perception slice: attitude de-rotation in `aruco_pose_publisher` (tilt currently biases the body-frame offset) and a real-camera variant of scenario 08 (precision land on rendered pixels) | idea | Plan 062 proved the pipeline (0.06 m median error at 3 m, scenario 09 in e2e); these two are the known-open remainders it named |
-| B63 | Obstacle and moving-target perception: today obstacles are physical but invisible to the stack (no sensor), and there is no follow-target behavior | explore | Grounded demand (raytheon rover-landing + obstacle_mapper challenges). Hard-depends on the camera slice (B62 direction). Until then, docs/CHALLENGES.md (plan 072) documents the boundary: such rules are representable in the world, not verifiable by the stack |
+| B63 | Obstacle and moving-target perception: today obstacles are physical but invisible to the stack (no sensor), and there is no follow-target behavior | explore | Real demand (raytheon rover-landing + obstacle_mapper challenges). Depends hard on the camera slice (B62 direction). Until then, docs/CHALLENGES.md (plan 072) documents the boundary: such rules are representable in the world, not verifiable by the stack |
 
 ---
 
@@ -36,7 +36,7 @@ Status: `idea` | `explore`.
 
 | ID | Idea | Status | Notes |
 |----|------|--------|-------|
-| B51 | Autopilot abstraction `Protocol` in `bridges/` that wraps arm/disarm/setpoint/status; `offboard_controller` imports the protocol, not `px4_msgs` directly | idea | Unlocks PX4 version drift (1.17 to 1.18 changed topics) and ArduPilot swap. Pay before mission #5 |
+| B51 | Autopilot abstraction `Protocol` in `bridges/` that wraps arm/disarm/setpoint/status; `offboard_controller` imports the protocol, not `px4_msgs` directly | idea | Unlocks PX4 version drift (1.17 to 1.18 changed topics) and ArduPilot swap. Do this before mission #5 |
 | B52 | `vehicle_id` parameter + topic namespacing for multi-vehicle; today `target_system=1`, `/fmu/in/*`, `/drone/*` are all hardcoded | idea | Multi-vehicle is currently a retrofit, not a config change |
 | B53 | Determinism remainder: seedable Gazebo + PX4 RNG and `just replay <run>` over recorded bags | idea | The bag/ULog/skein recording pipeline was REMOVED in plan 085 (zero consumers); resurrect from git history (plans 009-013, 048) if replay is ever picked up. Fault injection was deliberately CUT (plan 002); do not re-add it without new grounding |
 | B54 | Hardware bring-up remainder: a preflight that talks to the FC over the link, and a safety-pilot interlock | idea | Premise refreshed: serial uxrce (`MicroXRCEAgent serial` in `hardware.launch.py`), `vehicles/x500.yaml` overlays, and `just hw start --port --baud --vehicle` all exist today. What is missing is a real FC preflight (link + params + sensor sanity before arming is possible) and an explicit human-interlock story |
@@ -52,9 +52,9 @@ If the template is going to be worth someone else's time:
 
 1. **B62 then B63**: finish the perception slice. It is the only path from
    "markers only" to the moving-target and obstacle challenges real
-   competitions pose, and plan 062 already de-risked the hard part.
+   competitions pose, and plan 062 already proved the hard part.
 2. **B51 + B52**: autopilot abstraction + vehicle namespacing. Unlocks
-   multi-vehicle, PX4 version drift, and ArduPilot in one move. Pay this cost
+   multi-vehicle, PX4 version drift, and ArduPilot in one move. Do this
    before mission #5.
 3. **B54**: hardware bring-up remainder. The launch/overlay plumbing exists;
    FC preflight and a safety-pilot interlock are what stand between sim

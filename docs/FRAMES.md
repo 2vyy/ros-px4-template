@@ -30,7 +30,7 @@ Do not mix NED coordinates into mission YAML or `/drone/*` topics.
 | Convention | X | Y | Z | Typical use |
 |------------|---|---|---|-------------|
 | FLU (ROS REP-103 body) | Forward | Left | Up | `geometry_msgs` poses, future attitude commands |
-| FRD (PX4 body) | Forward | Right | Down | PX4 setpoints when roll/pitch/yaw are populated |
+| FRD (PX4 body) | Forward | Right | Down | PX4 setpoints when roll/pitch/yaw are set |
 
 This template streams position-only offboard setpoints. `offboard_controller` sets `yaw = NaN` so PX4 holds current heading. There is no FLU/FRD attitude conversion in the tree yet.
 
@@ -45,12 +45,12 @@ ENU altitude grows with +Z. NED altitude grows as `z_ned` becomes more negative.
 
 ## Mission pose
 
-`mission_manager` consumes `/drone/odom` (`nav_msgs/Odometry`, frame `map`, `RELIABLE` QoS), published by `position_node` from PX4's `/fmu/out/vehicle_local_position_v1` in the anchored ENU frame (see [TOPICS.md](TOPICS.md)). Mission logic blends odom z with `controller_status.altitude_enu_m` (`z_eff = max(pose_z, controller_alt)`) so the takeoff gate works before the first odom fix. Do not feed mission logic raw `/fmu/out/vehicle_local_position` - it is NED and unanchored.
+`mission_manager` reads `/drone/odom` (`nav_msgs/Odometry`, frame `map`, `RELIABLE` QoS), published by `position_node` from PX4's `/fmu/out/vehicle_local_position_v1` in the anchored ENU frame (see [TOPICS.md](TOPICS.md)). Mission logic blends odom z with `controller_status.altitude_enu_m` (`z_eff = max(pose_z, controller_alt)`) so the takeoff gate works before the first odom fix. Do not feed mission logic raw `/fmu/out/vehicle_local_position` - it is NED and unanchored.
 
 ## Quick checks
 
 - Path files under `config/paths/` use ENU meters.
-- Comparing to `/fmu/out/vehicle_local_position` without `ned_to_enu` looks mirrored or swapped.
+- A comparison to `/fmu/out/vehicle_local_position` without `ned_to_enu` looks mirrored or swapped.
 - Body-frame bugs show up as wrong lateral direction or inverted climb once yaw or velocity setpoints are non-NaN.
 
 ## Camera frame

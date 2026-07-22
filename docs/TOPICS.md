@@ -1,6 +1,6 @@
 # Topic manifest
 
-Validated against a running stack with `just log topics`. The checker greps backtick-quoted topic names (e.g. the rows below) out of this file and confirms each one appears in `ros2 topic list`, so keep topic names backticked.
+`just log topics` validates this file against a running stack. The checker greps backtick-quoted topic names (e.g. the rows below) out of this file and confirms each one appears in `ros2 topic list`, so keep topic names backticked.
 
 ## PX4 versioned topics
 
@@ -18,7 +18,7 @@ PX4 1.17 with uXRCE-DDS appends `_v1` to any message carrying `MESSAGE_VERSION` 
 | `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | pub | `offboard_controller` |
 | `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | pub | `offboard_controller` |
 | `/fmu/in/vehicle_command` | `px4_msgs/msg/VehicleCommand` | pub | `offboard_controller` |
-| `/drone/odom` | `nav_msgs/msg/Odometry` | pub | `position_node` (anchored-ENU SoT pose+twist) |
+| `/drone/odom` | `nav_msgs/msg/Odometry` | pub | `position_node` (anchored-ENU source-of-truth pose+twist) |
 | `/drone/local_origin` | `geometry_msgs/msg/Vector3Stamped` | pub | `position_node` (latched effective NED origin) |
 | `/drone/target_pose` | `geometry_msgs/msg/PoseStamped` | pub | `mission_manager` |
 | `/drone/controller_status` | `px4_ros_msgs/msg/ControllerStatus` | pub | `offboard_controller` |
@@ -50,7 +50,7 @@ PX4 1.17 with uXRCE-DDS appends `_v1` to any message carrying `MESSAGE_VERSION` 
 - `/drone/odom`: `RELIABLE`. Single source of truth published by `position_node` from PX4's local-position estimate (anchored ENU), in both sim and hardware. `/drone/local_origin`: latched (`TRANSIENT_LOCAL`) effective NED setpoint origin.
 - `/drone/marker_detection`: `RELIABLE`, `KEEP_LAST` depth 10.
 - Other `/drone/*` status and setpoint topics: `RELIABLE`, `KEEP_LAST` depth 10.
-- `/drone/target_pose` orientation is an optional-yaw contract, not a real attitude: the all-zero quaternion means "yaw omitted" (PX4 holds current heading); any other finite, near-unit quaternion is a commanded ENU yaw. See [docs/MISSIONS.md](MISSIONS.md#commanding-yaw) and `lib/target_pose.py`.
+- `/drone/target_pose` orientation is an optional-yaw contract, not a real attitude: the all-zero quaternion means "yaw omitted" (PX4 holds current heading); any other finite, near-unit quaternion is a commanded ENU yaw. See [docs/MISSIONS.md](MISSIONS.md#yaw-commands) and `lib/target_pose.py`.
 
 A `(vision)` suffix on the Dir marks a topic published only under
 `--vision aruco`; `just log topics` skips its presence check unless run with
@@ -60,8 +60,8 @@ A `(vision)` suffix on the Dir marks a topic published only under
 
 `aruco_pose_publisher` subscribes to `/camera/image_raw`
 (`sensor_msgs/msg/Image`) and `/camera/camera_info`
-(`sensor_msgs/msg/CameraInfo`), both `RELIABLE`. These are bridged from Gazebo by
-`_vision_bridge` (`sim_full.launch.py`) ONLY when the sim runs a camera-equipped
+(`sensor_msgs/msg/CameraInfo`), both `RELIABLE`. `_vision_bridge` (`sim_full.launch.py`)
+bridges these from Gazebo ONLY when the sim runs a camera-equipped
 model whose sensor is named `camera` (e.g. `sim/models/x500_mono_cam_down`). The
 default `x500` publishes no camera, so on the synthetic scenarios these topics do
 not exist and detections are fabricated instead. They are deliberately NOT in the

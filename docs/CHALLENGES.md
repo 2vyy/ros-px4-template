@@ -1,6 +1,6 @@
-# Challenge authoring
+# Author a challenge
 
-Hand an agent a competition rules document; walk this loop to a verified
+Hand an agent a competition rules document, then walk this loop to a verified
 scenario. Worlds and marker maps come from one challenge-spec YAML so they
 cannot disagree. Missions and scenarios stay hand-authored (schema +
 `just mission sim` / `just scenario-new` already cover them).
@@ -57,7 +57,7 @@ layouts: pylons, boxes, pads, marker fields. Physics is real-time only
 (world SDF is the sole speed authority; see plans/065). No moving actors.
 
 **Verifiable.** The stack can only assert what it can sense. Perception is a
-single nadir camera: real pixels need `--model x500_mono_cam_down` on a
+single downward-facing camera: real pixels need `--model x500_mono_cam_down` on a
 marker world; otherwise scenarios use synthetic detections. Obstacles are
 physical collision hazards but are **not** perceived (no avoidance sensor —
 reactive avoidance challenges are out of template scope). Rules assertions

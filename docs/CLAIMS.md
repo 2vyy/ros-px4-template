@@ -1,6 +1,6 @@
 # Claims ladder
 
-A claim is a statement about what the system can do ("vehicle centers on the marker, descends, and lands"). `tests/capabilities.toml` is the authoring API: it stores claim structure and artifact pointers, nothing else. **Rungs are derived** from the registry, artifacts, Git history, and committed PASS evidence - never stored, so they cannot lie. Nothing under `src/` reads the registry.
+A claim is a statement about what the system can do ("vehicle centers on the marker, descends, and lands"). `tests/capabilities.toml` is the authoring API: it stores claim structure and artifact pointers, nothing else. **The tools derive rungs** from the registry, artifacts, Git history, and committed PASS evidence. Nothing stores them, so they cannot lie. Nothing under `src/` reads the registry.
 
 ## Claim registry
 
@@ -43,7 +43,7 @@ A composite omits `scenario_file` and has a non-empty `requires`. Its rung is th
 
 ## Derived rungs
 
-Load-bearing order:
+Required order:
 
 ```text
 declared < simulated < sim-flown-stale < sim-flown
@@ -138,7 +138,7 @@ Mission YAML may declare a top-level `requires` list of claim ids. The mission l
 
 ## E2E integration
 
-`just e2e` builds its roster from `e2e_roster`: claims below `simulated` are excluded with a named `[NOTE]`, and runnable leaves run in `requires` DAG (topo) order. When a claim fails this run, dependents are skipped with synthesized FAIL reports whose reason is `prerequisite_failed:<claim>`; skips count as fails and never record evidence. Each PASS auto-records under `tests/evidence/` and prints `[EVIDENCE]`. If the flight-relevant tree is dirty, auto-record skips with a commit-first `[NOTE]` and the flight still succeeds - never abort a run over an unclean worktree. Commit the new evidence files deliberately after the run.
+`just e2e` builds its roster from `e2e_roster`. It drops claims below `simulated` with a named `[NOTE]`, and runs the runnable leaves in `requires` dependency order. When a claim fails this run, its dependents are skipped with FAIL reports whose reason is `prerequisite_failed:<claim>`. A skip counts as a fail and records no evidence. Each PASS auto-records under `tests/evidence/` and prints `[EVIDENCE]`. If the flight-relevant tree is dirty, auto-record skips with a commit-first `[NOTE]` and the flight still succeeds; a run never aborts over an unclean worktree. Commit the new evidence files by hand after the run.
 
 ## Reserved extensions
 

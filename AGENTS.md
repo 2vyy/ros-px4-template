@@ -40,7 +40,7 @@ Every command is bounded and ends in an English verdict stating what was verifie
 | 2 | usage error |
 | 3 | precondition failure; for `wait`: still running at `--timeout` |
 
-Run verdicts: `PASS` / `FAIL` (flew, missed criteria: read `just log events --run <id>`) / `STUCK` (stack or harness wedged: read `just log since`). A run record is always written to `logs/runs/`.
+Run verdicts: `PASS` / `FAIL` (flew, missed criteria: read `just log events --run <id>`) / `STUCK` (stack or harness stopped responding: read `just log since`). A run record is always written to `logs/runs/`.
 
 `just sim start` boots disarmed; pass `--overlay auto_arm` to arm. Other flags: `--gui`, `--world`, `--model`, `--vision`, `--no-build`, `--timeout`. Hardware: `just hw start --port /dev/ttyUSB0 --baud 921600`, same contract.
 

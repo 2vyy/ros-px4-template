@@ -1,6 +1,6 @@
 # Missions
 
-A mission is **data, not code**: a YAML graph of *states* and *transitions* interpreted one tick at a time by a tiny pure engine (`lib/mission/engine.py`). Each state names a **behavior** (what to do); each transition names a **guard** (when to move). Behaviors and guards are small pure functions registered by name, so a new mission is usually just a new YAML file - no node changes.
+A mission is **data, not code**: a YAML graph of *states* and *transitions* that a tiny pure engine (`lib/mission/engine.py`) reads one tick at a time. Each state names a **behavior** (what to do); each transition names a **guard** (when to move). Behaviors and guards are small pure functions registered by name, so a new mission is usually just a new YAML file - no node changes.
 
 | Piece | Where |
 |-------|-------|
@@ -8,7 +8,7 @@ A mission is **data, not code**: a YAML graph of *states* and *transitions* inte
 | Mission files | `config/missions/*.yaml` |
 | Runner node | `mission_manager` (`nodes/mission_manager.py`) |
 
-## Selecting a mission
+## Select a mission
 
 `mission_manager` reads the `mission_file` parameter (relative to the project root). Point it at a mission via a params overlay, e.g. `config/params/overlays/search_relocalize.yaml`:
 
@@ -43,7 +43,7 @@ Top-level document fields:
 |-------|------|----------|---------|
 | `requires` | list of claim ids | no (default `[]`) | Claims from `tests/capabilities.toml` that must reach `sim-flown` before this mission is considered ready. Shape-checked at load; `just mission validate` cross-checks ids and warns on rungs below `sim-flown`. |
 
-The loader (`lib/mission/loader.py`) validates the document up front and raises `MissionError` for an unknown behavior, guard, initial state, or transition target - a malformed mission fails fast at startup, not mid-flight.
+The loader (`lib/mission/loader.py`) validates the document up front and raises `MissionError` for an unknown behavior, guard, initial state, or transition target - a malformed mission fails at startup, not in mid-flight.
 
 ## Three verification tiers, fastest first
 
@@ -60,7 +60,7 @@ just mission show <name>          # states, transitions, and terminal set
 just mission sim demo             # phase trace + verdict; exit 0/1
 ```
 
-`just mission validate hover` runs the identical loader `mission_manager` uses at runtime, so a misspelled behavior surfaces here instead of after a ~16-30s sim boot. `just mission sim` output looks like:
+`just mission validate hover` runs the identical loader `mission_manager` uses at runtime, so a misspelled behavior shows here instead of after a 16–30 s sim start. `just mission sim` output looks like:
 
 ```
 tick   0.0s  takeoff
@@ -69,9 +69,9 @@ tick  16.5s  follow -> done  (waypoints_done)
 OK demo: terminated in done after 16.6 sim-s (166 ticks)
 ```
 
-Exit 0 when the mission terminates (or reaches steady state for a terminal-less mission), exit 1 on a stall (a guard that never fires - the "stuck in `takeoff` forever" bug an agent needs surfaced), exit 2 on a load error. Marker missions get a marker auto-planted directly below the drone so their guards fire.
+Exit 0 when the mission terminates (or reaches steady state for a terminal-less mission), exit 1 on a stall (a guard that never fires - the "stuck in `takeoff`" bug an agent needs to see), exit 2 on a load error. Marker missions get a marker auto-planted directly below the drone so their guards fire.
 
-Honest caveat: `mission sim` verifies GRAPH LOGIC (transitions, guards, stalls), NOT flight dynamics. The straight-line kinematic model has no control, estimation, or physics; the live scenario tier remains the flight gate.
+Caveat: `mission sim` verifies GRAPH LOGIC (transitions, guards, stalls), NOT flight dynamics. The straight-line kinematic model has no control, estimation, or physics; the live scenario tier remains the flight gate.
 
 ## Editor schema
 
@@ -88,15 +88,15 @@ Each tick (`tick_rate_hz`, default 10 Hz) the engine:
 
 Because `safety` is checked before the per-state edges, a hazard always wins over normal progression: while flying a lawnmower `search`, a `geofence_breach` diverts to `return_to_origin` instead of continuing the pattern.
 
-A safety (or mission) edge whose target IS the current state does not re-enter it: while the condition persists the engine leaves the state, scratch, and event log untouched, so a `hold_safe` freezes its target where the fault occurred rather than re-capturing the drifting live pose each tick. A persisting safety condition also keeps the mission tier suppressed, so a `hold_safe -> resume` edge only fires once the condition itself clears.
+A safety (or mission) edge whose target IS the current state does not re-enter it. While the condition holds, the engine leaves the state, scratch, and event log untouched, so a `hold_safe` freezes its target where the fault occurred rather than capturing the drifting live pose again each tick. A persisting safety condition also keeps the mission tier suppressed, so a `hold_safe -> resume` edge only fires once the condition itself clears.
 
-**Terminal states**: states listed in `terminal` have no outgoing **mission** transitions evaluated, but the **safety** tier still runs - a terminal `done` that holds position will still bail out to a safe state if the estimate goes invalid.
+**Terminal states**: states listed in `terminal` have no outgoing **mission** transitions evaluated, but the **safety** tier still runs - a terminal `done` that holds position will still change to a safe state if the estimate goes invalid.
 
 **Bounding the mission**: shipped missions put a `phase_timeout` edge on every state that can stall (to `hold_safe`) and a `time_budget` safety edge as the global ceiling. Together with the run supervisor above them, a guard that never fires ends in a safe hold and a verdict, never an infinite hover. Both edges belong LAST in their list so real progression wins first.
 
 ## Behaviors
 
-Registered in `lib/mission/behaviors.py`. Each returns a command plus signals (read by guards). `params` keys and defaults:
+`lib/mission/behaviors.py` registers each behavior. Each one returns a command plus signals (guards read them). `params` keys and defaults:
 
 | Behavior | params (default) | Signals emitted |
 |----------|------------------|-----------------|
@@ -113,7 +113,7 @@ The signal name `state_elapsed_s` is reserved: the engine injects it every tick 
 
 ## Guards
 
-Registered in `lib/mission/guards.py`. Each is a pure predicate over the snapshot (and, for the signal guards, the current behavior's signals).
+`lib/mission/guards.py` registers each guard. Each one is a pure predicate over the snapshot (and, for the signal guards, the current behavior's signals).
 
 | Guard | params (default) | True when |
 |-------|------------------|-----------|
@@ -143,7 +143,7 @@ For `marker_*` guards, omitting `id` matches any marker.
 
 An unknown, disconnected, or stale battery reading never trips `battery_low` - it fails toward "don't know", not "low". Combine `battery_low` with `inputs_stale` (`key: battery`) if a competition or hardware policy requires fail-closed behavior when battery telemetry itself goes stale.
 
-**`battery_low` diverts a mission, it does not touch arming or offboard mode.** Example: divert to `return_to_origin` at 20%:
+**`battery_low` changes the mission; it does not touch arming or offboard mode.** Example: change to `return_to_origin` at 20%:
 
 ```yaml
 safety:
@@ -152,7 +152,7 @@ safety:
 
 **Warning: `failsafe_active` is logical observability only.** PX4 remains the sole failsafe authority - a mission transition on this guard (e.g. to a `hold`) does not command, override, or interrupt whatever recovery mode PX4 itself selected. Do not model `failsafe_active -> hold_safe` as if the mission holding position overrides PX4; it does not. Separately, on the rising edge of a live PX4 failsafe, `offboard_controller` latches its own automatic arm/mode commands off (existing `OffboardControlMode`/setpoint streaming keeps running); it will not re-request OFFBOARD until an operator explicitly sets `auto_arm=true` after PX4 reports the failsafe has cleared.
 
-## Commanding yaw
+## Yaw commands
 
 `hold` and `follow_waypoints` accept an optional `yaw_deg` (ENU degrees, 0 = East, positive counter-clockwise). Omitting it means heading is uncontrolled: PX4 holds whatever heading it already has. When set, `GoTo.yaw` carries the value as ENU radians through `mission_manager` to `offboard_controller`, which is the only place ENU yaw is converted to PX4 NED heading (the `yaw` field of `/fmu/in/trajectory_setpoint`).
 
@@ -160,13 +160,13 @@ On the wire, the orientation quaternion of `/drone/target_pose` is the optional-
 
 ## Vision relocalization
 
-When launched with `vision=aruco`, `aruco_pose_publisher` publishes `/drone/marker_detection` and `marker_localizer` turns a detection of a **known** marker (mapped in `config/markers.yaml`) into a `/drone/pose_override` (`PoseStamped`). `position_node` applies that fix to the published `/drone/odom` when it is fresh and within a jump bound - a known marker can correct drift without letting a bad fix teleport the vehicle. Missions consume the corrected pose transparently; the `search_relocalize` mission demonstrates the full loop.
+When launched with `vision=aruco`, `aruco_pose_publisher` publishes `/drone/marker_detection` and `marker_localizer` turns a detection of a **known** marker (mapped in `config/markers.yaml`) into a `/drone/pose_override` (`PoseStamped`). `position_node` applies that fix to the published `/drone/odom` when it is fresh and within a jump bound - a known marker can correct drift without a bad fix moving the vehicle in one large jump. Missions consume the corrected pose transparently; the `search_relocalize` mission demonstrates the full loop.
 
 ## Precision landing and the reacquire pattern
 
-`config/missions/precision_land.yaml` demonstrates `center_land`: approach a marker, center over it, descend while centered, and hand off to PX4's own `NAV_LAND` (mission emits `Land`; `mission_manager` publishes `/drone/land_command` once per landing episode; `offboard_controller` sends `VEHICLE_CMD_NAV_LAND` and latches its own OFFBOARD/arm commands off for the duration - an independent latch reason alongside the disarm and failsafe latches, all three combined by `offboard_fsm.auto_arm_allowed`).
+`config/missions/precision_land.yaml` shows `center_land`: approach a marker, center over it, descend while centered, and hand off to PX4's own `NAV_LAND` (mission emits `Land`; `mission_manager` publishes `/drone/land_command` once per landing episode; `offboard_controller` sends `VEHICLE_CMD_NAV_LAND` and latches its own OFFBOARD/arm commands off for the duration - an independent latch reason alongside the disarm and failsafe latches, all three combined by `offboard_fsm.auto_arm_allowed`).
 
-The graph adds a `reacquire` state so a lost or never-stable marker never turns into a blind descent:
+The graph adds a `reacquire` state so a lost or never-stable marker never turns into a descent with no marker in view:
 
 - `approach` enters `descend` only on a **stable** marker observation (`marker_stable`); reaching the approach waypoint without one goes to `reacquire` instead.
 - `descend` reverts to `reacquire` when `center_land` signals `marker_lost` (via the `marker_lost_signal` guard). The commanded altitude freezes at the moment of loss - it never climbs back - while `reacquire` holds the current pose.
@@ -175,7 +175,7 @@ The graph adds a `reacquire` state so a lost or never-stable marker never turns 
 
 `Land` is emitted once per landing episode; the publish latch of `mission_manager` resets whenever a `GoTo` resumes (e.g. a `reacquire` detour), so a later episode issues a fresh `/drone/land_command`.
 
-## Adding a behavior or guard
+## Add a behavior or guard
 
 1. Write a pure function in `behaviors.py` / `guards.py` and decorate it with `@behavior("name")` / `@guard("name")`. Behaviors take `(scratch, inputs, params)` and return `BehaviorResult(command, signals)`; guards take `(inputs, signals, params)` and return `bool`.
 2. Add a unit test in `tests/unit/test_mission_behaviors.py` / `test_mission_guards.py`.

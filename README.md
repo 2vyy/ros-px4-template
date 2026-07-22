@@ -1,15 +1,15 @@
 # ros-px4-template
 
-A ROS 2 + PX4 + Gazebo template for autonomous drone development, built to be driven by coding agents as well as humans. Commands are bounded and report what they verified; missions are YAML state graphs; capabilities are tracked as claims tied to committed flight evidence.
+A ROS 2 + PX4 + Gazebo template for autonomous drone development, built to be driven by coding agents as well as humans. Every command is bounded and reports what it verified. Missions are YAML state graphs. The stack tracks capabilities as claims, each tied to committed flight evidence.
 
 Built on: Ubuntu 24.04 (native, [distrobox](https://distrobox.it), or WSL) - ROS 2 Jazzy - Gazebo Harmonic - PX4 v1.17 over Micro XRCE-DDS - Python 3.12 with [uv](https://github.com/astral-sh/uv), [ruff](https://github.com/astral-sh/ruff), [ty](https://github.com/astral-sh/ty) - [just](https://github.com/casey/just) task runner - [ros-mcp-server](https://github.com/robotmcp/ros-mcp-server) for live graph inspection.
 
 ## Design
 
-- **Every command terminates and reports what it verified.** Launches wait with a timeout. Scenario runs execute under a supervisor with a hard deadline and a log-silence watchdog. A `READY`/`PASS` line prints only after post-conditions are confirmed, so a dead stack reports `NOT READY` instead of a false pass. This is what makes the stack drivable by an agent or CI without babysitting. The only unbounded command is `just log tail`.
+- **Every command terminates and reports what it verified.** Launches wait with a timeout. Scenario runs execute under a supervisor with a hard deadline and a log-silence watchdog. A `READY`/`PASS` line prints only after post-conditions are confirmed, so a dead stack reports `NOT READY` instead of a false pass. This is what lets an agent or CI drive the stack without watching over it. The only unbounded command is `just log tail`.
 - **Missions are YAML, not code.** A pure FSM engine interprets state graphs of registered behaviors and guards. A new mission is a new YAML file, validated in under a second without booting the sim. See [docs/MISSIONS.md](docs/MISSIONS.md).
 - **Capabilities are claims with evidence.** `tests/capabilities.toml` declares what the system should do. Rungs (`declared < simulated < sim-flown`) are derived from committed PASS evidence and git history, never stored. Changing flight-relevant code marks the affected claims stale until re-flown. See [docs/CLAIMS.md](docs/CLAIMS.md).
-- **One log for everything.** Every process (ROS nodes, PX4, Gazebo, the XRCE agent) streams to a single logfmt session log, so a run can be diagnosed with `rg` alone.
+- **One log for everything.** Every process (ROS nodes, PX4, Gazebo, the XRCE agent) streams to a single logfmt session log, so you can check a run with `rg` alone.
 - **`src/` is sim/hardware agnostic.** The same nodes, topics, and missions run in Gazebo and on a serial flight controller; only the launch entry point differs.
 
 ## Runtime architecture
@@ -75,7 +75,7 @@ sequenceDiagram
 |---------|---------|---------------|
 | `PASS` | Flew and met the scenario's criteria | The one-line verdict carries the real numbers (waypoint error, hold time) |
 | `FAIL` | Flew, missed the criteria | Mission events: `just log events --run <id>` |
-| `STUCK` | The stack or harness wedged | Stack log: `just log since` or `logs/latest.log` |
+| `STUCK` | The stack or harness stopped responding | Stack log: `just log since` or `logs/latest.log` |
 
 A verdict file is always written, even if the supervisor has to kill the run. Missions add their own inner layer: per-phase `phase_timeout` edges and a global `time_budget` safety edge mean a guard that never fires diverts to a safe hold instead of hovering forever.
 
@@ -136,7 +136,7 @@ just log topics                   # audit live topics vs docs/TOPICS.md
 
 ## Missions are data
 
-A mission is a YAML state graph interpreted by a pure engine: each state names a behavior, each transition names a guard, and a `safety` tier outranks normal progression every tick. This is `search_relocalize` in full:
+A mission is a YAML state graph read by a pure engine: each state names a behavior, each transition names a guard, and a `safety` tier outranks normal progression every tick. This is `search_relocalize` in full:
 
 ```yaml
 mission:
@@ -159,7 +159,7 @@ mission:
   terminal: [done]
 ```
 
-`just mission validate <name>` catches a misspelled behavior in under a second; `just mission sim <name>` ticks the real engine over a kinematic model to prove the graph terminates - both without booting Gazebo. Behaviors and guards are small pure functions registered by name; adding one is a function, a test, and a table row. See [docs/MISSIONS.md](docs/MISSIONS.md).
+`just mission validate <name>` catches a misspelled behavior in under a second. `just mission sim <name>` ticks the real engine over a kinematic model to prove the graph ends. Neither boots Gazebo. Behaviors and guards are small pure functions registered by name; adding one is a function, a test, and a table row. See [docs/MISSIONS.md](docs/MISSIONS.md).
 
 ## The claims ladder
 
@@ -221,6 +221,6 @@ Upstream PX4 lives outside this repo (`PX4_DIR` in `.env`); Gazebo worlds and mo
 - [Topic owners, types, QoS](docs/TOPICS.md)
 - [Mission phases and YAML schema](docs/MISSIONS.md)
 - [Claims ladder and committed evidence](docs/CLAIMS.md)
-- [Authoring a challenge from a rules doc](docs/CHALLENGES.md)
+- [Author a challenge from a rules doc](docs/CHALLENGES.md)
 - [Simulation worlds, ArUco assets, run recording](docs/SIM.md)
 - [Open ideas and known limits](docs/BACKLOG.md)
